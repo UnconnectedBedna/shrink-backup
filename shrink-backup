@@ -1,0 +1,888 @@
+#!/bin/bash
+#
+# shrink-backup.sh
+# SD-card (mmcblk) backup tool for backing up and updating .img files
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    07/2023
+#    Marcus Johansson
+#    https://github.com/UnconnectedBedna/shrink-backup
+##########################################################################
+
+# Function to clean up resources on script exit or termination
+function cleanup() {
+  local exit_code="$?"
+
+  if [ "$exit_code" -ne 2 ]; then
+
+    if [ "$exit_code" -eq 0 ]; then
+      debug 'DEBUG' 'Cleanup function called with exit 0'
+    elif [ "$exit_code" -eq 3 ]; then
+      echo '## Script stopped by user...'
+      debug 'WARNING' 'Script stopped by user, exit 3'
+    elif [ "$exit_code" -ne 0 ]; then
+      echo '## Cleanup function called with non zero exit code, something went wrong!!!'
+      debug 'ERROR' "Cleanup function called with non zero exit code, exit $exit_code"
+    fi
+
+    echo '## Exiting and cleaning up...'
+    echo '## Please stand by...'
+
+    if [ -n "$BOOT_PATH" ] && grep -qs "${TMP_DIR}${BOOT_PATH} " /proc/mounts; then
+      umount "${TMP_DIR}${BOOT_PATH}"
+      debug 'DEBUG' "Unmounting boot partition in cleanup function: umount ${TMP_DIR}${BOOT_PATH}"
+    fi
+    if [ -n "$TMP_DIR" ] && grep -qs "$TMP_DIR " /proc/mounts; then
+      umount "$TMP_DIR"
+      debug 'DEBUG' "Unmounting root partition in cleanup function: umount $TMP_DIR"
+    fi
+    if losetup /dev/loop0 &>/dev/null; then
+      losetup -d /dev/loop0
+      debug 'DEBUG' 'Removing loop0 in cleanup function: losetup -d /dev/loop0'
+    fi
+    if losetup /dev/loop1 &>/dev/null; then
+      losetup -d /dev/loop1
+      debug 'DEBUG' 'Removing loop1 in cleanup function: losetup -d /dev/loop1'
+    fi
+    if [ -d "$TMP_DIR" ]; then
+      rm -rf "$TMP_DIR"
+      debug 'DEBUG' "Removing temp directory in cleanup function: rm -rf $TMP_DIR"
+    fi
+    if [ -f "$tmp_file" ]; then
+      rm "$tmp_file"
+      debug 'DEBUG' "Removing temp file in cleanup function: rm $tmp_file"
+    fi
+
+    echo '## Done.'
+    echo "## Elapsed time: $(date -d@$SECONDS -u +%M.%S)"
+    debug 'INFO' "Elapsed time: $(date -d@$SECONDS -u +%M.%S)"
+    debug 'DEBUG' "Exiting script\n##############################################################################"
+  fi
+}
+trap cleanup EXIT SIGTERM
+trap "exit 3" SIGINT
+
+# Function to pause script execution and prompt for user input
+function pause() {
+  read -p "$*"
+}
+
+# Uncomment the following line to enable the pause function
+#pause 'Press [Enter] key to continue...'
+
+# Set default values for script options
+PROMPTS=true
+DEBUG=false
+EXCLUDE_FILE=false
+AUTOEXPAND=true
+RESIZE2FS_RUN=false
+UPDATE=false
+LOG_FILE="$(dirname "$0")/shrink-backup.log"
+
+# Function to display help information, debug is not configured/working
+help() {
+  local help
+  read -r -d '' help << EOM
+Script for creating an .img file and subsequently keeing it updated (-B), autoexpansion is enabled by default
+Directory where .img file is created is automatically excluded in backup
+########################################################################
+Usage: sudo $(basename "$0") [-Uatyedh] imagefile.img [extra space (MB)]
+  -U         Update the img file (rsync to existing backup .img), no resizing, -a is ignored
+  -a         Let resize2fs decide minimum space (extra space is ignored), disabled if using -U
+  -t         Use exclude.txt in same folder as script to set excluded directories
+             One directory per line: "/dir" or "/dir/*" to only exclude contents
+  -y         Disable prompts in script
+  -e         DO NOT expand filesystem when image is booted
+  -d         Write debug messages in log file shrink-backup.log in same directory as script
+  -h --help  Show this help snippet
+########################################################################
+Example: sudo $(basename "$0") -at /path/to/backup.img
+Example: sudo $(basename "$0") -e -y /path/to/backup.img 1000
+Example: sudo $(basename "$0") -Ut /path/to/backup.img
+EOM
+  echo "$help"
+  exit 2
+}
+
+# Parse command-line options
+while getopts ":Uatyedh" opt; do
+  case ${opt} in
+    U) UPDATE=true;;
+    a) RESIZE2FS_RUN=true;;
+    t) EXCLUDE_FILE=true;;
+    y) PROMPTS=false;;
+    e) AUTOEXPAND=false;;
+    d) DEBUG=true;;
+    h) help;;
+    *) help;;
+  esac
+done
+#shift $((OPTIND-1))
+
+# Check if script is run as root
+if [ "$EUID" != 0 ]; then
+  echo 'THIS SCRIPT MUST BE RUN AS ROOT!'
+  help
+fi
+
+
+
+function debug() {
+  local log_level="$1"
+  local log_message="$2"
+  if [ "$DEBUG" == true ]; then
+    if [ "$log_level" == 'BREAK' ]; then
+      echo '------------------------------------------------------------------------------' >> "$LOG_FILE"
+    else
+      echo -e "$(date +"%Y-%m-%d %H:%M:%S") [$log_level] - $log_message" >> "$LOG_FILE"
+    fi
+  fi
+}
+
+
+debug 'INFO' "Debugging requested, writing to log file $(basename "$LOG_FILE")..."
+debug 'INFO' "Update existing img file, UPDATE=$UPDATE"
+debug 'INFO' "RESIZE2FS_RUN=$RESIZE2FS_RUN"
+debug 'INFO' "Prompt for user confirmation, PROMPTS=$PROMPTS"
+debug 'INFO' "Enable AUTOEXPAND=$AUTOEXPAND"
+
+
+# Function to create a backup img file
+function make_img() {
+  # Set ADDED_SPACE to 0 if RESIZE2FS_RUN option is enabled
+  if [ "$RESIZE2FS_RUN" == true ]; then
+    debug 'INFO' '-a selected by user, setting ADDED_SPACE=0'
+    ADDED_SPACE=0
+  fi
+
+  # Regular expression for whole numbers
+  RE='^[0-9]+$'
+
+  # Validate the added space argument as a whole number
+  # -z = zero value, -n = non-zero value, -f = file, || = or, && = and
+  if ! [[ "$ADDED_SPACE" =~ $RE ]]; then
+    debug 'WARNING' 'User defined ADDED_SPACE is not a regualar expression'
+    while ! [[ "$ADDED_SPACE" =~ $RE ]]
+    do
+      #if [ "$COUNTER" > 0 ] || test -n "$ADDED_SPACE"; then
+      if [ "$COUNTER" -gt 0 ] || [ -n "$ADDED_SPACE" ]; then
+        echo 'Added space must be a whole number'
+        debug 'INFO' 'Added space must be a whole number'
+      fi
+      echo 'How much space in MB should be added?'
+      debug 'INFO' 'How much space in MB should be added?'
+      read ADDED_SPACE
+      (( COUNTER++ ))
+      #(( COUNTER += 1 ))
+    done
+    debug 'USER_INPUT' "User requested ${ADDED_SPACE}MB as ADDED_SPACE"
+  fi
+
+  if [ -e /dev/mmcblk0p2 ]; then
+    MMCBLK='/dev/mmcblk0p2'
+    debug 'DEBUG' "2 partitions detected, setting MMCBLK=$MMCBLK"
+  else
+    MMCBLK='/dev/mmcblk0p1'
+    debug 'DEBUG' "1 partition detected, setting MMCBLK=$MMCBLK"
+  fi
+
+  # BOOTSECTOR is actually the startsector on the root partition
+  BOOTSECTOR=( $(fdisk -lo start /dev/mmcblk0 | tail -1) ) # blocks, 512B block size
+  DDBOOTSECTOR=$(( BOOTSECTOR + 256 )) # blocks, 8192 + 256 = 8448 (adding 256 extra to be safe)
+  debug 'DEBUG' 'Calculating size for dd to cover bootsector in blocks (512B block size) and adding 256 to overlap into root'
+  debug 'INFO' "BOOTSECTOR=${BOOTSECTOR} blocks - this is actually the startsector for the root partition"
+  debug 'INFO' "DDBOOTSECTOR=${DDBOOTSECTOR} blocks"
+  BOOTSECTOR=$(( BOOTSECTOR * 512 )) # bytes, 8192 x 512 = 4194304
+  BLOCKSIZE=$(dumpe2fs -h "$MMCBLK" | grep "Block size" | awk '{print $3}') # bytes
+  RESIZE2FS_MIN=$(resize2fs -P "$MMCBLK" | awk '{print $7}' | tail -1) # blocks
+  RESIZE2FS_MIN=$(( RESIZE2FS_MIN * BLOCKSIZE )) # bytes
+  #DF_OUTPUT=( $(df / --output=size,avail | tail -1) ) # 1k blocks, 0 is the first position in an array
+  #USED_SPACE=$(( (${DF_OUTPUT[0]} - ${DF_OUTPUT[1]}) * 1024 )) # bytes, df is 1k block size, 0 is the first position
+  DF_OUTPUT=( $(df / --output=used | tail -1) ) # 1k blocks
+  USED_SPACE=$(( DF_OUTPUT * 1024 )) # bytes, df is 1k block size
+  ADDED_SPACE=$(( ADDED_SPACE * 1024 * 1024 )) # bytes
+
+  # Use resize2fs to calulate size if option is selected
+  if [ "$RESIZE2FS_RUN" == true ]; then
+    debug 'DEBUG' 'Setting TOTAL (space needed for files on root) to size calculated by resize2fs'
+    debug 'INFO' "RESIZE2FS_MIN=${RESIZE2FS_MIN} Bytes"
+    TOTAL=$RESIZE2FS_MIN # bytes
+  else
+    debug 'DEBUG' 'Calculating TOTAL (space needed for files on root) by adding USED_SPACE and ADDED_SPACE'
+    debug 'INFO' "USED_SPACE=${USED_SPACE} Bytes"
+    debug 'INFO' "ADDED_SPACE=${ADDED_SPACE} Bytes"
+    TOTAL=$(( USED_SPACE + ADDED_SPACE )) # bytes
+  fi
+  debug 'INFO' "TOTAL=${TOTAL} Bytes"
+
+  TRUNCATE_TOTAL=$(( BOOTSECTOR + TOTAL )) # bytes
+  debug 'DEBUG' 'Calculating .img file size by adding BOOTSECTOR to TOTAL'
+  debug 'INFO' "TRUNCATE_TOTAL=${TRUNCATE_TOTAL} Bytes"
+  #TRUNCATE_TOTAL=$(( BLOCKSIZE + BOOTSECTOR + TOTAL )) # bytes, this was when I was using end instead of start with fdisk
+  #TRUNCATE_TOTAL=$(( ( 1 + 33 ) * BLOCKSIZE + TOTAL + BOOTSECTOR )) # bytes, something about GPT needing 33 extra blocks
+
+  # Add 128MB extra space if resize2fs reports bigger minimum than created
+  if [ "$TOTAL" -lt "$RESIZE2FS_MIN" ]; then
+    debug 'DEBUG' 'Adding WIGGLEROOM (192MB) because manually requested ADDED_SPACE is less than resize2fs caluclated size'
+    WIGGLEROOM=201326592 # 128MB = 134217728B, 192MB = 201326592B
+    TRUNCATE_TOTAL=$(( TRUNCATE_TOTAL + WIGGLEROOM ))
+    debug 'INFO' "RESIZE2FS_MIN=${RESIZE2FS_MIN} Bytes"
+    debug 'INFO' "WIGGLEROOM=${WIGGLEROOM} Bytes"
+    debug 'INFO' "TRUNCATE_TOTAL=${TRUNCATE_TOTAL} Bytes"
+  fi
+
+  # Check if user input is required and print changes that will be performed
+  if [ "$PROMPTS" == true ]; then
+    if [ "$RESIZE2FS_RUN" == true ]; then
+      echo ''
+      echo '##############################################################################'
+      echo "# A backup will be created at $IMG_FILE"
+      echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
+      echo "# Resize2fs decide minimum (root partition): $(( RESIZE2FS_MIN / 1024 / 1024 ))MB"
+      echo "# Autoexpand filesystem on boot: $AUTOEXPAND"
+      echo "# Using exclude.txt: $EXCLUDE_FILE"
+      echo "# Write to logfile: $DEBUG"
+      echo '##############################################################################'
+    else
+      echo ''
+      echo '##############################################################################'
+      echo "# A backup will be created at $IMG_FILE"
+      echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB with $(( ADDED_SPACE / 1024 / 1024 ))MB extra space included."
+      echo "# Autoexpand filesystem on boot: $AUTOEXPAND"
+      echo "# Using exclude.txt: $EXCLUDE_FILE"
+      echo "# Write to logfile: $DEBUG"
+      echo '##############################################################################'
+    fi
+
+    read -p "Do you want to continue? [y/n] " -n 1 -r
+    debug 'INFO' 'Do you want to continue? [y/n]'
+    if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
+      debug 'USER_INPUT' 'Aborted by user'
+      echo ''
+      echo 'Aborting...'
+      exit 1
+    fi
+    echo ''
+    debug 'USER_INPUT' 'Y or y pressed to confirm'
+
+    if test -f "$IMG_FILE"; then
+      debug 'WARNING' "$IMG_FILE ALREADY EXISTS!"
+      echo 'WARNING!!! WARNING!!! WARNING!!!'
+      echo "$IMG_FILE"
+      echo 'FILE ALREADY EXISTS!!!'
+      read -p "Do you want to overwrite? [y/n] " -n 1 -r
+      debug 'INFO' 'Do you want to overwrite? [y/n]'
+      if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
+        debug 'USER_INPUT' 'Aborted by user'
+        echo ''
+        echo 'Aborting...'
+        exit 1
+      fi
+      echo ''
+      debug 'USER_INPUT' 'Overwrite confirmed by user'
+    fi
+  else
+    debug 'WARNING' '-y selected by user. prompts are disabled'
+    if [ "$RESIZE2FS_RUN" == true ]; then
+      echo '##############################################################################'
+      echo '# DISABLE PROMPTS SELECTED (-y), NO WARNINGS ABOUT DELETION!!!'
+      echo "# A backup will be created at $IMG_FILE"
+      echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
+      echo "# Resize2fs decide minimum (root partition): $(( RESIZE2FS_MIN / 1024 / 1024 ))MB"
+      echo "# Autoexpand filesystem on boot: $AUTOEXPAND"
+      echo "# Using exclude.txt: $EXCLUDE_FILE"
+      echo "# Write to logfile: $DEBUG"
+      echo '# PRESS CTRL+C WITHIN 5s TO CANCEL!'
+      echo '##############################################################################'
+    else
+      echo '##############################################################################'
+      echo '# DISABLE PROMPTS SELECTED (-y), NO WARNINGS ABOUT DELETION!!!'
+      echo "# A backup will be created at $IMG_FILE"
+      echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB with $(( ADDED_SPACE / 1024 / 1024 ))MB extra space included."
+      echo "# Autoexpand filesystem on boot: $AUTOEXPAND"
+      echo "# Using exclude.txt: $EXCLUDE_FILE"
+      echo "# Write to logfile: $DEBUG"
+      echo '# PRESS CTRL+C WITHIN 5s TO CANCEL!'
+      echo '##############################################################################'
+    fi
+    sleep 6
+  fi
+
+  # Delete existing file if user validation above passed
+  if [ -f "$IMG_FILE" ]; then
+    debug 'DEBUG' "Removing $IMG_FILE"
+    echo '## Removing old img file...'
+    rm "$IMG_FILE"
+    sleep 1
+  fi
+
+  # Create and dd bootsector
+  echo '## Creating bootsector...'
+  debug 'INFO' "Using dd to create bootsector, bs=512 count=$DDBOOTSECTOR"
+  if ! output=$(dd bs=512 count=$DDBOOTSECTOR if=/dev/mmcblk0 of="$IMG_FILE" conv=noerror,sync status=progress 2>&1 | tee /dev/tty); then
+    echo -e "$output\nDD TO BOOTSECTOR FAILED!!!"
+    debug 'BREAK'
+    debug 'ERROR' "DD TO BOOTSECTOR FAILED:\n$output\n------------------------------------------------------------------------------"
+    exit 1
+  fi
+  output=$(echo "$output" | tail -3 )
+  debug 'BREAK'
+  debug 'DEBUG' "Running: dd bs=512 count=$DDBOOTSECTOR if=/dev/mmcblk0 of=$IMG_FILE conv=noerror,sync status=progress\n$output\n------------------------------------------------------------------------------"
+  sleep 2
+
+  # Truncate file to correct size
+  echo "## Resizing img file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB..."
+  debug 'INFO' "Using truncate to resize img file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
+  if ! output=$(truncate --size=$TRUNCATE_TOTAL "$IMG_FILE" 2>&1); then
+    echo -e "$output\nTRUNCATE FAILED!!!"
+    debug 'BREAK'
+    debug 'ERROR' "TRUNCATE FAILED:\n$output\n------------------------------------------------------------------------------"
+    exit 1
+  fi
+  debug 'DEBUG' "Running: truncate --size=$TRUNCATE_TOTAL $IMG_FILE"
+  sleep 1
+
+  # Create loopback with img file
+  echo '## Looping img file...'
+  debug 'INFO' "Using losetup -P to loop $IMG_FILE"
+  if ! output=$(losetup -P /dev/loop0 "$IMG_FILE" 2>&1); then
+    echo -e "$output\nLOSETUP FAILED!!!"
+    debug 'BREAK'
+    debug 'ERROR' "LOSETUP FAILED:\n$output\n------------------------------------------------------------------------------"
+    exit 1
+  fi
+  debug 'DEBUG' "Running: losetup -P /dev/loop0 $IMG_FILE"
+  sleep 1
+
+  # Remove partition
+  echo '## Removing root partition...'
+  debug 'INFO' 'Using sfdisk to remove root partition'
+  if [ -e /dev/mmcblk0p2 ]; then
+    LOOP0='/dev/loop0p2'
+    LOOP1='/dev/loop0p1'
+    debug 'DEBUG' "2 partitions detected, setting LOOP0=$LOOP0 and LOOP1=$LOOP1"
+    if ! output=$(sfdisk --delete -f -q /dev/loop0 2 2>&1); then
+      echo -e "$output\nSFDISK FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "SFDISK FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+    debug 'DEBUG' "Running: sfdisk --delete -f -q /dev/loop0 2"
+  else
+    LOOP0='/dev/loop0p1'
+    debug 'DEBUG' "1 partition detected, setting LOOP0=$LOOP0"
+    if ! output=$(sfdisk --delete -f -q /dev/loop0 1 2>&1); then
+      echo -e "$output\nSFDISK FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "SFDISK FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+    debug 'DEBUG' "Running: sfdisk --delete -f -q /dev/loop0 1"
+  fi
+  sleep 2
+
+  # Recreate partition, BOOTSECTOR is actually the startsector of root
+  echo '## Recreating root partition...'
+  debug 'INFO' 'Using parted to recreate root partition'
+  if ! output=$(parted -s -a none /dev/loop0 unit B mkpart primary ext4 "$BOOTSECTOR" 100% 2>&1); then
+    echo -e "$output\nPARTED FAILED!!!"
+    debug 'BREAK'
+    debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
+    exit 1
+  fi
+  debug 'DEBUG' "Running: parted -s -a none /dev/loop0 unit B mkpart primary ext4 $BOOTSECTOR 100%"
+  sleep 2
+
+  # Format filesystem
+  echo '## Formatting filesystem...'
+  debug 'INFO' 'Using mkfs.ext4 to format root filesystem'
+  LSBLK=( $(lsblk -f "$MMCBLK" | tail -1) ) # 0 is the first position
+  LABEL=${LSBLK[3]}
+  UUID=${LSBLK[4]}
+  if ! output=$(mkfs.ext4 "$LOOP0" -U "$UUID" -L "$LABEL" -F -v 2>&1 | tee /dev/tty ); then
+    echo -e "$output\nMKFS.EXT4 FAILED!!!"
+    debug 'BREAK'
+    debug 'ERROR' "MKFS.EXT4 FAILED:\n$output\n------------------------------------------------------------------------------"
+    exit 1
+  fi
+  debug 'BREAK'
+  debug 'DEBUG' "Running: mkfs.ext4 $LOOP0 -U $UUID -L $LABEL -F -v\n$output\n------------------------------------------------------------------------------"
+  sleep 2
+
+  # Make sure everything worked
+  echo '## Scanning filesystem...'
+  debug 'INFO' 'Using e2fsck to check filesystem'
+  if ! output=$(e2fsck -y -f "$LOOP0" 2>&1); then
+    echo -e "$output\nE2FSCK FAILED!!!"
+    debug 'BREAK'
+    debug 'ERROR' "E2FSCK FAILED:\n$output\n------------------------------------------------------------------------------"
+    exit 1
+  fi
+  echo "$output"
+  debug 'BREAK'
+  debug 'DEBUG' "Running: e2fsck -y -f $LOOP0\n$output\n------------------------------------------------------------------------------"
+  sleep 1
+
+  # Create a temporary directory to mount the image
+  echo '## Mounting img file to temp directory...'
+  debug 'INFO' 'Creating temp directory and mounting img file'
+  TMP_DIR=$(mktemp -d -t shrink_img-XXXXXXXXXX)
+  debug 'DEBUG' "Running: mktemp -d -t shrink_img-XXXXXXXXXX, TMP_DIR=$TMP_DIR"
+  if ! output=$(mount "$LOOP0" "$TMP_DIR" 2>&1); then
+    echo -e "$output\nROOT MOUNT FAILED!!!"
+    debug 'BREAK'
+    debug 'ERROR' "ROOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+    exit 1
+  fi
+  debug 'DEBUG' "Running: mount $LOOP0 $TMP_DIR"
+  sleep 1
+  if [ -e /dev/mmcblk0p2 ]; then
+    echo '## Mounting boot partition...'
+    debug 'INFO' 'Separate boot partition detected, mounting boot inside img file'
+    BOOT_PATH=$(cat /etc/fstab | grep '/boot' | awk '{print $2}')
+    debug 'DEBUG' "Fetching boot mount path from fstab, BOOT_PATH=$BOOT_PATH"
+    if ! [ -d ${TMP_DIR}/boot ]; then
+      mkdir ${TMP_DIR}/boot
+      debug 'DEBUG' "Creating boot directory in img file, mkdir ${TMP_DIR}/boot"
+    fi
+    if ! output=$(mount "$LOOP1" "${TMP_DIR}${BOOT_PATH}" 2>&1); then
+      echo -e "$output\nBOOT MOUNT FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "BOOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+    debug 'DEBUG' "Running: mount $LOOP1 ${TMP_DIR}${BOOT_PATH}"
+    sleep 1
+  fi
+
+  # Copy the files
+  echo '## Backing up files...'
+  debug 'DEBUG' 'Executing do_rsync function'
+  sleep 1
+  do_rsync
+
+  # Activate autoexpand if enabled
+  if [ "$AUTOEXPAND" == true ]; then
+    echo '## Enabling fs-autoexpand...'
+    debug 'DEBUG' 'Executing expand_fs function'
+    sleep 1
+    expand_fs
+  fi
+
+  # Final check of created file
+  echo '## Finalizing filesystem...'
+  echo '## Please stand by...'
+  debug 'INFO' 'Finalizing filesystem'
+  sleep 1
+
+  if [ -n "$BOOT_PATH" ]; then
+    debug 'DEBUG' "Unmounting boot partition: umount ${TMP_DIR}${BOOT_PATH}"
+    umount "${TMP_DIR}${BOOT_PATH}"
+    sleep 1
+  fi
+
+  debug 'DEBUG' "Unmounting root partition: umount $TMP_DIR"
+  umount "$TMP_DIR"
+  sleep 1
+
+  output=$(e2fsck -y -f -v "$LOOP0" 2>&1)
+  echo "$output"
+  debug 'BREAK'
+  debug 'DEBUG' "Running: e2fsck -y -f -v $LOOP0\n$output\n------------------------------------------------------------------------------"
+
+  AFTER_SIZE=$(ls -lh "$IMG_FILE" | cut -d ' ' -f 5)
+
+  # Print result
+  echo '## Backup done.'
+  echo "## Autoexpand filesystem at boot: $AUTOEXPAND"
+  if [ "$RESIZE2FS_RUN" = true ]; then
+    echo "## $IMG_FILE is $AFTER_SIZE with a root partition of $(( RESIZE2FS_MIN / 1024 / 1024 ))MB."
+    debug 'INFO' "$IMG_FILE is $AFTER_SIZE with a root partition of $(( RESIZE2FS_MIN / 1024 / 1024 ))MB"
+  else
+    echo "## $IMG_FILE is $AFTER_SIZE with $(( ADDED_SPACE / 1024 / 1024 ))MB extra space included."
+    debug 'INFO' "$IMG_FILE is $AFTER_SIZE with $(( ADDED_SPACE / 1024 / 1024 ))MB extra space included"
+  fi
+  debug 'INFO' 'Img file created and backup done'
+}
+
+
+
+# Function to update exiting img file
+function do_backup() {
+  OFFSET=( $(fdisk -lo start "$IMG_FILE" | tail -1) ) # blocks, 512B block size
+  OFFSET=$(( OFFSET * 512 )) # bytes
+  debug 'DEBUG' "Using fdisk to find root partition offset: fdisk -lo start $IMG_FILE | tail -1"
+  debug 'INFO' "OFFSET=${OFFSET} Bytes"
+
+  # Create a temporary directory to mount the image
+  echo '## Mounting img file to temp directory...'
+  debug 'INFO' 'Creating temp directory and mounting img file'
+  TMP_DIR=$(mktemp -d -t backup-XXXXXXXXXX)
+  debug 'DEBUG' "Running: mktemp -d -t backup-XXXXXXXXXX, TMP_DIR=$TMP_DIR"
+  if ! output=$(mount -o loop,offset="$OFFSET",x-mount.mkdir "$IMG_FILE" "$TMP_DIR" 2>&1); then
+    echo -e "$output\nROOT MOUNT FAILED!!!"
+    debug 'ERROR' "ROOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+    exit 1
+  fi
+  debug 'DEBUG' "Running: mount -o loop,offset=$OFFSET,x-mount.mkdir $IMG_FILE $TMP_DIR"
+  sleep 1
+
+  if [ -e /dev/mmcblk0p2 ]; then
+    echo '## Mounting boot...'
+    debug 'INFO' 'Separate boot partition detected, mounting boot inside img file'
+    OFFSET_BOOT=$(fdisk -lo start "$IMG_FILE" | tail -2 | head -1) # blocks, 512B block size
+    OFFSET_BOOT=$(( OFFSET_BOOT * 512 )) # bytes
+    debug 'DEBUG' "Using fdisk to find boot partition offset on img file: fdisk -lo start "$IMG_FILE" | tail -2 | head -1"
+    debug 'INFO' "OFFSET_BOOT=${OFFSET_BOOT} Bytes"
+    BOOT_PATH=$(cat ${TMP_DIR}/etc/fstab | grep '/boot' | awk '{print $2}')
+    debug 'DEBUG' "Fetching boot mount path from fstab on img file, BOOT_PATH=$BOOT_PATH"
+    losetup -o "$OFFSET_BOOT" /dev/loop1 "$IMG_FILE"
+    debug 'DEBUG' "Running: losetup -o $OFFSET_BOOT /dev/loop1 $IMG_FILE"
+    if ! output=$(mount /dev/loop1 "${TMP_DIR}${BOOT_PATH}" 2>&1); then
+      echo -e "$output\nBOOT MOUNT FAILED!!!"
+      debug 'ERROR' "BOOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+    debug 'DEBUG' "Running: mount /dev/loop1 ${TMP_DIR}${BOOT_PATH}"
+    sleep 1
+  fi
+
+  # Copy the files
+  echo '## Backing up files...'
+  debug 'DEBUG' 'Executing do_rsync function'
+  sleep 1
+  do_rsync
+
+  # Activate autoexpand if enabled
+  if [ "$AUTOEXPAND" == true ]; then
+    echo '## Enabling fs-autoexpand...'
+    debug 'DEBUG' 'Executing expand_fs function'
+    sleep 1
+    expand_fs
+  fi
+
+  echo '## Cleaning up...'
+  echo '## Please stand by...'
+  debug 'INFO' 'Cleaning up'
+  sleep 1
+
+  if [ -n "$BOOT_PATH" ]; then
+    debug 'DEBUG' "Unmounting boot partition: umount ${TMP_DIR}${BOOT_PATH}"
+    umount "${TMP_DIR}${BOOT_PATH}"
+  fi
+
+  debug 'DEBUG' "Unmounting root partition: umount $TMP_DIR"
+  umount "$TMP_DIR"
+
+  echo '## Backup done.'
+  debug 'INFO' 'Img file updated'
+}
+
+
+
+# Function to rsync to img file
+function do_rsync() {
+  IMG_PATH=$(dirname "$IMG_FILE")
+  debug 'INFO' "Backing up to $IMG_PATH/$IMG_FILE"
+  debug 'INFO' 'Creating temporary file to store rsync output'
+  tmp_file=$(mktemp -t rsync-XXXXXXXXXX)
+  debug 'DEBUG' "Running: mktemp -d -t rsync-XXXXXXXXXX, tmp_file=$tmp_file"
+
+  if [ "$EXCLUDE_FILE" == true ]; then
+    debug 'DEBUG' "Running: rsync -ahvD --exclude-from=$(dirname $0)/exclude.txt --exclude=${IMG_PATH}/* --info=progress2 --stats --delete --force --partial --delete-excluded / $TMP_DIR"
+    if ! rsync -ahvD --exclude-from=$(dirname "$0")/exclude.txt --exclude=${IMG_PATH}/* --info=progress2 --stats --delete --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/tty  > "$tmp_file"; then
+      output=$(tail -16 "$tmp_file")
+      echo -e "$output\nRSYNC FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "RSYNC FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+    sleep 4
+  else
+    debug 'DEBUG' "Running: rsync -ahvD --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/log.hdd,/var/swap,/etc/udev/rules.d/70-persistent-net.rules,/var/lib/asterisk/astdb.sqlite3-journal,${IMG_PATH}/*} --info=progress2 --stats --delete --force --partial --delete-excluded / $TMP_DIR"
+    if ! rsync -ahvD --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/log.hdd,/var/swap,/etc/udev/rules.d/70-persistent-net.rules,/var/lib/asterisk/astdb.sqlite3-journal,${IMG_PATH}/*} --info=progress2 --stats --delete --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/tty > "$tmp_file"; then
+      output=$(tail -16 "$tmp_file")
+      echo -e "$output\nRSYNC FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "RSYNC FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+    sleep 4
+  fi
+  output=$(tail -16 "$tmp_file")
+  debug 'BREAK'
+  debug 'DEBUG' "Rsync report:\n$output\n------------------------------------------------------------------------------"
+  debug 'INFO' 'Rsync done'
+}
+
+
+
+# Function to enable expansion of filesystem at boot
+function expand_fs() {
+  # Check if Manjaro
+  if cat /etc/os-release | grep -i 'manjaro' >/dev/null; then
+    debug 'INFO' 'Manjaro os detected'
+
+    # Create self deleting script
+    echo '## Manjaro os detected...'
+    debug 'DEBUG' "Creating expansion script ${TMP_DIR}/expand-fs.sh and expand-fs.service"
+    sleep 1
+    cat << EOF > "${TMP_DIR}/expand-fs.sh"
+resize-fs
+sleep 2
+rm /etc/systemd/system/basic.target.wants/expand-fs.service
+rm /etc/systemd/system/expand-fs.service
+#rm '\${0}'
+rm /expand-fs.sh
+exit 0
+EOF
+
+cat << EOF > "${TMP_DIR}/etc/systemd/system/expand-fs.service"
+[Unit]
+Description=One time boot script
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/sh "/expand-fs.sh"
+
+[Install]
+WantedBy=basic.target
+EOF
+
+    if ! [ -d "${TMP_DIR}/etc/systemd/system/basic.target.wants" ]; then
+      debug 'DEBUG' "Systemd basic.arget.wants directory does not exist, running: mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants"
+      mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants
+    fi
+    debug 'DEBUG' "Enabling systemd service by creating symlink: ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service"
+    ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service
+    echo '## Manjaro filesystem autoresizing at boot...'
+    debug 'INFO' 'Manjaro filesystem autoresizing at boot'
+    sleep 1
+
+  elif [ -f /etc/armbian-release ]; then
+    debug 'INFO' 'Armbian os detected'
+
+    # Create symlink for armbian-resize-filesystem.service
+    echo '## Armbian os detected...'
+    sleep 1
+    if ! test -f "${TMP_DIR}/etc/systemd/system/basic.target.wants/armbian-resize-filesystem.service"; then
+      debug 'DEBUG' "Enabling systemd service by creating symlink: ln -s /lib/systemd/system/armbian-resize-filesystem.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/armbian-resize-filesystem.service"
+      ln -s /lib/systemd/system/armbian-resize-filesystem.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/armbian-resize-filesystem.service
+    fi
+
+    echo '## Armbian filesystem autoresizing at boot...'
+    debug 'INFO' 'Armbian filesystem autoresizing at boot'
+    sleep 1
+
+  elif uname -a | grep -q 'raspberry'; then
+    debug 'INFO' 'Raspberry pi detected'
+
+    # Enable Raspberry pi autoexpand
+    echo '## Raspberry pi detected...'
+    debug 'DEBUG' "Creating expansion script ${TMP_DIR}/expand-fs.sh"
+    sleep 1
+    cat << EOF2 > "${TMP_DIR}/expand-fs.sh"
+#!/bin/sh
+
+reboot_pi () {
+  umount /boot
+  mount / -o remount,ro
+  sync
+  reboot -f
+  sleep 5
+  exit 0
+}
+
+get_variables () {
+  ROOT_PART_DEV=\$(findmnt / -o source -n)
+  ROOT_PART_NAME=\$(echo "\$ROOT_PART_DEV" | cut -d "/" -f 3)
+  ROOT_DEV_NAME=\$(echo /sys/block/*/"\${ROOT_PART_NAME}" | cut -d "/" -f 4)
+  ROOT_DEV="/dev/\${ROOT_DEV_NAME}"
+  ROOT_PART_NUM=\$(cat "/sys/block/\${ROOT_DEV_NAME}/\${ROOT_PART_NAME}/partition")
+
+  BOOT_PART_DEV=\$(findmnt /boot -o source -n)
+  BOOT_PART_NAME=\$(echo "\$BOOT_PART_DEV" | cut -d "/" -f 3)
+  BOOT_DEV_NAME=\$(echo /sys/block/*/"\${BOOT_PART_NAME}" | cut -d "/" -f 4)
+  BOOT_PART_NUM=\$(cat "/sys/block/\${BOOT_DEV_NAME}/\${BOOT_PART_NAME}/partition")
+
+  OLD_DISKID=\$(fdisk -l "\$ROOT_DEV" | sed -n 's/Disk identifier: 0x\([^ ]*\)/\1/p')
+
+  ROOT_DEV_SIZE=\$(cat "/sys/block/\${ROOT_DEV_NAME}/size")
+  TARGET_END=\$((ROOT_DEV_SIZE - 1))
+
+  PARTITION_TABLE=\$(parted -m "\$ROOT_DEV" unit s print | tr -d 's')
+
+  LAST_PART_NUM=\$(echo "\$PARTITION_TABLE" | tail -n 1 | cut -d ":" -f 1)
+
+  ROOT_PART_LINE=\$(echo "\$PARTITION_TABLE" | grep -e "^\${ROOT_PART_NUM}:")
+  ROOT_PART_START=\$(echo "\$ROOT_PART_LINE" | cut -d ":" -f 2)
+  ROOT_PART_END=\$(echo "\$ROOT_PART_LINE" | cut -d ":" -f 3)
+
+}
+
+fix_partuuid() {
+  mount -o remount,rw "\$ROOT_PART_DEV"
+  mount -o remount,rw "\$BOOT_PART_DEV"
+  DISKID="\$(tr -dc 'a-f0-9' < /dev/hwrng | dd bs=1 count=8 2>/dev/null)"
+  fdisk "\$ROOT_DEV" > /dev/null <<EOF
+x
+i
+0x\$DISKID
+r
+w
+EOF
+  if [ "\$?" -eq 0 ]; then
+    sed -i "s/\${OLD_DISKID}/\${DISKID}/g" /etc/fstab
+    sed -i "s/\${OLD_DISKID}/\${DISKID}/" /boot/cmdline.txt
+    sync
+  fi
+
+  resize2fs "\$ROOT_PART_DEV"
+  rm /expand-fs.sh
+
+  mount -o remount,ro "\$ROOT_PART_DEV"
+  mount -o remount,ro "\$BOOT_PART_DEV"
+}
+
+check_variables () {
+  if [ "\$BOOT_DEV_NAME" != "\$ROOT_DEV_NAME" ]; then
+      FAIL_REASON="Boot and root partitions are on different devices"
+      return 1
+  fi
+
+  if [ "\$ROOT_PART_NUM" -ne "\$LAST_PART_NUM" ]; then
+    FAIL_REASON="Root partition should be last partition"
+    return 1
+  fi
+
+  if [ "\$ROOT_PART_END" -gt "\$TARGET_END" ]; then
+    FAIL_REASON="Root partition runs past the end of device"
+    return 1
+  fi
+
+  if [ ! -b "\$ROOT_DEV" ] || [ ! -b "\$ROOT_PART_DEV" ] || [ ! -b "\$BOOT_PART_DEV" ] ; then
+    FAIL_REASON="Could not determine partitions"
+    return 1
+  fi
+}
+
+main () {
+  get_variables
+
+  if ! check_variables; then
+    return 1
+  fi
+
+  if [ "\$ROOT_PART_END" -eq "\$TARGET_END" ]; then
+    mount -o remount,rw "\$BOOT_PART_DEV"
+    resize2fs "\$ROOT_PART_DEV"
+    rm /expand-fs.sh
+    mount -o remount,ro "\$ROOT_PART_DEV"
+    reboot_pi
+  fi
+
+  if ! parted -m "\$ROOT_DEV" u s resizepart "\$ROOT_PART_NUM" "\$TARGET_END"; then
+    FAIL_REASON="Root partition resize failed"
+    return 1
+  fi
+
+  fix_partuuid
+
+  return 0
+}
+
+##############################################################################
+
+mount -t proc proc /proc
+mount -t sysfs sys /sys
+mount -t tmpfs tmp /run
+mkdir -p /run/systemd
+
+mount /boot
+mount / -o remount,ro
+
+sed -i 's| init=/expand-fs\.sh||' /boot/cmdline.txt
+sed -i 's| sdhci\.debug_quirks2=4||' /boot/cmdline.txt
+
+if ! grep -q splash /boot/cmdline.txt; then
+  sed -i "s/ quiet//g" /boot/cmdline.txt
+fi
+mount /boot -o remount,ro
+sync
+
+if main; then
+  whiptail --infobox "Resized root filesystem. Rebooting in 5 seconds..." 20 60
+  sleep 5
+else
+  whiptail --msgbox "Could not expand filesystem, please try raspi-config or rc_gui.\n\${FAIL_REASON}" 20 60
+  sleep 5
+fi
+
+reboot_pi
+EOF2
+    debug 'DEBUG' "Adding 'init=/expand-fs.sh' to ${TMP_DIR}/boot/cmdline.txt"
+    sed -i 's/rootwait/& init=\/expand-fs.sh/' ${TMP_DIR}/boot/cmdline.txt
+    debug 'DEBUG' "Creating ${TMP_DIR}/expand-fs.sh executable: chmod +x ${TMP_DIR}/expand-fs.sh"
+    chmod +x ${TMP_DIR}/expand-fs.sh
+    echo '## Raspberry pi filesystem autoresizing at boot...'
+    debug 'INFO' 'Raspberry pi filesystem autoresizing at boot'
+    sleep 1
+  else
+    echo '## No autoexpand option available for this os...'
+    debug 'WARNING' 'No autoexpand option available for this os'
+    AUTOEXPAND='failed'
+    sleep 1
+  fi
+}
+
+
+
+# Process the non-option arguments, checks/fixes if the imagefile comes before the options
+while [ "$#" -gt 0 ];
+do
+  if [[ "$1" =~ ^- ]]; then
+    shift
+  else
+    IMG_FILE="$1"
+    ADDED_SPACE="$2"
+    break
+  fi
+
+done
+
+# Check if the image file has the correct extension
+if [[ "$IMG_FILE" != *.img ]]; then
+  echo 'File must have .img extension'
+  debug 'ERROR' 'File must have .img extension, exit 2'
+  exit 2
+fi
+
+if [ "$EXCLUDE_FILE" == true ]; then
+  debug 'INFO' '-f selected by user, using exclude.txt'
+  debug 'DEBUG' 'Checking if EXCLUDE_FILE exists'
+  if ! [ -f $(dirname "$0")/exclude.txt ]; then
+    echo 'ERROR! exclude.txt is not present in script directory!'
+    debug 'ERROR' 'exclude.txt does not exist in script directory, exit 2'
+    exit 2
+  fi
+  debug 'INFO' "$(dirname $0)/exclude.txt does exist"
+fi
+
+if [ "$UPDATE" != true ]; then
+  debug 'DEBUG' 'Executing make_img function'
+  make_img
+else
+  debug 'DEBUG' 'User selected -U, executing do_backup function'
+  do_backup
+fi
+
+exit 0
