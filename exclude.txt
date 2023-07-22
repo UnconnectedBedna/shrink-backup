@@ -1,0 +1,10 @@
+/lost+found
+/proc/*
+/sys/*
+/dev/*
+/tmp/*
+/run/*
+/mnt/*
+/media/*
+/var/log.hdd
+/var/swap
