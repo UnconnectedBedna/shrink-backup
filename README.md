@@ -54,6 +54,8 @@ If `-f` is **NOT** selected the following folders will be excluded:
 
 **Rsync WILL cross filesystem boundries, so make sure you exclude external drives unless you want them included in the backup.**
 
+Use `-d` to write debug info into `shrink-backup.log` file in the same directory as the script.
+
 Applications used in the script:
 - fdisk (sfdisk)
 - dd
