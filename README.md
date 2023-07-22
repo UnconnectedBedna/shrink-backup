@@ -70,11 +70,11 @@ Applications used in the script:
 Theoretically the script should work on any device with the main storage on `/dev/mmcblk0` and maximum 2 partitions (boot and root).
 The script can handle maximum 2 partitions, if there are more the script will not work.
 
-### Order or operations - image creation
+### Order of operations - image creation
 1. Reads the block sizes of the partitions
 2. Uses `dd` to create the boot part of the system + a few megabytes to include the filesystem on root (this *can* be a partition)
 3. Removes and recreates the root partition, size depends on options used when starting the script
-4. Creates a new filesystem with the same UUID and LABEL as the system you are backing up from
+4. Creates a new ext4 filesystem with the same UUID and LABEL as the system you are backing up from
 5. Uses `rsync` to sync both partitions (if more than one)
 
 This means it does not matter if boot is on a partition or f.ex uboot that Armbian uses.
@@ -82,8 +82,8 @@ This means it does not matter if boot is on a partition or f.ex uboot that Armbi
 Added space is added on top of `df` reported "used space", not the size of the partition. Added space is in MB, so if you want to add 1GB, add 1024.
 
 The script can be instructed to set the img size by requesting recomended minimum size from `e2fsck` by using the `-a` option.
-This is not the absolute smallest size you can achieve.
-It is the "safest" way to create an img file. If you do not increase the size of the filesystem you are backing up too much, you can most likely keep it updated with the update function (`-U`) of the script.
+This is not the absolute smallest size you can achieve but is the "safest" way to create a "smallest possible" img file.
+If you do not increase the size of the filesystem you are backing up too much, you can most likely keep it updated with the update function (`-U`) of the script.
 
 To get the absolute smallest img file possible, do NOT set `-a` option and set "extra space" to 0
 
@@ -99,12 +99,12 @@ Example:
 ```
 
 **Disclaimer:**
-Because of how filesystems work, df is never a true representation of what will actually fit on a created img file.
-Each file, no matter the size, will take up one block of the filesystem, so if you have a LOT of very small files (running docker f ex) the "0 added space method" might fail during rsync. Increase the 0 a little bit and retry.
+Because of how filesystems work, `df` is never a true representation of what will actually fit on a created img file.
+Each file, no matter the size, will take up one block of the filesystem, so if you have a LOT of very small files (running docker f.ex) the "0 added space method" might fail during rsync. Increase the 0 a little bit and retry.
 This also means you have VERY little free space on the img file after creation.
-If the filesystem you back up from increases in size, an update (-U) of the img file might fail.
+If the filesystem you back up from increases in size, an update (`-U`) of the img file might fail.
 
-### Order or operations - image update
+### Order of operations - image update
 1. Probes the img file for information about partitions
 2. Mounts root partition with an offset for the loop
 3. Checks if multiple partitions exists, if true, loops the boot with an offset and mounts it within the root mount
