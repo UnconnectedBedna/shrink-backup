@@ -4,8 +4,8 @@ _I made this script because I wanted a universal method of backing up my SBC:s i
 
 [shrink-backup](shrink-backup)
 
-Tested on **Raspberry Pi** os, **Armian** and **Manjaro-arm** with ext4 root partition.
-Autoexpansion will ONLY work on these three at the moment.
+Tested on **Raspberry Pi** os, **Armian**, **Manjaro-arm** and **ArchLinuxARM** for rpi with ext4 root partition.
+Autoexpansion will not work on ArchLinuxARM (will not fail, only warn) at the moment but works on the other three tested.
 If none of the above os's are detected, you will be informed that the autoexpand functionality is not available but will not fail the backup.
 
 **Do not forget to make the script executable after downloading it.**
