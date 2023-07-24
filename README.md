@@ -68,6 +68,7 @@ Applications used in the script:
 
 Theoretically the script should work on any device with the main storage on `/dev/mmcblk0` and maximum 2 partitions (boot and root).
 The script can handle maximum 2 partitions, if there are more the script will not work.
+Even if you forget to disable autoexpansion on a non supported system, the backup will not fail. :)
 
 ### Order of operations - image creation
 1. Reads the block sizes of the partitions
