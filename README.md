@@ -6,7 +6,6 @@ _I made this script because I wanted a universal method of backing up my SBC:s i
 
 Tested on **Raspberry Pi** os, **Armbian**, **Manjaro-arm** and **ArchLinuxARM** for rpi with ext4 root partition.
 Autoexpansion will not work on ArchLinuxARM (will not fail, only warn) at the moment but works on the other three tested.
-If none of the above os's are detected, you will be informed that the autoexpand functionality is not available but will not fail the backup.
 
 **Do not forget to make the script executable after downloading it.**
 
@@ -73,17 +72,17 @@ The script can handle maximum 2 partitions, if there are more the script will no
 ### Order of operations - image creation
 1. Reads the block sizes of the partitions
 2. Uses `dd` to create the boot part of the system + a few megabytes to include the filesystem on root (this *can* be a partition)
-3. Removes and recreates the root partition, size depends on options used when starting the script
+3. Removes and recreates the root partition, the size depends on options used when starting the script
 4. Creates a new ext4 filesystem with the same UUID and LABEL as the system you are backing up from
 5. Uses `rsync` to sync both partitions (if more than one)
 
-This means it does not matter if boot is on a partition or f.ex uboot that Armbian uses.
+This means it does not matter if boot is on a partition or not.
 
 Added space is added on top of `df` reported "used space", not the size of the partition. Added space is in MB, so if you want to add 1GB, add 1024.
 
 The script can be instructed to set the img size by requesting recomended minimum size from `e2fsck` by using the `-a` option.
 This is not the absolute smallest size you can achieve but is the "safest" way to create a "smallest possible" img file.
-If you do not increase the size of the filesystem you are backing up too much, you can most likely keep it updated with the update function (`-U`) of the script.
+If you do not increase the size of the filesystem you are backing up from too much, you can most likely keep it updated with the update function (`-U`) of the script.
 
 To get the absolute smallest img file possible, do NOT set `-a` option and set "extra space" to 0
 
