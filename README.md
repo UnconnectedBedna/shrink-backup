@@ -113,11 +113,11 @@ If the filesystem you back up from increases in size, an update (`-U`) of the im
 To update an existing img file simply use the `-U` option and the path to the img file.
 Changing size in an update is not possible at the moment but is in the todo list for the future.
 
-**Disclaimer**
+**Disclaimer:**
 EEPROM updates might not be backed up in an image update, keep that in mind.
 To be absolutely sure after doing changes to EEPROM it's better to make a brand new img rather than updating.
 As of this moment, there are no plans to include that functionality in the script.
 
 ## To restore a backup, simply "burn" the img file to an sd-card using your favorite method.
 
-*A backup is not really a backup until you have restored from it*
+*A backup is not really a backup until you have restored from it.*
