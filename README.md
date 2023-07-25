@@ -114,12 +114,10 @@ To update an existing img file simply use the `-U` option and the path to the im
 Changing size in an update is not possible at the moment but is in the todo list for the future.
 
 **Disclaimer**
-If you only have one partition on your SBC (like armbian) updating the backup will NOT update the boot, only if you have 2 partitions is this possible. With 2 partition the boot will also be updated if files have changed.
-
-The reason is the boot is not readable with the method used in the script, only dd would be able to achieve that.
-If you want to update the boot in this scenario, you have to create a new img file.
+EEPROM updates might not be backed up in an image update, keep that in mind.
+To be absolutely sure after doing changes to EEPROM it's better to make a brand new img rather than updating.
 As of this moment, there are no plans to include that functionality in the script.
 
-This situation would happen if you update uboot on your armbian. I don't think it happens very often, but never the less good to keep in mind.
-
 ## To restore a backup, simply "burn" the img file to an sd-card using your favorite method.
+
+*A backup is not really a backup until you have restored from it*
