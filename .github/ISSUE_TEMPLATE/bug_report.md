@@ -1,7 +1,7 @@
 ---
 name: Bug report
-about: Create a report to help us improve
-title: ''
+about: Create a report to help improve
+title: 'Bug in shrink-backup'
 labels: bug
 assignees: UnconnectedBedna
 
@@ -22,3 +22,4 @@ A clear and concise description of what you expected to happen.
 
 **Additional context**
 Add any other context about the problem here.
+Run in debug mode by using `-d` option and please provide the output of shrink-backup.log
