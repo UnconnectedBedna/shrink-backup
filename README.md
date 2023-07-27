@@ -1,11 +1,15 @@
-# shrink-backup is a bash script for backing up your SBC:s `/dev/mmcblk0` (SD-card) into an img file
+# shrink-backup is a bash script for backing up your SBC:s into an img file
 
 _I made this script because I wanted a universal method of backing up my SBC:s into img files as fast as possible (with rsync), no matter what os is in use._
 
+**Script is frequently updated so if you came here from a forum post, please read instructions below, option flags might have changed.**
+
 [shrink-backup](shrink-backup)
 
-Tested on **Raspberry Pi** os, **Armbian**, **Manjaro-arm** and **ArchLinuxARM** for rpi with ext4 root partition.
+Tested on **Raspberry Pi** os, **Armbian**, **Manjaro-arm** and **ArchLinuxARM** for rpi with ext4 root partition.<br>
 Autoexpansion will not work on ArchLinuxARM (will not fail, only warn) at the moment but works on the other three tested.
+
+Default divice that will be backed up unless changed with `-d` is SD-cards, ie `/dev/mmcblk0`
 
 **Do not forget to make the script executable after downloading it.**
 
@@ -15,29 +19,34 @@ sudo shrink-backup -h
 Script for creating an .img file and subsequently keeing it updated (-B), autoexpansion is enabled by default
 Directory where .img file is created is automatically excluded in backup
 ########################################################################
-Usage: sudo shrink-backup [-Uatyedh] imagefile.img [extra space (MB)]
-  -U         Update the img file (rsync to existing backup .img), no resizing, -a is ignored
+Usage: sudo shrink-backup [-Uatyeldh] imagefile.img [extra space (MB)]
+  -U         Update the img file (rsync to existing backup .img), no resizing, -a and -d is disregarded
   -a         Let resize2fs decide minimum space (extra space is ignored), disabled if using -U
   -t         Use exclude.txt in same folder as script to set excluded directories
              One directory per line: "/dir" or "/dir/*" to only exclude contents
   -y         Disable prompts in script
   -e         DO NOT expand filesystem when image is booted
-  -d         Write debug messages in log file shrink-backup.log in same directory as script
+  -l         Write debug messages in log file shrink-backup.log in same directory as script
+  -d [PATH]  EXPERIMENTAL! Use custom device path. default = /dev/mmcblk0
+             MAXIMUM 2 partitions, more and the script will not function correctly!
+             Feedback on functionality is apreciated (https://github.com/UnconnectedBedna/shrink-backup/discussions)
   -h --help  Show this help snippet
 ########################################################################
 Example: sudo shrink-backup -at /path/to/backup.img
 Example: sudo shrink-backup -e -y /path/to/backup.img 1000
 Example: sudo shrink-backup -Ut /path/to/backup.img
+Example: sudo shrink-backup -ad /dev/sda /path/to/backup.img
+Example: sudo shrink-backup -atd /dev/nvme0n1 /path/to/backup.img
 ```
 
-The folder where the img file is created will ALWAYS be excluded in the backup.
-If `-f` option is selected, exclude.txt **MUST exist** (but can be empty) within the **directory where the script is located** or the script will exit with an error.
+The folder where the img file is created will ALWAYS be excluded in the backup.<br>
+If `-t` option is selected, exclude.txt **MUST exist** (but can be empty) within the **directory where the script is located** or the script will exit with an error.
 
-Use one directory per line in exclude.txt.
-`/directory/*` = create directory but exclude content.
+Use one directory per line in exclude.txt.<br>
+`/directory/*` = create directory but exclude content.<br>
 `/directory` = exclude the directory completely.
 
-If `-f` is **NOT** selected the following folders will be excluded:
+If `-t` is **NOT** selected the following folders will be excluded:
 ```
 /lost+found
 /proc/*
@@ -53,7 +62,7 @@ If `-f` is **NOT** selected the following folders will be excluded:
 
 **Rsync WILL cross filesystem boundries, so make sure you exclude external drives unless you want them included in the backup.**
 
-Use `-d` to write debug info into `shrink-backup.log` file in the same directory as the script.
+Use `-l` to write debug info into `shrink-backup.log` file in the same directory as the script.
 
 Applications used in the script:
 - fdisk (sfdisk)
@@ -66,9 +75,11 @@ Applications used in the script:
 
 ## Info
 
-Theoretically the script should work on any device with the main storage on `/dev/mmcblk0` and maximum 2 partitions (boot and root).
-The script can handle maximum 2 partitions, if there are more the script will not work.
+Theoretically the script should work on any device with maximum 2 partitions (boot and root).<br>
+The script can handle maximum 2 partitions, if there are more than that on root device the script will fail with an error.<br>
 Even if you forget to disable autoexpansion on a non supported system, the backup will not fail. :)
+
+Custom device part can be set with `-d /dev/xxx`. This function is untested simply because I lack good hardware for proper testing. [Feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) on functionality is highly apreciated! If `-d` is not selected, default device path is used: `/dev/mmcblk`
 
 ### Order of operations - image creation
 1. Reads the block sizes of the partitions
@@ -81,15 +92,15 @@ This means it does not matter if boot is on a partition or not.
 
 Added space is added on top of `df` reported "used space", not the size of the partition. Added space is in MB, so if you want to add 1GB, add 1024.
 
-The script can be instructed to set the img size by requesting recomended minimum size from `e2fsck` by using the `-a` option.
-This is not the absolute smallest size you can achieve but is the "safest" way to create a "smallest possible" img file.
+The script can be instructed to set the img size by requesting recomended minimum size from `e2fsck` by using the `-a` option.<br>
+This is not the absolute smallest size you can achieve but is the "safest" way to create a "smallest possible" img file.<br>
 If you do not increase the size of the filesystem you are backing up from too much, you can most likely keep it updated with the update function (`-U`) of the script.
 
 To get the absolute smallest img file possible, do NOT set `-a` option and set "extra space" to 0
 
 Example: `sudo shrink-backup /path/to/backup.img 0`
 
-This will instruct the script to get the used space from `df` and adding 192MB "*wiggle room*".
+This will instruct the script to get the used space from `df` and adding 192MB "*wiggle room*".<br>
 If you are like me, doing a lot of testing, rewriting the sd-card multiple times. The extra time it takes each time will add up pretty fast.
 
 Example:
@@ -99,9 +110,9 @@ Example:
 ```
 
 **Disclaimer:**
-Because of how filesystems work, `df` is never a true representation of what will actually fit on a created img file.
-Each file, no matter the size, will take up one block of the filesystem, so if you have a LOT of very small files (running docker f.ex) the "0 added space method" might fail during rsync. Increase the 0 a little bit and retry.
-This also means you have VERY little free space on the img file after creation.
+Because of how filesystems work, `df` is never a true representation of what will actually fit on a created img file.<br>
+Each file, no matter the size, will take up one block of the filesystem, so if you have a LOT of very small files (running docker f.ex) the "0 added space method" might fail during rsync. Increase the 0 a little bit and retry.<br>
+This also means you have VERY little free space on the img file after creation.<br>
 If the filesystem you back up from increases in size, an update (`-U`) of the img file might fail.
 
 ### Order of operations - image update
@@ -110,12 +121,12 @@ If the filesystem you back up from increases in size, an update (`-U`) of the im
 3. Checks if multiple partitions exists, if true, loops the boot with an offset and mounts it within the root mount
 4. Uses `rsync` to sync both partitions (if more than one)
 
-To update an existing img file simply use the `-U` option and the path to the img file.
+To update an existing img file simply use the `-U` option and the path to the img file.<br>
 Changing size in an update is not possible at the moment but is in the todo list for the future.
 
 **Disclaimer:**
-EEPROM updates might not be backed up in an image update, keep that in mind.
-To be absolutely sure after doing changes to EEPROM it's better to make a brand new img rather than updating.
+EEPROM updates might not be backed up in an image update, keep that in mind.<br>
+To be absolutely sure after doing changes to EEPROM it's better to make a brand new img rather than updating.<br>
 As of this moment, there are no plans to include that functionality in the script.
 
 ## To restore a backup, simply "burn" the img file to an sd-card using your favorite method.
