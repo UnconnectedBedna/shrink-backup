@@ -106,7 +106,7 @@ Usage: sudo $(basename "$0") [-Uatyeldh] imagefile.img [extra space (MB)]
   -e         DO NOT expand filesystem when image is booted
   -l         Write debug messages in log file shrink-backup.log in same directory as script
   -d [PATH]  Use custom device path. EXPERIMENTAL, default = /dev/mmcblk0
-             MAXIMUM 2 partitions, more and the script will not function correctly!
+             MAXIMUM 2 partitions, more and the script will fail with an error
              Feedback on functionality is apreciated (https://github.com/UnconnectedBedna/shrink-backup/discussions)
   -h --help  Show this help snippet
 ########################################################################
