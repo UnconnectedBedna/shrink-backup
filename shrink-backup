@@ -205,16 +205,18 @@ function make_img() {
   # Check if custom device path is requested and set DEV_PATH accordingly
   if [ "$CUSTOM_DEV_PATH" == false ]; then
     if [ $(sudo fdisk -lo device "$HD_DEV_PATH" | grep -c "$HD_DEV_PATH") -gt 2 ]; then
+      BOOT_DEV_PATH='/dev/mmcblk0p1'
       DEV_PATH='/dev/mmcblk0p2'
-      debug 'DEBUG' "2 partitions detected, setting DEV_PATH=$DEV_PATH"
+      debug 'DEBUG' "2 partitions detected, setting DEV_PATH=$DEV_PATH and BOOT_DEV_PATH=$BOOT_DEV_PATH"
     else
       DEV_PATH='/dev/mmcblk0p1'
       debug 'DEBUG' "1 partition detected, setting DEV_PATH=$DEV_PATH"
     fi
   else
     if [ $(sudo fdisk -lo device "$HD_DEV_PATH" | grep -c "$HD_DEV_PATH") -gt 2 ]; then
+      BOOT_DEV_PATH=$(sudo fdisk -lo device "$HD_DEV_PATH" | grep "$HD_DEV_PATH" | tail -2 | head -1)
       DEV_PATH=$(sudo fdisk -lo device "$HD_DEV_PATH" | grep "$HD_DEV_PATH" | tail -1)
-      debug 'DEBUG' "2 partitions detected, setting DEV_PATH=$DEV_PATH"
+      debug 'DEBUG' "2 partitions detected, setting DEV_PATH=$DEV_PATH and BOOT_DEV_PATH=$BOOT_DEV_PATH"
     else
       DEV_PATH=$(sudo fdisk -lo device "$HD_DEV_PATH" | grep "$HD_DEV_PATH" | tail -1)
       debug 'DEBUG' "1 partition detected, setting DEV_PATH=$DEV_PATH"
@@ -471,7 +473,7 @@ function make_img() {
   fi
   debug 'DEBUG' "Running: mount $LOOP0 $TMP_DIR"
   sleep 1
-  if [ -e "$DEV_PATH" ]; then
+  if [ -e "$BOOT_DEV_PATH" ]; then
     echo '## Mounting boot partition...'
     debug 'INFO' 'Separate boot partition detected, mounting boot inside img file'
     BOOT_PATH=$(cat /etc/fstab | grep '/boot' | awk '{print $2}')
@@ -576,7 +578,17 @@ function do_backup() {
   debug 'DEBUG' "Running: mount -o loop,offset=$OFFSET,x-mount.mkdir $IMG_FILE $TMP_DIR"
   sleep 1
 
-  if [ -e "$DEV_PATH" ]; then
+  # Check if multiple partitions exist
+  if [ $(sudo fdisk -lo device "$IMG_FILE" | grep -c "$IMG_FILE") -gt 2 ]; then
+    BOOT_DEV_PATH=$(sudo fdisk -lo device "$IMG_FILE" | grep "$IMG_FILE" | tail -2 | head -1)
+    DEV_PATH=$(sudo fdisk -lo device "$IMG_FILE" | grep "$IMG_FILE" | tail -1)
+    debug 'DEBUG' "2 partitions detected, setting DEV_PATH=$DEV_PATH and BOOT_DEV_PATH=$BOOT_DEV_PATH"
+  else
+    DEV_PATH=$(sudo fdisk -lo device "$IMG_FILE" | grep "$IMG_FILE" | tail -1)
+    debug 'DEBUG' "1 partition detected, setting DEV_PATH=$DEV_PATH"
+  fi
+
+  if [ -e "$BOOT_DEV_PATH" ]; then
     echo '## Mounting boot...'
     debug 'INFO' 'Separate boot partition detected, mounting boot inside img file'
     OFFSET_BOOT=$(fdisk -lo start "$IMG_FILE" | tail -2 | head -1) # blocks, 512B block size
