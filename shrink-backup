@@ -395,7 +395,7 @@ function make_img() {
   # Remove partition
   echo '## Removing root partition...'
   debug 'INFO' 'Using sfdisk to remove root partition'
-  if [ -e "$DEV_PATH" ]; then
+  if [ -e "$BOOT_DEV_PATH" ]; then
     LOOP0='/dev/loop0p2'
     LOOP1='/dev/loop0p1'
     debug 'DEBUG' "2 partitions detected, setting LOOP0=$LOOP0 and LOOP1=$LOOP1"
