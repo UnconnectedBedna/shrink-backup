@@ -6,5 +6,4 @@
 /run/*
 /mnt/*
 /media/*
-/var/log.hdd
 /var/swap
