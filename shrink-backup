@@ -530,6 +530,7 @@ function make_img() {
   AFTER_SIZE=$(ls -lh "$IMG_FILE" | cut -d ' ' -f 5)
 
   # Print result
+  echo '##############################################################################
   echo '## Backup done.'
   echo "## Autoexpand filesystem at boot: $AUTOEXPAND"
   if [ "$RESIZE2FS_RUN" = true ]; then
