@@ -588,7 +588,7 @@ function do_backup() {
     debug 'DEBUG' "1 partition detected, setting DEV_PATH=$DEV_PATH"
   fi
 
-  if [ -e "$BOOT_DEV_PATH" ]; then
+  if [ -n "$BOOT_DEV_PATH" ]; then
     echo '## Mounting boot...'
     debug 'INFO' 'Separate boot partition detected, mounting boot inside img file'
     OFFSET_BOOT=$(fdisk -lo start "$IMG_FILE" | tail -2 | head -1) # blocks, 512B block size
