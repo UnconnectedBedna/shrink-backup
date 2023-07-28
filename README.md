@@ -56,7 +56,6 @@ If `-t` is **NOT** selected the following folders will be excluded:
 /run/*
 /mnt/*
 /media/*
-/var/log.hdd
 /var/swap
 ```
 
