@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # shrink-backup.sh
 # SD-card (mmcblk) backup tool for backing up and updating .img files
@@ -289,6 +289,7 @@ function make_img() {
       echo '##############################################################################'
     fi
 
+    # Confirm with user input
     read -p "Do you want to continue? [y/n] " -n 1 -r
     debug 'INFO' 'Do you want to continue? [y/n]'
     if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
@@ -547,6 +548,20 @@ function do_backup() {
   OFFSET=$(( OFFSET * 512 )) # bytes
   debug 'DEBUG' "Using fdisk to find root partition offset: fdisk -lo start $IMG_FILE | tail -1"
   debug 'INFO' "OFFSET=${OFFSET} Bytes"
+
+  # Confirm with user input if not disabled
+  if [ "$PROMPTS" == true ]; then
+    read -p "Do you want to continue? [y/n] " -n 1 -r
+    debug 'INFO' 'Do you want to continue? [y/n]'
+    if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
+      debug 'USER_INPUT' 'Aborted by user, exit 2'
+      echo ''
+      echo 'Aborting...'
+      exit 2
+    fi
+    echo ''
+    debug 'USER_INPUT' 'Y or y pressed to confirm'
+  fi
 
   # Create a temporary directory to mount the image
   echo '## Mounting img file to temp directory...'
