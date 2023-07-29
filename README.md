@@ -11,7 +11,7 @@ Autoexpansion will not work on ArchLinuxARM (will not fail, only warn) at the mo
 
 Default divice that will be backed up unless changed with `-d` is SD-cards, ie `/dev/mmcblk0`
 
-**Do not forget to make the script executable after downloading it.**
+**Don't forget to make the script executable**
 
 ## Usage:
 ```
