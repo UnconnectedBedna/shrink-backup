@@ -554,7 +554,9 @@ function do_backup() {
 
   # Confirm with user input if not disabled
   if [ "$PROMPTS" == true ]; then
+    echo "## Updating $IMG_FILE"
     read -p "Do you want to continue? [y/n] " -n 1 -r
+    debug 'INFO' "Updating $IMG_FILE"
     debug 'INFO' 'Do you want to continue? [y/n]'
     if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
       debug 'USER_INPUT' 'Aborted by user, exit 2'
