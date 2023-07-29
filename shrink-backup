@@ -736,7 +736,7 @@ EOF
     debug 'INFO' 'Armbian filesystem autoresizing at boot'
     sleep 1
 
-  elif uname -a | grep -q 'raspberry'; then
+  elif uname -a | grep -q 'raspberry' || [ -e /etc/apt/sources.list.d/raspi.list ]; then
     debug 'INFO' 'Raspberry pi detected'
 
     # Enable Raspberry pi autoexpand
