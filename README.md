@@ -125,7 +125,8 @@ Changing size in an update is not possible at the moment but is in the todo list
 
 **Disclaimer:**
 EEPROM updates might not be backed up in an image update, keep that in mind.<br>
-To be absolutely sure after doing changes to EEPROM it's better to make a brand new img rather than updating.<br>
+Same with updates to U-Boot if it's in use.<br>
+To be absolutely sure after doing changes to EEPROM or U-Boot it's better to make a brand new img rather than updating.<br>
 As of this moment, there are no plans to include that functionality in the script.
 
 ## To restore a backup, simply "burn" the img file to an sd-card using your favorite method.
