@@ -105,7 +105,7 @@ Usage: sudo $(basename "$0") [-Uatyeldh] imagefile.img [extra space (MB)]
   -y         Disable prompts in script
   -e         DO NOT expand filesystem when image is booted
   -l         Write debug messages in log file shrink-backup.log in same directory as script
-  -d [PATH]  Use custom device path. EXPERIMENTAL, default = /dev/mmcblk0
+  -d [PATH]  EXPERIMENTAL! Use custom device path. default = /dev/mmcblk0
              MAXIMUM 2 partitions, more and the script will fail with an error
              Feedback on functionality is apreciated (https://github.com/UnconnectedBedna/shrink-backup/discussions)
   -h --help  Show this help snippet
@@ -202,24 +202,24 @@ function make_img() {
     exit 2
   fi
 
-  # Check if custom device path is requested and set DEV_PATH accordingly
+  # Check if custom device path is requested and set ROOT_DEV_PATH and BOOT_DEV_PATH accordingly
   if [ "$CUSTOM_DEV_PATH" == false ]; then
     if [ $(sudo fdisk -lo device "$HD_DEV_PATH" | grep -c "$HD_DEV_PATH") -gt 2 ]; then
       BOOT_DEV_PATH='/dev/mmcblk0p1'
-      DEV_PATH='/dev/mmcblk0p2'
-      debug 'DEBUG' "2 partitions detected, setting DEV_PATH=$DEV_PATH and BOOT_DEV_PATH=$BOOT_DEV_PATH"
+      ROOT_DEV_PATH='/dev/mmcblk0p2'
+      debug 'DEBUG' "2 partitions detected, setting ROOT_DEV_PATH=$ROOT_DEV_PATH and BOOT_DEV_PATH=$BOOT_DEV_PATH"
     else
-      DEV_PATH='/dev/mmcblk0p1'
-      debug 'DEBUG' "1 partition detected, setting DEV_PATH=$DEV_PATH"
+      ROOT_DEV_PATH='/dev/mmcblk0p1'
+      debug 'DEBUG' "1 partition detected, setting ROOT_DEV_PATH=$ROOT_DEV_PATH"
     fi
   else
     if [ $(sudo fdisk -lo device "$HD_DEV_PATH" | grep -c "$HD_DEV_PATH") -gt 2 ]; then
       BOOT_DEV_PATH=$(sudo fdisk -lo device "$HD_DEV_PATH" | grep "$HD_DEV_PATH" | tail -2 | head -1)
-      DEV_PATH=$(sudo fdisk -lo device "$HD_DEV_PATH" | grep "$HD_DEV_PATH" | tail -1)
-      debug 'DEBUG' "2 partitions detected, setting DEV_PATH=$DEV_PATH and BOOT_DEV_PATH=$BOOT_DEV_PATH"
+      ROOT_DEV_PATH=$(sudo fdisk -lo device "$HD_DEV_PATH" | grep "$HD_DEV_PATH" | tail -1)
+      debug 'DEBUG' "2 partitions detected, setting ROOT_DEV_PATH=$ROOT_DEV_PATH and BOOT_DEV_PATH=$BOOT_DEV_PATH"
     else
-      DEV_PATH=$(sudo fdisk -lo device "$HD_DEV_PATH" | grep "$HD_DEV_PATH" | tail -1)
-      debug 'DEBUG' "1 partition detected, setting DEV_PATH=$DEV_PATH"
+      ROOT_DEV_PATH=$(sudo fdisk -lo device "$HD_DEV_PATH" | grep "$HD_DEV_PATH" | tail -1)
+      debug 'DEBUG' "1 partition detected, setting ROOT_DEV_PATH=$ROOT_DEV_PATH"
     fi
   fi
 
@@ -230,8 +230,8 @@ function make_img() {
   debug 'INFO' "BOOTSECTOR=${BOOTSECTOR} blocks - this is actually the startsector for the root partition"
   debug 'INFO' "DDBOOTSECTOR=${DDBOOTSECTOR} blocks"
   BOOTSECTOR=$(( BOOTSECTOR * 512 )) # bytes, 8192 x 512 = 4194304
-  BLOCKSIZE=$(dumpe2fs -h "$DEV_PATH" | grep "Block size" | awk '{print $3}') # bytes
-  RESIZE2FS_MIN=$(resize2fs -P "$DEV_PATH" | awk '{print $7}' | tail -1) # blocks
+  BLOCKSIZE=$(dumpe2fs -h "$ROOT_DEV_PATH" | grep "Block size" | awk '{print $3}') # bytes
+  RESIZE2FS_MIN=$(resize2fs -P "$ROOT_DEV_PATH" | awk '{print $7}' | tail -1) # blocks
   RESIZE2FS_MIN=$(( RESIZE2FS_MIN * BLOCKSIZE )) # bytes
   #DF_OUTPUT=( $(df / --output=size,avail | tail -1) ) # 1k blocks, 0 is the first position in an array
   #USED_SPACE=$(( (${DF_OUTPUT[0]} - ${DF_OUTPUT[1]}) * 1024 )) # bytes, df is 1k block size, 0 is the first position
@@ -434,8 +434,8 @@ function make_img() {
   # Format filesystem
   echo '## Formatting filesystem...'
   debug 'INFO' 'Using mkfs.ext4 to format root filesystem'
-  LABEL=( $(lsblk -o label "$DEV_PATH" | tail -1) )
-  UUID=( $(lsblk -o uuid "$DEV_PATH" | tail -1) )
+  LABEL=( $(lsblk -o label "$ROOT_DEV_PATH" | tail -1) )
+  UUID=( $(lsblk -o uuid "$ROOT_DEV_PATH" | tail -1) )
   if ! output=$(mkfs.ext4 "$LOOP0" -U "$UUID" -L "$LABEL" -F -v 2>&1 | tee /dev/tty ); then
     echo -e "$output\nMKFS.EXT4 FAILED!!!"
     debug 'BREAK'
@@ -530,7 +530,7 @@ function make_img() {
   AFTER_SIZE=$(ls -lh "$IMG_FILE" | cut -d ' ' -f 5)
 
   # Print result
-  echo '##############################################################################
+  echo '##############################################################################'
   echo '## Backup done.'
   echo "## Autoexpand filesystem at boot: $AUTOEXPAND"
   if [ "$RESIZE2FS_RUN" = true ]; then
@@ -584,11 +584,11 @@ function do_backup() {
   # Check if multiple partitions exist
   if [ $(sudo fdisk -lo device "$IMG_FILE" | grep -c "$IMG_FILE") -gt 2 ]; then
     BOOT_DEV_PATH=$(sudo fdisk -lo device "$IMG_FILE" | grep "$IMG_FILE" | tail -2 | head -1)
-    DEV_PATH=$(sudo fdisk -lo device "$IMG_FILE" | grep "$IMG_FILE" | tail -1)
-    debug 'DEBUG' "2 partitions detected, setting DEV_PATH=$DEV_PATH and BOOT_DEV_PATH=$BOOT_DEV_PATH"
+    ROOT_DEV_PATH=$(sudo fdisk -lo device "$IMG_FILE" | grep "$IMG_FILE" | tail -1)
+    debug 'DEBUG' "2 partitions detected, setting ROOT_DEV_PATH=$ROOT_DEV_PATH and BOOT_DEV_PATH=$BOOT_DEV_PATH"
   else
-    DEV_PATH=$(sudo fdisk -lo device "$IMG_FILE" | grep "$IMG_FILE" | tail -1)
-    debug 'DEBUG' "1 partition detected, setting DEV_PATH=$DEV_PATH"
+    ROOT_DEV_PATH=$(sudo fdisk -lo device "$IMG_FILE" | grep "$IMG_FILE" | tail -1)
+    debug 'DEBUG' "1 partition detected, setting ROOT_DEV_PATH=$ROOT_DEV_PATH"
   fi
 
   if [ -n "$BOOT_DEV_PATH" ]; then
@@ -663,8 +663,8 @@ function do_rsync() {
     fi
     sleep 4
   else
-    debug 'DEBUG' "Running: rsync -ahvD --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/swap,${IMG_PATH}/*} --info=progress2 --stats --delete --force --partial --delete-excluded / $TMP_DIR"
-    if ! rsync -ahvD --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/swap,${IMG_PATH}/*} --info=progress2 --stats --delete --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/tty > "$tmp_file"; then
+    debug 'DEBUG' "Running: rsync -ahvD --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,${IMG_PATH}/*} --info=progress2 --stats --delete --force --partial --delete-excluded / $TMP_DIR"
+    if ! rsync -ahvD --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,${IMG_PATH}/*} --info=progress2 --stats --delete --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/tty > "$tmp_file"; then
       output=$(tail -16 "$tmp_file")
       echo -e "$output\nRSYNC FAILED!!!"
       debug 'BREAK'
@@ -738,7 +738,7 @@ EOF
     debug 'INFO' 'Armbian filesystem autoresizing at boot'
     sleep 1
 
-  elif uname -a | grep -q 'raspberry' || [ -e /etc/apt/sources.list.d/raspi.list ]; then
+  elif uname -a | grep -q 'raspberry' || [ -e /etc/apt/sources.list.d/raspi.list ] || ; then
     debug 'INFO' 'Raspberry pi detected'
 
     # Enable Raspberry pi autoexpand
