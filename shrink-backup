@@ -723,7 +723,7 @@ EOF
     debug 'INFO' 'Manjaro filesystem autoresizing at boot'
     sleep 1
 
-  elif [ -f /etc/armbian-release ]; then
+  elif [ -e /etc/armbian-release ]; then
     debug 'INFO' 'Armbian os detected'
 
     # Create symlink for armbian-resize-filesystem.service
