@@ -654,7 +654,7 @@ function do_rsync() {
 
   if [ "$EXCLUDE_FILE" == true ]; then
     debug 'DEBUG' "Running: rsync -ahvD --exclude-from=$(dirname $0)/exclude.txt --exclude=${IMG_PATH}/* --info=progress2 --stats --delete --force --partial --delete-excluded / $TMP_DIR"
-    if ! rsync -ahvD --exclude-from=$(dirname "$0")/exclude.txt --exclude=${IMG_PATH}/* --info=progress2 --stats --delete --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/tty  > "$tmp_file"; then
+    if ! rsync -ahvD --exclude-from=$(dirname "$0")/exclude.txt --exclude={${IMG_PATH}/*,${TMP_DIR}} --info=progress2 --stats --delete --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/tty  > "$tmp_file"; then
       output=$(tail -16 "$tmp_file")
       echo -e "$output\nRSYNC FAILED!!!"
       debug 'BREAK'
