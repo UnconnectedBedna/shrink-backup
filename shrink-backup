@@ -929,7 +929,7 @@ if [[ "$IMG_FILE" != *.img ]]; then
 fi
 
 if [ "$DEBUG" == true ]; then
-  echo "Debugging selected, writing to $LOG_FILE"
+  echo "## Debugging selected, writing to $LOG_FILE"
   debug 'INFO' "Debugging requested, writing to log file $(basename "$LOG_FILE")..."
   debug 'INFO' "Update existing img file selected, UPDATE=$UPDATE"
   debug 'INFO' "Requesting size from resize2fs selected, RESIZE2FS_RUN=$RESIZE2FS_RUN"
