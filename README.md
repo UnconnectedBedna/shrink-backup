@@ -78,7 +78,10 @@ Theoretically the script should work on any device with maximum 2 partitions (bo
 The script can handle maximum 2 partitions, if there are more than that on root device the script will fail with an error.<br>
 Even if you forget to disable autoexpansion on a non supported system, the backup will not fail. :)
 
-Custom device part can be set with `-d /dev/xxx`. This function is untested simply because I lack good hardware for proper testing. [Feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) on functionality is highly apreciated! If `-d` is not selected, default device path is used: `/dev/mmcblk`
+Custom device part can be set with `-d /dev/xxx`. This function is untested simply because I lack good hardware for proper testing but it has been tested on Raspberry pi os.<br>
+See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information.<br>
+[Feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) on functionality is highly apreciated!<br>
+If `-d` is not selected, default device path is used: `/dev/mmcblk`
 
 ### Order of operations - image creation
 1. Reads the block sizes of the partitions
