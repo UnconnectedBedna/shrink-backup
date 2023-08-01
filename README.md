@@ -6,10 +6,11 @@ _I made this script because I wanted a universal method of backing up my SBC:s i
 
 [shrink-backup](shrink-backup)
 
-Tested on **Raspberry Pi** os, **Armbian**, **Manjaro-arm** and **ArchLinuxARM** for rpi with ext4 root partition.<br>
+Tested on **Raspberry Pi** os, **Armbian**, **Manjaro-arm** and **ArchLinuxARM** for rpi with **ext4** root partition.<br>
 Autoexpansion will not work on ArchLinuxARM (will not fail, only warn) at the moment but works on the other three tested.
 
-Default divice that will be backed up unless changed with `-d` is SD-cards, ie `/dev/mmcblk0`<br>
+Default device that will be backed up unless changed with `-d` is SD-cards, ie `/dev/mmcblk0`<br>
+Booting/backing up from usb-stick (`/dev/sda`) with Raspberry pi os has been tested lightly and works but is still considered **experimental**.<br>
 See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information about using other devices.
 
 **Don't forget to make the script executable**
