@@ -701,7 +701,7 @@ rm /expand-fs.sh
 exit 0
 EOF
 
-cat << EOF > "${TMP_DIR}/etc/systemd/system/expand-fs.service"
+    cat << EOF > "${TMP_DIR}/etc/systemd/system/expand-fs.service"
 [Unit]
 Description=One time boot script
 
@@ -891,6 +891,37 @@ EOF2
     echo '## Raspberry pi filesystem autoresizing at boot...'
     debug 'INFO' 'Raspberry pi filesystem autoresizing at boot'
     sleep 1
+
+  elif [ -e /usr/bin/growpart ]; then
+    # Enabling autoexpansion for ArchLinuxArm using growpartfs
+    echo '## Growpart found, running autoexpansion for ArchLinuxArm...'
+    debug 'INFO' 'Growpart found, running autoexpansion for ArchLinuxArm'
+    sleep 1
+    if ! test -e "${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service"; then
+      cat << EOF > "${TMP_DIR}/etc/systemd/system/expand-fs.service"
+[Unit]
+Description=Extend root partition and resize ext4 file system
+After=local-fs.target
+Wants=local-fs.target
+
+[Service]
+Environment=ROOT_DISK=/dev/mmcblk0
+Environment=ROOT_PARTITION=2
+ExecStart=/bin/bash -c "/usr/bin/growpart -N \\\${ROOT_DISK} \\\${ROOT_PARTITION} && /usr/bin/growpart \\\${ROOT_DISK} \\\${ROOT_PARTITION} || exit 0"
+ExecStop=/bin/bash -c "/sbin/resize2fs \\\${ROOT_DISK}\\p\${ROOT_PARTITION} && /usr/bin/rm /etc/systemd/system/basic.target.wants/expand-fs.service || exit 0"
+Type=oneshot
+
+[Install]
+WantedBy=basic.target
+EOF
+      debug 'DEBUG' "Enabling systemd service by creating symlink: ln -s /lib/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service"
+      ln -s /lib/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service
+    fi
+
+    echo '## ArchLinuxArm filesystem autoresizing at boot...'
+    debug 'INFO' 'ArchLinuxArm filesystem autoresizing at boot'
+    sleep 1
+
   else
     echo '## No autoexpand option available for this os...'
     debug 'WARNING' 'No autoexpand option available for this os'
