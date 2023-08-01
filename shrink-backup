@@ -584,11 +584,11 @@ function do_backup() {
   # Check if multiple partitions exist
   if [ $(sudo fdisk -lo device "$IMG_FILE" | grep -c "$IMG_FILE") -gt 2 ]; then
     BOOT_DEV_PATH=$(sudo fdisk -lo device "$IMG_FILE" | grep "$IMG_FILE" | tail -2 | head -1)
-    ROOT_DEV_PATH=$(sudo fdisk -lo device "$IMG_FILE" | grep "$IMG_FILE" | tail -1)
-    debug 'DEBUG' "2 partitions detected, setting ROOT_DEV_PATH=$ROOT_DEV_PATH and BOOT_DEV_PATH=$BOOT_DEV_PATH"
+    echo '## 2 partitions detected...'
+    debug 'DEBUG' '2 partitions detected'
   else
-    ROOT_DEV_PATH=$(sudo fdisk -lo device "$IMG_FILE" | grep "$IMG_FILE" | tail -1)
-    debug 'DEBUG' "1 partition detected, setting ROOT_DEV_PATH=$ROOT_DEV_PATH"
+    echo '## Single partition detected...'
+    debug 'DEBUG' '1 partition detected'
   fi
 
   if [ -n "$BOOT_DEV_PATH" ]; then
