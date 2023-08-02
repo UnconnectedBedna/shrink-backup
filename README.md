@@ -2,16 +2,19 @@
 
 _I made this script because I wanted a universal method of backing up my SBC:s into small img files as fast as possible (with rsync), no matter what os I am using._
 
-**Latest release:** [shrink-backup.v0.9.0](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v0.9.0/shrink-backup.v0.9.0.tar.gz)
+**Latest release:** [shrink-backup.v0.9.0](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v0.9.0/shrink-backup.v0.9.0.tar.gz) (please read [this readme](https://github.com/UnconnectedBedna/shrink-backup) from main release instead)<br>
+**Testing version:** [shrink-backup](shrink-backup) (The version the information on this page refers to)
 
 Tested on **Raspberry Pi** os, **Armbian**, **Manjaro-arm** and **ArchLinuxARM** for rpi with **ext4** root partition.<br>
 Autoexpansion will work on ArchLinuxARM if you have `growpartfs` installed from AUR. I am still trying to figure out how to use "vanilla" tools for this to happen so this will stay on the testing branch.
 
-Fast restore because of minimal size of img file.
+**Very fast restore because of minimal size of img file.**
 
-Default device that will be backed up unless changed with `-d` is SD-cards, ie `/dev/mmcblk0`<br>
-Booting/backing up from usb-stick (`/dev/sda`) with Raspberry pi os has been tested lightly and works but is still considered **experimental**.<br>
-See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information about using other devices.<br>
+Default device that will be backed up is detected by scanning what disk-device root resides on. This means that boot and root partitions must be on the same device.<br>
+The scipt can handle if there is no boot partition as well.<br>
+Booting/backing up from usb-stick (`/dev/sda`) with Raspberry pi os has been tested lightly and works but is still considered **experimental**.
+
+See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information about using other devices. (the information about `-d` option is depricated on this version, please disregard)<br>
 [Ideas and feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) is always appreciated, whether it's positive or negative. Please just keep it civil. :)
 
 **Don't forget to make the script executable**
@@ -69,24 +72,24 @@ Applications used in the script:
 - truncate
 - mkfs.ext4
 - rsync
+- (growpartfs from AUR if you want to autoexpand ArchLinuxArm)
 
 ## Info
 
-Theoretically the script should work on any device with maximum 2 partitions (boot and root).<br>
-The script can handle maximum 2 partitions, if there are more than that on root device the script will fail with an error.<br>
+Theoretically the script should work on any device as long as root filesystem is in `ext4`. But IMHO is best applied on ARM hardware.<br>
+Since the script uses `lsblk` to figure out where the root resides it does not matter what device it is on.<br>
 Even if you forget to disable autoexpansion on a non supported system, the backup will not fail. :)
 
-Custom device part can be set with `-d /dev/xxx`. This function has not been wildly simply because I lack good hardware for proper testing, but it has been tested on Raspberry pi os.<br>
-See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information.<br>
-[Feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) on this functionality is highly apreciated!<br>
-If `-d` is not selected, default device path is used: `/dev/mmcblk0`
+See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information. (depricated information for this version)<br>
+[Feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) is highly apreciated!<br>
 
 ### Order of operations - image creation
-1. Reads the block sizes of the partitions
-2. Uses `dd` to create the boot part of the system + a few megabytes to include the filesystem on root (this *can* be a partition)
-3. Removes and recreates the root partition, the size depends on options used when starting the script
-4. Creates a new ext4 filesystem with the same UUID and LABEL as the system you are backing up from
-5. Uses `rsync` to sync both partitions (if more than one)
+1. Uses `lsblk` to figure out the correct disk device to back up
+2. Reads the block sizes of the partitions
+3. Uses `dd` to create the boot part of the system + a few megabytes to include the filesystem on root (this *can* be a partition)
+4. Removes and recreates the root partition, the size depends on options used when starting the script
+5. Creates a new ext4 filesystem with the same UUID and LABEL as the system you are backing up from
+6. Uses `rsync` to sync both partitions (if more than one)
 
 This means it does not matter if boot is on a partition or not.
 
