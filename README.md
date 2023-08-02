@@ -18,27 +18,22 @@ See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit mor
 ## Usage:
 ```
 sudo shrink-backup -h
-Script for creating an .img file and subsequently keeing it updated (-B), autoexpansion is enabled by default
+Script for creating an .img file and subsequently keeing it updated (-U), autoexpansion is enabled by default
 Directory where .img file is created is automatically excluded in backup
 ########################################################################
-Usage: sudo shrink-backup [-Uatyeldh] imagefile.img [extra space (MB)]
-  -U         Update the img file (rsync to existing backup .img), no resizing, -a and -d is disregarded
+Usage: sudo shrink-backup [-Uatyelh] imagefile.img [extra space (MB)]
+  -U         Update the img file (rsync to existing backup .img), no resizing, -a is disregarded
   -a         Let resize2fs decide minimum space (extra space is ignored), disabled if using -U
   -t         Use exclude.txt in same folder as script to set excluded directories
              One directory per line: "/dir" or "/dir/*" to only exclude contents
   -y         Disable prompts in script
   -e         DO NOT expand filesystem when image is booted
-  -l         Write debug messages in log file shrink-backup.log in same directory as script
-  -d [PATH]  EXPERIMENTAL! Use custom device path. default = /dev/mmcblk0
-             MAXIMUM 2 partitions, more and the script will not function correctly!
-             Feedback on functionality is apreciated (https://github.com/UnconnectedBedna/shrink-backup/discussions)
+  -l         Write debug messages in logfile shrink-backup.log in same directory as script
   -h --help  Show this help snippet
 ########################################################################
 Example: sudo shrink-backup -a /path/to/backup.img
 Example: sudo shrink-backup -e -y /path/to/backup.img 1000
 Example: sudo shrink-backup -Ut /path/to/backup.img
-Example: sudo shrink-backup -ad /dev/sda /path/to/backup.img
-Example: sudo shrink-backup -atd /dev/nvme0n1 /path/to/backup.img
 ```
 
 The folder where the img file is created will ALWAYS be excluded in the backup.<br>
