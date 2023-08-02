@@ -685,40 +685,36 @@ function do_rsync() {
 function expand_fs() {
   # Check if Manjaro
   if cat /etc/os-release | grep -i 'manjaro' >/dev/null; then
-    debug 'INFO' 'Manjaro os detected'
-
     # Create self deleting script
     echo '## Manjaro os detected...'
-    debug 'DEBUG' "Creating expansion script ${TMP_DIR}/expand-fs.sh and expand-fs.service"
+    debug 'INFO' 'Manjaro os detected'
     sleep 1
-    cat << EOF > "${TMP_DIR}/expand-fs.sh"
-resize-fs
-sleep 2
-rm /etc/systemd/system/basic.target.wants/expand-fs.service
-rm /etc/systemd/system/expand-fs.service
-#rm '\${0}'
-rm /expand-fs.sh
-exit 0
-EOF
-
-    cat << EOF > "${TMP_DIR}/etc/systemd/system/expand-fs.service"
-[Unit]
-Description=One time boot script
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/sh "/expand-fs.sh"
-
-[Install]
-WantedBy=basic.target
-EOF
-
     if ! [ -d "${TMP_DIR}/etc/systemd/system/basic.target.wants" ]; then
       debug 'DEBUG' "Systemd basic.arget.wants directory does not exist, running: mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants"
       mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants
     fi
-    debug 'DEBUG' "Enabling systemd service by creating symlink: ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service"
-    ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service
+    if ! [ -e "${TMP_DIR}/etc/systemd/system/expand-fs.service" ]; then
+      # Creating autoexpansion systemd unit file expand-fs.service
+      debug 'DEBUG' 'Systemd unit expand-fs.service does not exist, creating it'
+      cat << EOF > "${TMP_DIR}/etc/systemd/system/expand-fs.service"
+[Unit]
+Description=Extend root partition and resize ext4 file system
+After=local-fs.target
+Wants=local-fs.target
+
+[Service]
+ExecStart=/bin/bash -c "/usr/bin/resize-fs || exit 0"
+ExecStop=/bin/bash -c "/usr/bin/rm /etc/systemd/system/basic.target.wants/expand-fs.service || exit 0"
+Type=oneshot
+
+[Install]
+WantedBy=basic.target
+EOF
+    fi
+    if ! [ -e "${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service" ]; then
+      debug 'DEBUG' "Systemd service not enabled, creating symlink: ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service"
+      ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service
+    fi
     echo '## Manjaro filesystem autoresizing at boot...'
     debug 'INFO' 'Manjaro filesystem autoresizing at boot'
     sleep 1
@@ -897,7 +893,12 @@ EOF2
     echo '## Growpart found, running autoexpansion for ArchLinuxArm...'
     debug 'INFO' 'Growpart found, running autoexpansion for ArchLinuxArm'
     sleep 1
-    if ! test -e "${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service"; then
+    if ! [ -d "${TMP_DIR}/etc/systemd/system/basic.target.wants" ]; then
+      debug 'DEBUG' "Systemd basic.arget.wants directory does not exist, running: mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants"
+      mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants
+    fi
+    if ! test -e "${TMP_DIR}/etc/systemd/system/expand-fs.service"; then
+      debug 'DEBUG' 'Systemd unit expand-fs.service does not exist, creating it'
       cat << EOF > "${TMP_DIR}/etc/systemd/system/expand-fs.service"
 [Unit]
 Description=Extend root partition and resize ext4 file system
@@ -914,10 +915,11 @@ Type=oneshot
 [Install]
 WantedBy=basic.target
 EOF
-      debug 'DEBUG' "Enabling systemd service by creating symlink: ln -s /lib/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service"
-      ln -s /lib/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service
+      if ! [ -e "${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service" ]; then
+        debug 'DEBUG' "Enabling systemd service by creating symlink: ln -s /lib/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service"
+        ln -s /lib/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service
+      fi
     fi
-
     echo '## ArchLinuxArm filesystem autoresizing at boot...'
     debug 'INFO' 'ArchLinuxArm filesystem autoresizing at boot'
     sleep 1
