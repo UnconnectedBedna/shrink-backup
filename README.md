@@ -11,7 +11,8 @@ Fast restore because of minimal size of img file.
 
 Default device that will be backed up unless changed with `-d` is SD-cards, ie `/dev/mmcblk0`<br>
 Booting/backing up from usb-stick (`/dev/sda`) with Raspberry pi os has been tested lightly and works but is still considered **experimental**.<br>
-See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information about using other devices.
+See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information about using other devices.<br>
+[Ideas and feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) is always appreciated, whether it's positive or negative. Please just keep it civil. :)
 
 **Don't forget to make the script executable**
 
