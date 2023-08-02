@@ -83,7 +83,7 @@ Even if you forget to disable autoexpansion on a non supported system, the backu
 Custom device part can be set with `-d /dev/xxx`. This function is untested simply because I lack good hardware for proper testing but it has been tested on Raspberry pi os.<br>
 See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information.<br>
 [Feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) on functionality is highly apreciated!<br>
-If `-d` is not selected, default device path is used: `/dev/mmcblk`
+If `-d` is not selected, default device path is used: `/dev/mmcblk0`
 
 ### Order of operations - image creation
 1. Reads the block sizes of the partitions
