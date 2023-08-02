@@ -1,13 +1,13 @@
 # shrink-backup is a bash script for backing up your SBC:s into an img file
 
-_I made this script because I wanted a universal method of backing up my SBC:s into img files as fast as possible (with rsync), no matter what os is in use._
-
-**Script is frequently updated so if you came here from a forum post, please read instructions below, option flags might have changed.**
+_I made this script because I wanted a universal method of backing up my SBC:s into small img files as fast as possible (with rsync), no matter what os I was using._
 
 [shrink-backup](shrink-backup)
 
 Tested on **Raspberry Pi** os, **Armbian**, **Manjaro-arm** and **ArchLinuxARM** for rpi with **ext4** root partition.<br>
 Autoexpansion will work on ArchLinuxARM if you have `growpartfs` installed from AUR. I am still trying to figure out how to use "vanilla" tools for this to happen so this will stay on the testing branch.
+
+Fast restore because of minimal size of img file.
 
 Default device that will be backed up unless changed with `-d` is SD-cards, ie `/dev/mmcblk0`<br>
 Booting/backing up from usb-stick (`/dev/sda`) with Raspberry pi os has been tested lightly and works but is still considered **experimental**.<br>
@@ -34,7 +34,7 @@ Usage: sudo shrink-backup [-Uatyeldh] imagefile.img [extra space (MB)]
              Feedback on functionality is apreciated (https://github.com/UnconnectedBedna/shrink-backup/discussions)
   -h --help  Show this help snippet
 ########################################################################
-Example: sudo shrink-backup -at /path/to/backup.img
+Example: sudo shrink-backup -a /path/to/backup.img
 Example: sudo shrink-backup -e -y /path/to/backup.img 1000
 Example: sudo shrink-backup -Ut /path/to/backup.img
 Example: sudo shrink-backup -ad /dev/sda /path/to/backup.img
@@ -80,9 +80,9 @@ Theoretically the script should work on any device with maximum 2 partitions (bo
 The script can handle maximum 2 partitions, if there are more than that on root device the script will fail with an error.<br>
 Even if you forget to disable autoexpansion on a non supported system, the backup will not fail. :)
 
-Custom device part can be set with `-d /dev/xxx`. This function is untested simply because I lack good hardware for proper testing but it has been tested on Raspberry pi os.<br>
+Custom device part can be set with `-d /dev/xxx`. This function har not been wildly simply because I lack good hardware for proper testing, but it has been tested on Raspberry pi os.<br>
 See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information.<br>
-[Feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) on functionality is highly apreciated!<br>
+[Feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) on this functionality is highly apreciated!<br>
 If `-d` is not selected, default device path is used: `/dev/mmcblk0`
 
 ### Order of operations - image creation
@@ -127,12 +127,6 @@ If the filesystem you back up from increases in size, an update (`-U`) of the im
 
 To update an existing img file simply use the `-U` option and the path to the img file.<br>
 Changing size in an update is not possible at the moment but is in the todo list for the future.
-
-**Disclaimer:**
-EEPROM updates might not be backed up in an image update, keep that in mind.<br>
-Same with updates to U-Boot if it's in use.<br>
-To be absolutely sure after doing changes to EEPROM or U-Boot it's better to make a brand new img rather than updating.<br>
-As of this moment, there are no plans to include that functionality in the script.
 
 ## To restore a backup, simply "burn" the img file to an sd-card using your favorite method.
 
