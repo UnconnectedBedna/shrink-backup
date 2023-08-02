@@ -2,7 +2,7 @@
 
 _I made this script because I wanted a universal method of backing up my SBC:s into small img files as fast as possible (with rsync), no matter what os I am using._
 
-[shrink-backup.v0.9.0](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v0.9.0/shrink-backup.v0.9.0.tar.gz)
+**Latest release:** [shrink-backup.v0.9.0](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v0.9.0/shrink-backup.v0.9.0.tar.gz)
 
 Tested on **Raspberry Pi** os, **Armbian**, **Manjaro-arm** and **ArchLinuxARM** for rpi with **ext4** root partition.<br>
 Autoexpansion will work on ArchLinuxARM if you have `growpartfs` installed from AUR. I am still trying to figure out how to use "vanilla" tools for this to happen so this will stay on the testing branch.
