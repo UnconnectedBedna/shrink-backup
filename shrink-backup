@@ -87,41 +87,35 @@ EXCLUDE_FILE=false
 AUTOEXPAND=true
 RESIZE2FS_RUN=false
 UPDATE=false
-CUSTOM_DEV_PATH=false
 LOG_FILE="$(dirname "$0")/shrink-backup.log"
 
 # Function to display help information, debug is not configured/working
 help() {
   local help
   read -r -d '' help << EOM
-Script for creating an .img file and subsequently keeing it updated (-B), autoexpansion is enabled by default
+Script for creating an .img file and subsequently keeing it updated (-U), autoexpansion is enabled by default
 Directory where .img file is created is automatically excluded in backup
 ########################################################################
-Usage: sudo $(basename "$0") [-Uatyeldh] imagefile.img [extra space (MB)]
-  -U         Update the img file (rsync to existing backup .img), no resizing, -a and -d is disregarded
+Usage: sudo $(basename "$0") [-Uatyelh] imagefile.img [extra space (MB)]
+  -U         Update the img file (rsync to existing backup .img), no resizing, -a is disregarded
   -a         Let resize2fs decide minimum space (extra space is ignored), disabled if using -U
   -t         Use exclude.txt in same folder as script to set excluded directories
              One directory per line: "/dir" or "/dir/*" to only exclude contents
   -y         Disable prompts in script
   -e         DO NOT expand filesystem when image is booted
-  -l         Write debug messages in log file shrink-backup.log in same directory as script
-  -d [PATH]  EXPERIMENTAL! Use custom device path. default = /dev/mmcblk0
-             MAXIMUM 2 partitions, more and the script will fail with an error
-             Feedback on functionality is apreciated (https://github.com/UnconnectedBedna/shrink-backup/discussions)
+  -l         Write debug messages in logfile shrink-backup.log located in same directory as script
   -h --help  Show this help snippet
 ########################################################################
-Example: sudo $(basename "$0") -at /path/to/backup.img
+Example: sudo $(basename "$0") -a /path/to/backup.img
 Example: sudo $(basename "$0") -e -y /path/to/backup.img 1000
 Example: sudo $(basename "$0") -Utl /path/to/backup.img
-Example: sudo $(basename "$0") -ad /dev/sda /path/to/backup.img
-Example: sudo $(basename "$0") -atd /dev/nvme0n1 /path/to/backup.img
 EOM
   echo "$help"
   exit 2
 }
 
 # Parse command-line options
-while getopts ":Uatyeldh" opt; do
+while getopts ":Uatyelh" opt; do
   case ${opt} in
     U) UPDATE=true;;
     a) RESIZE2FS_RUN=true;;
@@ -129,7 +123,6 @@ while getopts ":Uatyeldh" opt; do
     y) PROMPTS=false;;
     e) AUTOEXPAND=false;;
     l) DEBUG=true;;
-    d) CUSTOM_DEV_PATH=true;;
     h) help;;
     *) help;;
   esac
@@ -189,39 +182,18 @@ function make_img() {
     debug 'USER_INPUT' "User requested ${ADDED_SPACE}MB as ADDED_SPACE"
   fi
 
-  # Set HD_DEV_PATH to default if custom is not defined
-  if [ -z "$HD_DEV_PATH" ]; then
-    HD_DEV_PATH='/dev/mmcblk0'
-  fi
-
-  # Check that not more than 2 partitions exist
-  if [ $(fdisk -lo device "$HD_DEV_PATH" | grep -c "$HD_DEV_PATH") -gt 3 ]; then
-    echo "More than 2 partitions detected on $HD_DEV_PATH"
-    echo "Operation not supported"
-    debug 'ERROR' 'More than 2 partitions not supported by script, exit 2'
-    exit 2
-  fi
-
-  # Check if custom device path is requested and set ROOT_DEV_PATH and BOOT_DEV_PATH accordingly
-  if [ "$CUSTOM_DEV_PATH" == false ]; then
-    if [ $(sudo fdisk -lo device "$HD_DEV_PATH" | grep -c "$HD_DEV_PATH") -gt 2 ]; then
-      BOOT_DEV_PATH='/dev/mmcblk0p1'
-      ROOT_DEV_PATH='/dev/mmcblk0p2'
+  # Check if separate boot and root partition exists and set ROOT_DEV_PATH and BOOT_DEV_PATH accordingly
+  MAJ_DEV_NUM=$(lsblk -lpo mountpoint,maj:min,type,path | grep '/ ' | awk '{print $2}' | cut -d : -f 1)
+  HD_DEV_PATH=$(lsblk -lpo maj:min,type,path | grep "$MAJ_DEV_NUM" | grep 'disk' | awk '{print $3}')
+  debug 'DEBUG' "Checking what disk-device root resides on. Setting HD_DEV_PATH=$HD_DEV_PATH"
+    if [ $(lsblk | grep -c 'boot') -ne 0 ]; then
+      BOOT_DEV_PATH=$(lsblk -lpo mountpoint,path | grep 'boot' | awk '{print $2}')
+      ROOT_DEV_PATH=$(lsblk -lpo mountpoint,path | grep '/ ' | awk '{print $2}')
       debug 'DEBUG' "2 partitions detected, setting ROOT_DEV_PATH=$ROOT_DEV_PATH and BOOT_DEV_PATH=$BOOT_DEV_PATH"
     else
-      ROOT_DEV_PATH='/dev/mmcblk0p1'
+      ROOT_DEV_PATH=$(lsblk -lpo mountpoint,path | grep '/ ' | awk '{print $2}')
       debug 'DEBUG' "1 partition detected, setting ROOT_DEV_PATH=$ROOT_DEV_PATH"
     fi
-  else
-    if [ $(sudo fdisk -lo device "$HD_DEV_PATH" | grep -c "$HD_DEV_PATH") -gt 2 ]; then
-      BOOT_DEV_PATH=$(sudo fdisk -lo device "$HD_DEV_PATH" | grep "$HD_DEV_PATH" | tail -2 | head -1)
-      ROOT_DEV_PATH=$(sudo fdisk -lo device "$HD_DEV_PATH" | grep "$HD_DEV_PATH" | tail -1)
-      debug 'DEBUG' "2 partitions detected, setting ROOT_DEV_PATH=$ROOT_DEV_PATH and BOOT_DEV_PATH=$BOOT_DEV_PATH"
-    else
-      ROOT_DEV_PATH=$(sudo fdisk -lo device "$HD_DEV_PATH" | grep "$HD_DEV_PATH" | tail -1)
-      debug 'DEBUG' "1 partition detected, setting ROOT_DEV_PATH=$ROOT_DEV_PATH"
-    fi
-  fi
 
   # BOOTSECTOR is actually the startsector on the root partition
   BOOTSECTOR=( $(fdisk -lo start "$HD_DEV_PATH" | tail -1) ) # blocks, 512B block size
@@ -653,30 +625,33 @@ function do_rsync() {
   debug 'DEBUG' "Running: mktemp -d -t rsync-XXXXXXXXXX, tmp_file=$tmp_file"
 
   if [ "$EXCLUDE_FILE" == true ]; then
-    debug 'DEBUG' "Running: rsync -ahvD --exclude-from=$(dirname $0)/exclude.txt --exclude=${IMG_PATH}/* --info=progress2 --stats --delete --force --partial --delete-excluded / $TMP_DIR"
-    if ! rsync -ahvD --exclude-from=$(dirname "$0")/exclude.txt --exclude={${IMG_PATH}/*,${TMP_DIR}} --info=progress2 --stats --delete --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/tty  > "$tmp_file"; then
+    debug 'DEBUG' "Running: rsync -ahvD --exclude-from=$(dirname $0)/exclude.txt --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats --delete --force --partial --delete-excluded / $TMP_DIR"
+    rsync -ahvD --exclude-from=$(dirname "$0")/exclude.txt --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats --delete --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/tty  > "$tmp_file"
+    # Get the exit status of rsync from PIPESTATUS
+    if [ "${PIPESTATUS[0]}" -ne 0 ]; then
       output=$(tail -16 "$tmp_file")
-      echo -e "$output\nRSYNC FAILED!!!"
+      echo -e "$output\n## RSYNC FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "RSYNC FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
     fi
-    sleep 4
   else
     debug 'DEBUG' "Running: rsync -ahvD --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,${IMG_PATH}/*} --info=progress2 --stats --delete --force --partial --delete-excluded / $TMP_DIR"
-    if ! rsync -ahvD --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,${IMG_PATH}/*} --info=progress2 --stats --delete --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/tty > "$tmp_file"; then
+    rsync -ahvD --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,${IMG_PATH}/*} --info=progress2 --stats --delete --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/tty > "$tmp_file"
+    if [ "${PIPESTATUS[0]}" -ne 0 ]; then
       output=$(tail -16 "$tmp_file")
-      echo -e "$output\nRSYNC FAILED!!!"
+      echo -e "$output\n## RSYNC FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "RSYNC FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
     fi
-    sleep 4
   fi
+  echo '## Rsync done...'
   output=$(tail -16 "$tmp_file")
   debug 'BREAK'
   debug 'INFO' "Rsync report:\n$output\n------------------------------------------------------------------------------"
   debug 'INFO' 'Rsync done'
+  sleep 4
 }
 
 
@@ -940,16 +915,9 @@ do
   if [[ "$1" =~ ^- ]]; then
     shift
   else
-    if [ $CUSTOM_DEV_PATH == true ]; then
-      HD_DEV_PATH="$1"
-      IMG_FILE="$2"
-      ADDED_SPACE="$3"
-      break
-    else
-      IMG_FILE="$1"
-      ADDED_SPACE="$2"
-      break
-    fi
+    IMG_FILE="$1"
+    ADDED_SPACE="$2"
+    break
   fi
 
 done
@@ -968,7 +936,6 @@ if [ "$DEBUG" == true ]; then
   debug 'INFO' "Requesting size from resize2fs selected, RESIZE2FS_RUN=$RESIZE2FS_RUN"
   debug 'INFO' "Prompt for user confirmation, PROMPTS=$PROMPTS"
   debug 'INFO' "Auto expansion enabled, AUTOEXPAND=$AUTOEXPAND"
-  debug 'INFO' "Custom device path selected, CUSTOM_DEV_PATH=$CUSTOM_DEV_PATH"
   sleep 1
 fi
 
@@ -980,7 +947,7 @@ if [ "$EXCLUDE_FILE" == true ]; then
     debug 'ERROR' 'exclude.txt does not exist in script directory, exit 2'
     exit 2
   fi
-  debug 'INFO' "$(dirname $0)/exclude.txt does exist"
+  debug 'INFO' "$(dirname $0)/exclude.txt exists"
 fi
 
 if [ "$UPDATE" != true ]; then
