@@ -195,20 +195,23 @@ function make_img() {
       debug 'DEBUG' "1 partition detected, setting ROOT_DEV_PATH=$ROOT_DEV_PATH"
     fi
 
-  # BOOTSECTOR is actually the startsector on the root partition
-  BOOTSECTOR=( $(fdisk -lo start "$HD_DEV_PATH" | tail -1) ) # blocks, 512B block size
-  DDBOOTSECTOR=$(( BOOTSECTOR + 256 )) # blocks, 8192 + 256 = 8448 (adding 256 extra to be safe)
-  debug 'DEBUG' 'Calculating size for dd to cover bootsector in blocks (512B block size) and adding 256 to overlap into root'
-  debug 'INFO' "BOOTSECTOR=${BOOTSECTOR} blocks - this is actually the startsector for the root partition"
+  # Collecting data for calculations
+  debug 'DEBUG' 'Calculating size for dd to cover bootsector in blocks (512B block size) and adding 256 blocks to overlap into root'
+  ROOT_DEV_START=( $(fdisk -lo start "$HD_DEV_PATH" | tail -1) ) # blocks, 512B block size
+  BOOTSECTOR=$(( ROOT_DEV_START - 1 )) # blocks, to set the actual bootsector
+  DDBOOTSECTOR=$(( BOOTSECTOR + 256 )) # blocks, adding 256 extra to cover root filesystem
+  ROOT_DEV_START=$(( ROOT_DEV_START * 512 )) # bytes
+  debug 'INFO' "BOOTSECTOR=${BOOTSECTOR} blocks"
   debug 'INFO' "DDBOOTSECTOR=${DDBOOTSECTOR} blocks"
-  BOOTSECTOR=$(( BOOTSECTOR * 512 )) # bytes, 8192 x 512 = 4194304
+  BOOTSECTOR=$(( BOOTSECTOR * 512 )) # bytes
+  debug 'INFO' "BOOTSECTOR=${BOOTSECTOR} Bytes"
   BLOCKSIZE=$(dumpe2fs -h "$ROOT_DEV_PATH" | grep "Block size" | awk '{print $3}') # bytes
   RESIZE2FS_MIN=$(resize2fs -P "$ROOT_DEV_PATH" | awk '{print $7}' | tail -1) # blocks
   RESIZE2FS_MIN=$(( RESIZE2FS_MIN * BLOCKSIZE )) # bytes
-  #DF_OUTPUT=( $(df / --output=size,avail | tail -1) ) # 1k blocks, 0 is the first position in an array
-  #USED_SPACE=$(( (${DF_OUTPUT[0]} - ${DF_OUTPUT[1]}) * 1024 )) # bytes, df is 1k block size, 0 is the first position
-  DF_OUTPUT=( $(df / --output=used | tail -1) ) # 1k blocks
-  USED_SPACE=$(( DF_OUTPUT * 1024 )) # bytes, df is 1k block size
+  DF_OUTPUT=( $(df / --output=size,avail | tail -1) ) # 1k blocks, 0 is the first position in an array
+  USED_SPACE=$(( (${DF_OUTPUT[0]} - ${DF_OUTPUT[1]}) * 1024 )) # bytes, df is in 1k blocks, 0 is the first position
+  #DF_OUTPUT=( $(df / --output=used | tail -1) ) # 1k blocks
+  #USED_SPACE=$(( DF_OUTPUT * 1024 )) # bytes, df is in 1k blocks
   ADDED_SPACE=$(( ADDED_SPACE * 1024 * 1024 )) # bytes
 
   # Use resize2fs to calulate size if option is selected
@@ -232,8 +235,8 @@ function make_img() {
 
   # Add 128MB extra space if resize2fs reports bigger minimum than created
   if [ "$TOTAL" -lt "$RESIZE2FS_MIN" ]; then
-    debug 'DEBUG' 'Adding WIGGLEROOM (192MB) because manually requested ADDED_SPACE is less than resize2fs caluclated size'
-    WIGGLEROOM=201326592 # 128MB = 134217728B, 192MB = 201326592B
+    debug 'DEBUG' 'Adding WIGGLEROOM (128MB) because manually requested ADDED_SPACE is less than resize2fs caluclated size'
+    WIGGLEROOM=134217728 # 128MB = 134217728B, 192MB = 201326592B
     TRUNCATE_TOTAL=$(( TRUNCATE_TOTAL + WIGGLEROOM ))
     debug 'INFO' "RESIZE2FS_MIN=${RESIZE2FS_MIN} Bytes"
     debug 'INFO' "WIGGLEROOM=${WIGGLEROOM} Bytes"
@@ -246,20 +249,22 @@ function make_img() {
       echo ''
       echo '##############################################################################'
       echo "# A backup will be created at $IMG_FILE"
-      echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
-      echo "# Resize2fs decide minimum (root partition): $(( RESIZE2FS_MIN / 1024 / 1024 ))MB"
+      echo "# Write to logfile: $DEBUG"
       echo "# Autoexpand filesystem on boot: $AUTOEXPAND"
       echo "# Using exclude.txt: $EXCLUDE_FILE"
-      echo "# Write to logfile: $DEBUG"
+      echo "# Bootsector size: $(( BOOTSECTOR / 1024 / 1024 ))MB"
+      echo "# Resize2fs decide minimum (root partition): $(( RESIZE2FS_MIN / 1024 / 1024 ))MB"
+      echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
       echo '##############################################################################'
     else
       echo ''
       echo '##############################################################################'
       echo "# A backup will be created at $IMG_FILE"
-      echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB with $(( ADDED_SPACE / 1024 / 1024 ))MB extra space included."
+      echo "# Write to logfile: $DEBUG"
       echo "# Autoexpand filesystem on boot: $AUTOEXPAND"
       echo "# Using exclude.txt: $EXCLUDE_FILE"
-      echo "# Write to logfile: $DEBUG"
+      echo "# Bootsector size: $(( BOOTSECTOR / 1024 / 1024 ))MB"
+      echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB with $(( ADDED_SPACE / 1024 / 1024 ))MB extra space included."
       echo '##############################################################################'
     fi
 
@@ -297,21 +302,23 @@ function make_img() {
       echo '##############################################################################'
       echo '# DISABLE PROMPTS SELECTED (-y), NO WARNINGS ABOUT DELETION!!!'
       echo "# A backup will be created at $IMG_FILE"
-      echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
-      echo "# Resize2fs decide minimum (root partition): $(( RESIZE2FS_MIN / 1024 / 1024 ))MB"
+      echo "# Write to logfile: $DEBUG"
       echo "# Autoexpand filesystem on boot: $AUTOEXPAND"
       echo "# Using exclude.txt: $EXCLUDE_FILE"
-      echo "# Write to logfile: $DEBUG"
+      echo "# Bootsector size: $(( BOOTSECTOR / 1024 / 1024 ))MB"
+      echo "# Resize2fs decide minimum (root partition): $(( RESIZE2FS_MIN / 1024 / 1024 ))MB"
+      echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
       echo '# PRESS CTRL+C WITHIN 5s TO CANCEL!'
       echo '##############################################################################'
     else
       echo '##############################################################################'
       echo '# DISABLE PROMPTS SELECTED (-y), NO WARNINGS ABOUT DELETION!!!'
       echo "# A backup will be created at $IMG_FILE"
-      echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB with $(( ADDED_SPACE / 1024 / 1024 ))MB extra space included."
+      echo "# Write to logfile: $DEBUG"
       echo "# Autoexpand filesystem on boot: $AUTOEXPAND"
       echo "# Using exclude.txt: $EXCLUDE_FILE"
-      echo "# Write to logfile: $DEBUG"
+      echo "# Bootsector size: $(( BOOTSECTOR / 1024 / 1024 ))MB"
+      echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB with $(( ADDED_SPACE / 1024 / 1024 ))MB extra space included."
       echo '# PRESS CTRL+C WITHIN 5s TO CANCEL!'
       echo '##############################################################################'
     fi
@@ -330,7 +337,7 @@ function make_img() {
   echo '## Creating bootsector...'
   debug 'INFO' "Using dd to create bootsector, bs=512 count=$DDBOOTSECTOR"
   if ! output=$(dd bs=512 count=$DDBOOTSECTOR if="$HD_DEV_PATH" of="$IMG_FILE" conv=noerror,sync status=progress 2>&1 | tee /dev/tty); then
-    echo -e "$output\nDD TO BOOTSECTOR FAILED!!!"
+    echo -e "$output\n## DD TO BOOTSECTOR FAILED!!!"
     debug 'BREAK'
     debug 'ERROR' "DD TO BOOTSECTOR FAILED:\n$output\n------------------------------------------------------------------------------"
     exit 1
@@ -344,7 +351,7 @@ function make_img() {
   echo "## Resizing img file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB..."
   debug 'INFO' "Using truncate to resize img file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
   if ! output=$(truncate --size=$TRUNCATE_TOTAL "$IMG_FILE" 2>&1); then
-    echo -e "$output\nTRUNCATE FAILED!!!"
+    echo -e "$output\n## TRUNCATE FAILED!!!"
     debug 'BREAK'
     debug 'ERROR' "TRUNCATE FAILED:\n$output\n------------------------------------------------------------------------------"
     exit 1
@@ -356,7 +363,7 @@ function make_img() {
   echo '## Looping img file...'
   debug 'INFO' "Using losetup -P to loop $IMG_FILE"
   if ! output=$(losetup -P /dev/loop0 "$IMG_FILE" 2>&1); then
-    echo -e "$output\nLOSETUP FAILED!!!"
+    echo -e "$output\n## LOSETUP FAILED!!!"
     debug 'BREAK'
     debug 'ERROR' "LOSETUP FAILED:\n$output\n------------------------------------------------------------------------------"
     exit 1
@@ -372,7 +379,7 @@ function make_img() {
     LOOP1='/dev/loop0p1'
     debug 'DEBUG' "2 partitions detected, setting LOOP0=$LOOP0 and LOOP1=$LOOP1"
     if ! output=$(sfdisk --delete -f -q /dev/loop0 2 2>&1); then
-      echo -e "$output\nSFDISK FAILED!!!"
+      echo -e "$output\n## SFDISK FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "SFDISK FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -382,7 +389,7 @@ function make_img() {
     LOOP0='/dev/loop0p1'
     debug 'DEBUG' "1 partition detected, setting LOOP0=$LOOP0"
     if ! output=$(sfdisk --delete -f -q /dev/loop0 1 2>&1); then
-      echo -e "$output\nSFDISK FAILED!!!"
+      echo -e "$output\n## SFDISK FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "SFDISK FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -394,13 +401,13 @@ function make_img() {
   # Recreate partition, BOOTSECTOR is actually the startsector of root
   echo '## Recreating root partition...'
   debug 'INFO' 'Using parted to recreate root partition'
-  if ! output=$(parted -s -a none /dev/loop0 unit B mkpart primary ext4 "$BOOTSECTOR" 100% 2>&1); then
-    echo -e "$output\nPARTED FAILED!!!"
+  if ! output=$(parted -s -a none /dev/loop0 unit B mkpart primary ext4 "$ROOT_DEV_START" 100% 2>&1); then
+    echo -e "$output\n## PARTED FAILED!!!"
     debug 'BREAK'
     debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
     exit 1
   fi
-  debug 'DEBUG' "Running: parted -s -a none /dev/loop0 unit B mkpart primary ext4 $BOOTSECTOR 100%"
+  debug 'DEBUG' "Running: parted -s -a none /dev/loop0 unit B mkpart primary ext4 $ROOT_DEV_START 100%"
   sleep 2
 
   # Format filesystem
@@ -409,7 +416,7 @@ function make_img() {
   LABEL=( $(lsblk -o label "$ROOT_DEV_PATH" | tail -1) )
   UUID=( $(lsblk -o uuid "$ROOT_DEV_PATH" | tail -1) )
   if ! output=$(mkfs.ext4 "$LOOP0" -U "$UUID" -L "$LABEL" -F -v 2>&1 | tee /dev/tty ); then
-    echo -e "$output\nMKFS.EXT4 FAILED!!!"
+    echo -e "$output\n## MKFS.EXT4 FAILED!!!"
     debug 'BREAK'
     debug 'ERROR' "MKFS.EXT4 FAILED:\n$output\n------------------------------------------------------------------------------"
     exit 1
@@ -422,7 +429,7 @@ function make_img() {
   echo '## Scanning filesystem...'
   debug 'INFO' 'Using e2fsck to check filesystem'
   if ! output=$(e2fsck -y -f "$LOOP0" 2>&1); then
-    echo -e "$output\nE2FSCK FAILED!!!"
+    echo -e "$output\n## E2FSCK FAILED!!!"
     debug 'BREAK'
     debug 'ERROR' "E2FSCK FAILED:\n$output\n------------------------------------------------------------------------------"
     exit 1
@@ -438,7 +445,7 @@ function make_img() {
   TMP_DIR=$(mktemp -d -t shrink_img-XXXXXXXXXX)
   debug 'DEBUG' "Running: mktemp -d -t shrink_img-XXXXXXXXXX, TMP_DIR=$TMP_DIR"
   if ! output=$(mount "$LOOP0" "$TMP_DIR" 2>&1); then
-    echo -e "$output\nROOT MOUNT FAILED!!!"
+    echo -e "$output\n## ROOT MOUNT FAILED!!!"
     debug 'BREAK'
     debug 'ERROR' "ROOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
     exit 1
@@ -455,7 +462,7 @@ function make_img() {
       debug 'DEBUG' "Creating boot directory in img file, mkdir ${TMP_DIR}/boot"
     fi
     if ! output=$(mount "$LOOP1" "${TMP_DIR}${BOOT_PATH}" 2>&1); then
-      echo -e "$output\nBOOT MOUNT FAILED!!!"
+      echo -e "$output\n## BOOT MOUNT FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "BOOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -546,7 +553,7 @@ function do_backup() {
   TMP_DIR=$(mktemp -d -t backup-XXXXXXXXXX)
   debug 'DEBUG' "Running: mktemp -d -t backup-XXXXXXXXXX, TMP_DIR=$TMP_DIR"
   if ! output=$(mount -o loop,offset="$OFFSET",x-mount.mkdir "$IMG_FILE" "$TMP_DIR" 2>&1); then
-    echo -e "$output\nROOT MOUNT FAILED!!!"
+    echo -e "$output\n## ROOT MOUNT FAILED!!!"
     debug 'ERROR' "ROOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
     exit 1
   fi
@@ -575,7 +582,7 @@ function do_backup() {
     losetup -o "$OFFSET_BOOT" /dev/loop1 "$IMG_FILE"
     debug 'DEBUG' "Running: losetup -o $OFFSET_BOOT /dev/loop1 $IMG_FILE"
     if ! output=$(mount /dev/loop1 "${TMP_DIR}${BOOT_PATH}" 2>&1); then
-      echo -e "$output\nBOOT MOUNT FAILED!!!"
+      echo -e "$output\n## BOOT MOUNT FAILED!!!"
       debug 'ERROR' "BOOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
     fi
@@ -892,7 +899,7 @@ WantedBy=basic.target
 EOF
       if ! [ -e "${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service" ]; then
         debug 'DEBUG' "Enabling systemd service by creating symlink: ln -s /lib/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service"
-        ln -s /lib/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service
+        ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service
       fi
     fi
     echo '## ArchLinuxArm filesystem autoresizing at boot...'
@@ -931,6 +938,7 @@ fi
 
 if [ "$DEBUG" == true ]; then
   echo "## Debugging selected, writing to $LOG_FILE"
+  echo '## Scanning filesystem and calculating...'
   debug 'INFO' "Debugging requested, writing to log file $(basename "$LOG_FILE")..."
   debug 'INFO' "Update existing img file selected, UPDATE=$UPDATE"
   debug 'INFO' "Requesting size from resize2fs selected, RESIZE2FS_RUN=$RESIZE2FS_RUN"
