@@ -1,4 +1,4 @@
-# shrink-backup is a bash script for backing up your SBC:s into an img file for easy restore
+# shrink-backup is a bash script for backing up your SBC:s into an minimal img file for easy restore
 
 _I made this script because I wanted a universal method of backing up my SBC:s into small img files as fast as possible (with rsync), no matter what os I am using._
 
