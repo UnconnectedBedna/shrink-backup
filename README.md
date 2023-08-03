@@ -103,7 +103,7 @@ To get the absolute smallest img file possible, do NOT set `-a` option and set "
 
 Example: `sudo shrink-backup /path/to/backup.img 0`
 
-This will instruct the script to get the used space from `df` and adding 192MB "*wiggle room*".<br>
+This will instruct the script to get the used space from `df` and adding 128MB "*wiggle room*".<br>
 If you are like me, doing a lot of testing, rewriting the sd-card multiple times. The extra time it takes each time will add up pretty fast.
 
 Example:
