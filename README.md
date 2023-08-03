@@ -6,13 +6,14 @@ _I made this script because I wanted a universal method of backing up my SBC:s i
 **Testing version:** [shrink-backup](shrink-backup) (The version the information on this page refers to)
 
 Tested on **Raspberry Pi** os, **Armbian**, **Manjaro-arm** and **ArchLinuxARM** for rpi with **ext4** root partition.<br>
-Autoexpansion will work on ArchLinuxARM if you have `growpartfs` installed from AUR. I am still trying to figure out how to use "vanilla" tools for this to happen so this will stay on the testing branch.
+Autoexpansion will work on ArchLinuxARM if you have `growpartfs` installed from AUR. I am still trying to figure out how to use "vanilla" tools for this to happen so this will stay on the testing branch.<br>
+On the other 3, autoexpansion will work if not disabled.
 
 **Very fast restore because of minimal size of img file.**
 
 Default device that will be backed up is detected by scanning what disk-device root resides on. This means that boot and root partitions must be on the same device.<br>
 The scipt can handle if there is no boot partition as well.<br>
-Booting/backing up from usb-stick (`/dev/sda`) with Raspberry pi os has been tested lightly and works but is still considered **experimental**.
+Booting/backing up from usb-stick (`/dev/sda`) with Raspberry pi os has been tested and works.
 
 See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information about using other devices. (the information about `-d` option is depricated on this version, please disregard)<br>
 [Ideas and feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) is always appreciated, whether it's positive or negative. Please just keep it civil. :)
@@ -76,7 +77,7 @@ Applications used in the script:
 
 ## Info
 
-Theoretically the script should work on any device as long as root filesystem is in `ext4`. But IMHO is best applied on ARM hardware.<br>
+Theoretically the script should work on any device as long as root filesystem is `ext4`. But IMHO is best applied on ARM hardware.<br>
 Since the script uses `lsblk` to figure out where the root resides it does not matter what device it is on.<br>
 Even if you forget to disable autoexpansion on a non supported system, the backup will not fail. :)
 
@@ -90,8 +91,6 @@ See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit mor
 4. Removes and recreates the root partition, the size depends on options used when starting the script
 5. Creates a new ext4 filesystem with the same UUID and LABEL as the system you are backing up from
 6. Uses `rsync` to sync both partitions (if more than one)
-
-This means it does not matter if boot is on a partition or not.
 
 Added space is added on top of `df` reported "used space", not the size of the partition. Added space is in MB, so if you want to add 1GB, add 1024.
 
