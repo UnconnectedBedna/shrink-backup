@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
-# shrink-backup.sh
-# SD-card (mmcblk) backup tool for backing up and updating .img files
+# shrink-backup
+# version 0.9.1-beta
+# backup tool for backing up and updating .img files with autoexpansion on various operating systems
 #
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -13,7 +14,7 @@
 #    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #    GNU General Public License for more details.
 #
-#    07/2023
+#    08/2023
 #    Marcus Johansson
 #    https://github.com/UnconnectedBedna/shrink-backup
 ##########################################################################
