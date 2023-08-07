@@ -20,6 +20,9 @@
 
 # Function to clean up resources on script exit or termination
 function cleanup() {
+  # exit 1 = later/normal error
+  # exit 2 = early/clean error
+  # exit 3 = stopped by user
   local exit_code="$?"
 
   if [ "$exit_code" -ne 2 ]; then
@@ -524,18 +527,22 @@ function make_img() {
 
 
 
-# Function to update exiting img file
+# Function to update existing img file
 function do_backup() {
-  OFFSET=( $(fdisk -lo start "$IMG_FILE" | tail -1) ) # blocks, 512B block size
-  OFFSET=$(( OFFSET * 512 )) # bytes
-  debug 'DEBUG' "Using fdisk to find root partition offset: fdisk -lo start $IMG_FILE | tail -1"
-  debug 'INFO' "OFFSET=${OFFSET} Bytes"
+  # Making sure img file exists
+  if ! [ -f "$IMG_FILE" ]; then
+    echo "## ERROR. $IMG_FILE does not exist!"
+    debug 'ERROR' "$IMG_FILE does not exist, exit 1"
+    exit 1
+  fi
 
   # Confirm with user input if not disabled
   if [ "$PROMPTS" == true ]; then
+    img_size=$(ls -lh "$IMG_FILE" | awk '{print $5}')
     echo "## Updating $IMG_FILE"
+    echo "## Size: $img_size"
     read -p "Do you want to continue? [y/n] " -n 1 -r
-    debug 'INFO' "Updating $IMG_FILE"
+    debug 'INFO' "Updating $IMG_FILE, file size=$img_size"
     debug 'INFO' 'Do you want to continue? [y/n]'
     if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
       debug 'USER_INPUT' 'Aborted by user, exit 2'
@@ -546,6 +553,12 @@ function do_backup() {
     echo ''
     debug 'USER_INPUT' 'Y or y pressed to confirm'
   fi
+
+  # Reading offset for root partition
+  OFFSET=$(fdisk -lo start "$IMG_FILE" | tail -1) # blocks, 512B block size
+  OFFSET=$(( OFFSET * 512 )) # bytes
+  debug 'DEBUG' "Using fdisk to find root partition offset: fdisk -lo start $IMG_FILE | tail -1"
+  debug 'INFO' "OFFSET=${OFFSET} Bytes"
 
   # Create a temporary directory to mount the image
   echo '## Mounting img file to temp directory...'
@@ -944,7 +957,6 @@ if [ "$DEBUG" == true ]; then
   debug 'INFO' "Requesting size from resize2fs selected, RESIZE2FS_RUN=$RESIZE2FS_RUN"
   debug 'INFO' "Prompt for user confirmation, PROMPTS=$PROMPTS"
   debug 'INFO' "Auto expansion enabled, AUTOEXPAND=$AUTOEXPAND"
-  sleep 1
 fi
 
 if [ "$EXCLUDE_FILE" == true ]; then
