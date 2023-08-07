@@ -120,7 +120,7 @@ If the filesystem you back up from increases in size, an update (`-U`) of the im
 ### Order of operations - image update
 1. Probes the img file for information about partitions
 2. Mounts root partition with an offset for the loop
-3. Checks if multiple partitions exists, if true, loops the boot with an offset and mounts it within the root mount
+3. Checks if multiple partitions exists. If true, reads `fstab` on img file and mounts boot partition accordingly with an offset
 4. Uses `rsync` to sync both partitions (if more than one)
 
 To update an existing img file simply use the `-U` option and the path to the img file.<br>
