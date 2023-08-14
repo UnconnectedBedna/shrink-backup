@@ -1,4 +1,4 @@
-# shrink-backup is a bash script for backing up your SBC:s into a minimal bootable img file for easy restore that autoexpands file system at boot
+# shrink-backup is a utility for backing up your SBC:s into a minimal bootable img file for easy restore with optional autoexpansion at boot
 
 _I made this script because I wanted a universal method of backing up my SBC:s into small img files as fast as possible (with rsync), indepentent of what os is in use._
 
@@ -7,13 +7,14 @@ _I made this script because I wanted a universal method of backing up my SBC:s i
 
 Tested on **Raspberry Pi** os, **Armbian**, **Manjaro-arm** and **ArchLinuxARM** for rpi with **ext4** root partition.<br>
 Autoexpansion will work on ArchLinuxARM if you have `growpartfs` installed from AUR. I am still trying to figure out how to use "vanilla" tools for this to happen so this will stay on the testing branch.<br>
-On the other 3, autoexpansion will work if not disabled.
+On the other 3, autoexpansion works.
 
 **Very fast restore because of minimal size of img file.**
 
-Default device that will be backed up is detected by scanning what disk-device root resides on. This means that boot and root partitions must be on the same device.<br>
-The scipt can handle if there is no boot partition as well.<br>
-Booting/backing up from usb-stick (`/dev/sda`) with Raspberry pi os has been tested and works.
+Default device that will be backed up is detected by scanning what disk-device root resides on.<br>
+This means that if boot is a partition, that partitions must be on the same device as root.<br>
+Backing up/restoring from/to usb-stick (`/dev/sda`) with Raspberry pi os has been tested and works.<br>
+Wrinting a sd-card img to a usb-stick and vice versa has also been tested and works.
 
 See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information about using other devices. (the information about `-d` option is depricated on this version, please disregard)<br>
 [Ideas and feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) is always appreciated, whether it's positive or negative. Please just keep it civil. :)
@@ -97,6 +98,8 @@ Added space is added on top of `df` reported "used space", not the size of the p
 The script can be instructed to set the img size by requesting recomended minimum size from `e2fsck` by using the `-a` option.<br>
 This is not the absolute smallest size you can achieve but is the "safest" way to create a "smallest possible" img file.<br>
 If you do not increase the size of the filesystem you are backing up from too much, you can most likely keep it updated with the update function (`-U`) of the script.
+
+### Smallest possible image
 
 To get the absolute smallest img file possible, do NOT set `-a` option and set "extra space" to 0
 
