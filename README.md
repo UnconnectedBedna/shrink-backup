@@ -69,7 +69,7 @@ If `-t` is **NOT** selected the following folders will be excluded:
 
 Use `-l` to write debug info into `shrink-backup.log` file in the same directory as the script.
 
-Applications used in the script:
+**Applications used in the script:**
 - fdisk (sfdisk)
 - dd
 - parted
