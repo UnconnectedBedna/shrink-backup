@@ -1,25 +1,28 @@
-# shrink-backup is a utility for backing up your SBC:s into a minimal bootable img file for easy restore with optional autoexpansion at boot
+# shrink-backup is a very fast utility for backing up your SBC:s into minimal bootable img files for easy restore with autoexpansion at boot
 
 _I made this script because I wanted a universal method of backing up my SBC:s into small img files as fast as possible (with rsync), indepentent of what os is in use._
 
-**Latest release:** [shrink-backup.v0.9.0](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v0.9.0/shrink-backup.v0.9.0.tar.gz) (please read [this](https://github.com/UnconnectedBedna/shrink-backup) from main release instead)<br>
-**Beta version:** [shrink-backup.v0.9.1-beta](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v0.9.1-beta/shrink-backup.v0.9.1-beta.tar.gz) (The version the information on this page refers to)
+**Latest release:** [shrink-backup.v0.9.0](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v0.9.0/shrink-backup.v0.9.0.tar.gz)<br>
+[**Testing branch**](https://github.com/UnconnectedBedna/shrink-backup/tree/testing) if you want to have the absolute latest version. Resizing of existing img file is next step on the roadmap and is being developed here.
 
-Tested on **Raspberry Pi** os, **Armbian**, **Manjaro-arm** and **ArchLinuxARM** for rpi with **ext4** root partition.<br>
-Autoexpansion will work on ArchLinuxARM if you have `growpartfs` installed from AUR. I am still trying to figure out how to use "vanilla" tools for this to happen so this will stay on the testing branch.<br>
-On the other 3, autoexpansion works.
+Autoexpansion tested on **Raspberry Pi** os, **Armbian**, **Manjaro-arm** and **ArchLinuxARM** for rpi with **ext4** root partition.
 
 **Very fast restore because of minimal size of img file.**
 
+**Can back up any device as long as root is `ext4`**<br>
 Default device that will be backed up is detected by scanning what disk-device root resides on.<br>
-This means that if boot is a partition, that partitions must be on the same device as root.<br>
-Backing up/restoring from/to usb-stick (`/dev/sda`) with Raspberry pi os has been tested and works.<br>
+This means that ***if*** boot is a partition, that partition must be on the **same device as root**.<br>
+Backing up/restoring to/from usb-stick (`/dev/sda`) with Raspberry pi os has been tested and works.<br>
 Wrinting a sd-card img to a usb-stick and vice versa has also been tested and works.
 
-See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information about using other devices. (the information about `-d` option is depricated on this version, please disregard)<br>
+**Ultra-fast incremental backups to existing img files** 
+
+See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information about using use case. (the information about `-d` option is depricated on this version, please disregard but still a good read, will update soon)<br>
 [Ideas and feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) is always appreciated, whether it's positive or negative. Please just keep it civil. :)
 
-**Don't forget to make the script executable**
+**Don't forget to make the script executable if you git clone**
+
+**To restore a backup, simply "burn" the img file to a device using your favorite method.**
 
 ## Usage:
 ```
@@ -82,7 +85,7 @@ Theoretically the script should work on any device as long as root filesystem is
 Since the script uses `lsblk` to figure out where the root resides it does not matter what device it is on.<br>
 Even if you forget to disable autoexpansion on a non supported system, the backup will not fail. :)
 
-See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information. (depricated information for this version)<br>
+See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information.<br>
 [Feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) is highly apreciated!<br>
 
 ### Order of operations - image creation
@@ -129,6 +132,6 @@ If the filesystem you back up from increases in size, an update (`-U`) of the im
 To update an existing img file simply use the `-U` option and the path to the img file.<br>
 Changing size in an update is not possible at the moment but is in the todo list for the future.
 
-## To restore a backup, simply "burn" the img file to an sd-card using your favorite method.
+**Thank you for using my software <3**
 
-*A backup is not really a backup until you have restored it.*
+*A backup is not really a backup until it has been restored.*
