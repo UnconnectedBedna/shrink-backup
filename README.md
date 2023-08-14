@@ -15,16 +15,16 @@ This means that ***if*** boot is a partition, that partition must be on the **sa
 Backing up/restoring to/from usb-stick (`/dev/sda`) with Raspberry pi os has been tested and works.<br>
 Wrinting a sd-card img to a usb-stick and vice versa has also been tested and works.
 
-**Ultra-fast incremental backups to existing img files** 
+**Ultra-fast incremental backups to existing img files.** 
 
 See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information about using use case. (the information about `-d` option is depricated on this version, please disregard but still a good read, will update soon)<br>
 [Ideas and feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) is always appreciated, whether it's positive or negative. Please just keep it civil. :)
 
-**Don't forget to make the script executable if you git clone**
+**Don't forget to make the script executable if you git clone.**
 
 **To restore a backup, simply "burn" the img file to a device using your favorite method.**
 
-## Usage:
+## Usage
 ```
 sudo shrink-backup -h
 Script for creating an .img file and subsequently keeing it updated (-U), autoexpansion is enabled by default
