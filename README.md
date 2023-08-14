@@ -131,4 +131,4 @@ Changing size in an update is not possible at the moment but is in the todo list
 
 ## To restore a backup, simply "burn" the img file to an sd-card using your favorite method.
 
-*A backup is not really a backup until you have restored from it.*
+*A backup is not really a backup until you have restored it.*
