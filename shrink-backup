@@ -14,7 +14,7 @@
 #    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #    GNU General Public License for more details.
 #
-#    08/2023
+#    09/2023
 #    Marcus Johansson
 #    https://github.com/UnconnectedBedna/shrink-backup
 ##########################################################################
@@ -201,7 +201,7 @@ function make_img() {
 
   # Collecting data for calculations
   debug 'DEBUG' 'Calculating size for dd to cover bootsector in blocks (512B block size) and adding 256 blocks to overlap into root'
-  ROOT_DEV_START=( $(fdisk -lo start "$HD_DEV_PATH" | tail -1) ) # blocks, 512B block size
+  ROOT_DEV_START=$(fdisk -lo start "$HD_DEV_PATH" | tail -1) # blocks, 512B block size
   BOOTSECTOR=$(( ROOT_DEV_START - 1 )) # blocks, to set the actual bootsector
   DDBOOTSECTOR=$(( BOOTSECTOR + 256 )) # blocks, adding 256 extra to cover root filesystem
   ROOT_DEV_START=$(( ROOT_DEV_START * 512 )) # bytes
@@ -254,8 +254,8 @@ function make_img() {
       echo '##############################################################################'
       echo "# A backup will be created at $IMG_FILE"
       echo "# Write to logfile: $DEBUG"
-      echo "# Autoexpand filesystem on boot: $AUTOEXPAND"
-      echo "# Using exclude.txt: $EXCLUDE_FILE"
+      echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
+      echo "# Use exclude.txt: $EXCLUDE_FILE"
       echo "# Bootsector size: $(( BOOTSECTOR / 1024 / 1024 ))MB"
       echo "# Resize2fs decide minimum (root partition): $(( RESIZE2FS_MIN / 1024 / 1024 ))MB"
       echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
@@ -265,8 +265,8 @@ function make_img() {
       echo '##############################################################################'
       echo "# A backup will be created at $IMG_FILE"
       echo "# Write to logfile: $DEBUG"
-      echo "# Autoexpand filesystem on boot: $AUTOEXPAND"
-      echo "# Using exclude.txt: $EXCLUDE_FILE"
+      echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
+      echo "# Use exclude.txt: $EXCLUDE_FILE"
       echo "# Bootsector size: $(( BOOTSECTOR / 1024 / 1024 ))MB"
       echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB with $(( ADDED_SPACE / 1024 / 1024 ))MB extra space included."
       echo '##############################################################################'
@@ -307,8 +307,8 @@ function make_img() {
       echo '# DISABLE PROMPTS SELECTED (-y), NO WARNINGS ABOUT DELETION!!!'
       echo "# A backup will be created at $IMG_FILE"
       echo "# Write to logfile: $DEBUG"
-      echo "# Autoexpand filesystem on boot: $AUTOEXPAND"
-      echo "# Using exclude.txt: $EXCLUDE_FILE"
+      echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
+      echo "# Use exclude.txt: $EXCLUDE_FILE"
       echo "# Bootsector size: $(( BOOTSECTOR / 1024 / 1024 ))MB"
       echo "# Resize2fs decide minimum (root partition): $(( RESIZE2FS_MIN / 1024 / 1024 ))MB"
       echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
@@ -319,8 +319,8 @@ function make_img() {
       echo '# DISABLE PROMPTS SELECTED (-y), NO WARNINGS ABOUT DELETION!!!'
       echo "# A backup will be created at $IMG_FILE"
       echo "# Write to logfile: $DEBUG"
-      echo "# Autoexpand filesystem on boot: $AUTOEXPAND"
-      echo "# Using exclude.txt: $EXCLUDE_FILE"
+      echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
+      echo "# Use exclude.txt: $EXCLUDE_FILE"
       echo "# Bootsector size: $(( BOOTSECTOR / 1024 / 1024 ))MB"
       echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB with $(( ADDED_SPACE / 1024 / 1024 ))MB extra space included."
       echo '# PRESS CTRL+C WITHIN 5s TO CANCEL!'
@@ -540,8 +540,13 @@ function do_backup() {
   # Confirm with user input if not disabled
   if [ "$PROMPTS" == true ]; then
     img_size=$(ls -lh "$IMG_FILE" | awk '{print $5}')
-    echo "## Updating $IMG_FILE"
-    echo "## Size: $img_size"
+    echo '##############################################################################'
+    echo "# Updating $IMG_FILE"
+    echo "# Write to logfile: $DEBUG"
+    echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
+    echo "# Use exclude.txt: $EXCLUDE_FILE"
+    echo "# Total img size: $img_size"
+    echo '##############################################################################'
     read -p "Do you want to continue? [y/n] " -n 1 -r
     debug 'INFO' "Updating $IMG_FILE, file size=$img_size"
     debug 'INFO' 'Do you want to continue? [y/n]'
@@ -553,6 +558,17 @@ function do_backup() {
     fi
     echo ''
     debug 'USER_INPUT' 'Y or y pressed to confirm'
+  else
+    echo '##############################################################################'
+    echo '# DISABLE PROMPTS SELECTED'
+    echo "# Write to logfile: $DEBUG"
+    echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
+    echo "# Use exclude.txt: $EXCLUDE_FILE"
+    echo "# Total img size: $img_size"
+    echo '# PRESS CTRL+C WITHIN 5s TO CANCEL!'
+    echo '##############################################################################'
+    debug 'INFO' "Updating $IMG_FILE, file size=$img_size"
+    sleep 6
   fi
 
   # Reading offset for root partition
@@ -679,9 +695,8 @@ function do_rsync() {
 
 # Function to enable expansion of filesystem at boot
 function expand_fs() {
-  # Check if Manjaro
   if cat /etc/os-release | grep -i 'manjaro' >/dev/null; then
-    # Create self deleting script
+    # Enabling autoexpansion for Manjaro
     echo '## Manjaro os detected...'
     debug 'INFO' 'Manjaro os detected'
     sleep 1
@@ -716,9 +731,8 @@ EOF
     sleep 1
 
   elif [ -e /etc/armbian-release ]; then
+    # Enabling autoexpansion for Armbian
     debug 'INFO' 'Armbian os detected'
-
-    # Create symlink for armbian-resize-filesystem.service
     echo '## Armbian os detected...'
     sleep 1
     if ! test -f "${TMP_DIR}/etc/systemd/system/basic.target.wants/armbian-resize-filesystem.service"; then
@@ -731,12 +745,12 @@ EOF
     sleep 1
 
   elif uname -a | grep -q 'raspberry' || [ -e /etc/apt/sources.list.d/raspi.list ]; then
+    # Enabling autoexpansion for Raspberry pi
     debug 'INFO' 'Raspberry pi detected'
-
-    # Enable Raspberry pi autoexpand
     echo '## Raspberry pi detected...'
     debug 'DEBUG' "Creating expansion script ${TMP_DIR}/expand-fs.sh"
     sleep 1
+    # Creating script for autoexpansion
     cat << EOF2 > "${TMP_DIR}/expand-fs.sh"
 #!/bin/sh
 
@@ -884,16 +898,17 @@ EOF2
     debug 'INFO' 'Raspberry pi filesystem autoresizing at boot'
     sleep 1
 
-  elif [ -e /usr/bin/growpart ]; then
-    # Enabling autoexpansion for ArchLinuxArm using growpartfs
-    echo '## Growpart found, running autoexpansion for ArchLinuxArm...'
-    debug 'INFO' 'Growpart found, running autoexpansion for ArchLinuxArm'
+  elif grep -q 'archlinuxarm' /etc/os-release; then
+    # Enabling autoexpansion for ArchLinuxArm
+    echo '## ArchLinuxArm os detected...'
+    debug 'INFO' 'ArchLinuxArm os detected'
     sleep 1
     if ! [ -d "${TMP_DIR}/etc/systemd/system/basic.target.wants" ]; then
       debug 'DEBUG' "Systemd basic.arget.wants directory does not exist, running: mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants"
       mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants
     fi
-    if ! test -e "${TMP_DIR}/etc/systemd/system/expand-fs.service"; then
+    if ! [ -e "${TMP_DIR}/etc/systemd/system/expand-fs.service" ]; then
+      # Creating autoexpansion systemd unit file expand-fs.service
       debug 'DEBUG' 'Systemd unit expand-fs.service does not exist, creating it'
       cat << EOF > "${TMP_DIR}/etc/systemd/system/expand-fs.service"
 [Unit]
@@ -902,19 +917,38 @@ After=local-fs.target
 Wants=local-fs.target
 
 [Service]
-Environment=ROOT_DISK=/dev/mmcblk0
-Environment=ROOT_PARTITION=2
-ExecStart=/bin/bash -c "/usr/bin/growpart -N \\\${ROOT_DISK} \\\${ROOT_PARTITION} && /usr/bin/growpart \\\${ROOT_DISK} \\\${ROOT_PARTITION} || exit 0"
-ExecStop=/bin/bash -c "/sbin/resize2fs \\\${ROOT_DISK}\\p\${ROOT_PARTITION} && /usr/bin/rm /etc/systemd/system/basic.target.wants/expand-fs.service || exit 0"
+ExecStart=/bin/bash -c "/expand-fs.sh || exit 0"
+ExecStop=/bin/bash -c "/usr/bin/rm /etc/systemd/system/basic.target.wants/expand-fs.service && /usr/bin/rm /expand-fs.sh || exit 0"
 Type=oneshot
 
 [Install]
 WantedBy=basic.target
 EOF
-      if ! [ -e "${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service" ]; then
-        debug 'DEBUG' "Enabling systemd service by creating symlink: ln -s /lib/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service"
-        ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service
-      fi
+    fi
+    if ! [ -e "${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service" ]; then
+      debug 'DEBUG' "Systemd service not enabled, creating symlink: ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service"
+      ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service
+    fi
+    if ! [ -e "${TMP_DIR}/expand-fs.sh" ]; then
+      # Creating script for autoexpansion
+      debug 'DEBUG' '/expand-fs.sh does not exist, creating'
+      cat << EOF > "${TMP_DIR}/expand-fs.sh"
+MAJ_DEV_NUM=\$(lsblk -lpo mountpoint,maj:min,type,path | grep '/ ' | awk '{print \$2}' | cut -d : -f 1)
+HD_DEV_PATH=\$(lsblk -lpo maj:min,type,path | grep "\$MAJ_DEV_NUM" | grep 'disk' | awk '{print \$3}')
+ROOT_DEV_PATH=\$(lsblk -lpo mountpoint,path | grep '/ ' | awk '{print \$2}')
+ROOT_DEV_START=\$(fdisk -lo start "\$HD_DEV_PATH" | tail -1)
+ROOT_DEV_START=\$(( ROOT_DEV_START * 512 ))
+
+sfdisk --delete "\$HD_DEV_PATH" 2
+parted -s -a none "\$HD_DEV_PATH" unit B mkpart primary "\$ROOT_DEV_START" 100%
+resize2fs -pf "\$ROOT_DEV_PATH"
+
+exit 0
+EOF
+    fi
+    if ! [ -x "${TMP_DIR}/expand-fs.sh" ]; then
+      debug 'DEBUG' 'Making /expand-fs.sh executable'
+      chmod +x ${TMP_DIR}/expand-fs.sh
     fi
     echo '## ArchLinuxArm filesystem autoresizing at boot...'
     debug 'INFO' 'ArchLinuxArm filesystem autoresizing at boot'
