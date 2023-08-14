@@ -77,7 +77,6 @@ Applications used in the script:
 - truncate
 - mkfs.ext4
 - rsync
-- (growpartfs from AUR if you want to autoexpand ArchLinuxArm)
 
 ## Info
 
