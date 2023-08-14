@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # shrink-backup
-# version 0.9.1-beta
+# version 0.9.1
 # backup tool for backing up and updating .img files with autoexpansion on various operating systems
 #
 #    This program is free software: you can redistribute it and/or modify
