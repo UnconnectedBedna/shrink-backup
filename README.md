@@ -87,7 +87,7 @@ Even if you forget to disable autoexpansion on a non supported system, the backu
 See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information.<br>
 [Feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) is highly apreciated!<br>
 
-### Order of operations - image creation
+### Order of operations - image creation:
 1. Uses `lsblk` to figure out the correct disk device to back up
 2. Reads the block sizes of the partitions
 3. Uses `dd` to create the boot part of the system + a few megabytes to include the filesystem on root (this *can* be a partition)
@@ -122,7 +122,7 @@ Each file, no matter the size, will take up one block of the filesystem, so if y
 This also means you have VERY little free space on the img file after creation.<br>
 If the filesystem you back up from increases in size, an update (`-U`) of the img file might fail.
 
-### Order of operations - image update
+### Order of operations - image update:
 1. Probes the img file for information about partitions
 2. Mounts root partition with an offset for the loop
 3. Checks if multiple partitions exists. If true, reads `fstab` on img file and mounts boot partition accordingly with an offset
