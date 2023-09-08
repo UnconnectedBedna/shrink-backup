@@ -11,7 +11,7 @@ Autoexpansion tested on **Raspberry Pi** os, **Armbian**, **Manjaro-arm** and **
 
 **Can back up any device as long as root is `ext4`**<br>
 Default device that will be backed up is detected by scanning what disk-device root resides on.<br>
-This means that _**if**_ boot is a partition, that partition must be on the **same device as root**.<br>
+This means that _if_ boot is a partition, that partition must be on the **same device as root**.<br>
 Backing up/restoring to/from usb-stick (`/dev/sda`) with Raspberry pi os has been tested and works.<br>
 Wrinting a sd-card img to a usb-stick and vice versa has also been tested and works.
 
