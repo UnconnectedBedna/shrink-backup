@@ -11,7 +11,7 @@ Autoexpansion tested on **Raspberry Pi** os, **Armbian**, **Manjaro-arm** and **
 
 **Can back up any device as long as root is `ext4`**<br>
 Default device that will be backed up is detected by scanning what disk-device root resides on.<br>
-This means that ***if*** boot is a partition, that partition must be on the **same device as root**.<br>
+This means that _**if**_ boot is a partition, that partition must be on the **same device as root**.<br>
 Backing up/restoring to/from usb-stick (`/dev/sda`) with Raspberry pi os has been tested and works.<br>
 Wrinting a sd-card img to a usb-stick and vice versa has also been tested and works.
 
@@ -46,9 +46,9 @@ Example: sudo shrink-backup -Ut /path/to/backup.img
 ```
 
 The folder where the img file is created will ALWAYS be excluded in the backup.<br>
-If `-t` option is selected, exclude.txt **MUST exist** (but can be empty) within the **directory where the script is located** or the script will exit with an error.
+If `-t` option is selected, `exclude.txt` **MUST exist** (but can be empty) within the **directory where the script is located** or the script will exit with an error.
 
-Use one directory per line in exclude.txt.<br>
+Use one directory per line in `exclude.txt`.<br>
 `/directory/*` = create directory but exclude content.<br>
 `/directory` = exclude the directory completely.
 
@@ -67,7 +67,7 @@ If `-t` is **NOT** selected the following folders will be excluded:
 
 **Rsync WILL cross filesystem boundries, so make sure you exclude external drives unless you want them included in the backup.**
 
-Use `-l` to write debug info into `shrink-backup.log` file in the same directory as the script.
+Use `-l` to write debug info into `shrink-backup.log` file located in the same directory as the script.
 
 **Applications used in the script:**
 - fdisk (sfdisk)
@@ -87,13 +87,13 @@ Even if you forget to disable autoexpansion on a non supported system, the backu
 See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information.<br>
 [Feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) is highly apreciated!<br>
 
-### Order of operations - image creation:
-1. Uses `lsblk` to figure out the correct disk device to back up
-2. Reads the block sizes of the partitions
-3. Uses `dd` to create the boot part of the system + a few megabytes to include the filesystem on root (this *can* be a partition)
-4. Removes and recreates the root partition, the size depends on options used when starting the script
-5. Creates a new ext4 filesystem with the same UUID and LABEL as the system you are backing up from
-6. Uses `rsync` to sync both partitions (if more than one)
+### Order of operations - Image creation:
+1. Uses `lsblk` to figure out the correct disk device to back up.
+2. Reads the block sizes of the partitions.
+3. Uses `dd` to create the boot part of the system + a few megabytes to include the filesystem on root. (this _can_ be a partition)
+4. Removes and recreates the `root` partition, the size depends on options used when starting the script.
+5. Creates the `root` filesystem with the same `UUID` and `LABEL` as the system you are backing up from. (_MUST_ be `ext4`)
+6. Uses `rsync` to sync both partitions. (if more than one)
 
 Added space is added on top of `df` reported "used space", not the size of the partition. Added space is in MB, so if you want to add 1GB, add 1024.
 
@@ -116,21 +116,23 @@ Example:
 -rw-r--r-- 1 root root 3.3G Jul 22 22:37 test0.img # file created with 0
 ```
 
-**Disclaimer:**
-Because of how filesystems work, `df` is never a true representation of what will actually fit on a created img file.<br>
+**Disclaimer:**<br>
+Because of how filesystems work, `df` is never a true representation of what will actually fit in a created img file.<br>
 Each file, no matter the size, will take up one block of the filesystem, so if you have a LOT of very small files (running docker f.ex) the "0 added space method" might fail during rsync. Increase the 0 a little bit and retry.<br>
 This also means you have VERY little free space on the img file after creation.<br>
 If the filesystem you back up from increases in size, an update (`-U`) of the img file might fail.
 
-### Order of operations - image update:
-1. Probes the img file for information about partitions
-2. Mounts root partition with an offset for the loop
-3. Checks if multiple partitions exists. If true, reads `fstab` on img file and mounts boot partition accordingly with an offset
-4. Uses `rsync` to sync both partitions (if more than one)
+### Order of operations - Image update:
+1. Probes the img file for information about partitions.
+2. Mounts `root` partition with an offset for the loop.
+3. Checks if multiple partitions exists. If true, reads `fstab` on img file and mounts boot partition accordingly with an offset.
+4. Uses `rsync` to sync both partitions. (if more than one)
 
 To update an existing img file simply use the `-U` option and the path to the img file.<br>
+Example: `sudo shrink-backup -U /path/to/backup.img`
+
 Changing size in an update is not possible at the moment but is in the todo list for the future.
 
 **Thank you for using my software <3**
 
-*A backup is not really a backup until it has been restored.*
+*"A backup is not really a backup until it has been restored."*
