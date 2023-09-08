@@ -10,14 +10,13 @@ Autoexpansion tested on **Raspberry Pi** os, **Armbian**, **Manjaro-arm** and **
 **Very fast restore because of minimal size of img file.**
 
 **Can back up any device as long as root is `ext4`**<br>
-Default device that will be backed up is detected by scanning what disk-device root resides on.<br>
-This means that _if_ boot is a partition, that partition must be on the **same device as root**.<br>
-Backing up/restoring to/from usb-stick (`/dev/sda`) with Raspberry pi os has been tested and works.<br>
-Wrinting a sd-card img to a usb-stick and vice versa has also been tested and works.
+Default device that will be backed up is detected by scanning what disk-device `root` resides on.<br>
+This means that _if_ `boot` is a partition, that partition must be on the **same device as `root`**<br>
+Backing up/restoring, to/from: usb-stick `/dev/sdX` with Raspberry pi os has been tested and works. Ie, wrinting an sd-card img to a usb-stick and vice versa works.
 
 **Ultra-fast incremental backups to existing img files.** 
 
-See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information about using use case. (the information about `-d` option is depricated on this version, please disregard but still a good read, will update soon)<br>
+See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information about usage. (the information about `-d` option is depricated on this version, please disregard. Still a good read, I will update soon)<br>
 [Ideas and feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) is always appreciated, whether it's positive or negative. Please just keep it civil. :)
 
 **Don't forget to make the script executable if you git clone.**
