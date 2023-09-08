@@ -135,4 +135,4 @@ Changing size in an update is not possible at the moment but is in the todo list
 
 **Thank you for using my software <3**
 
-*"A backup is not really a backup until it has been restored."*
+*"A backup is not really a backup until it has been restored"*
