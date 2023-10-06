@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # shrink-backup
-# version 0.9.2-beta
+# version 0.9.2
 # backup tool for backing up and updating .img files with autoexpansion on various operating systems
 #
 #    This program is free software: you can redistribute it and/or modify
@@ -582,6 +582,10 @@ function do_backup() {
   if [ "$PROMPTS" == true ]; then
     img_size=$(ls -lh "$IMG_FILE" | awk '{print $5}')
     echo '##############################################################################'
+    echo '# IF YOU ARE UPDATING A RPI IMG MADE WITH AN OLDER VERSION OF THIS SCRIPT'
+    echo '# AND HAS RESTORED THAT IMG, PLEASE MAKE A FRESH IMAGE!!!!'
+    echo '# Visit https://github.com/UnconnectedBedna/shrink-backup for more info'
+    echo '# ----------------------------------------------------------------------------'
     echo "# Updating $IMG_FILE"
     echo "# Write to logfile: $DEBUG"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
@@ -601,6 +605,10 @@ function do_backup() {
     debug 'USER_INPUT' 'Y or y pressed to confirm'
   else
     echo '##############################################################################'
+    echo '# IF YOU ARE UPDATING A RPI IMG MADE WITH AN OLDER VERSION OF THIS SCRIPT'
+    echo '# AND HAS RESTORED THAT IMG, PLEASE MAKE A FRESH IMAGE!!!!'
+    echo '# Visit https://github.com/UnconnectedBedna/shrink-backup for more info'
+    echo '# ----------------------------------------------------------------------------'
     echo '# DISABLE PROMPTS SELECTED'
     echo "# Write to logfile: $DEBUG"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
@@ -745,8 +753,6 @@ get_variables () {
   BOOT_DEV_NAME=\$(echo /sys/block/*/"\${BOOT_PART_NAME}" | cut -d "/" -f 4)
   BOOT_PART_NUM=\$(cat "/sys/block/\${BOOT_DEV_NAME}/\${BOOT_PART_NAME}/partition")
 
-  OLD_DISKID=\$(fdisk -l "\$ROOT_DEV" | sed -n 's/Disk identifier: 0x\([^ ]*\)/\1/p')
-
   ROOT_DEV_SIZE=\$(cat "/sys/block/\${ROOT_DEV_NAME}/size")
   TARGET_END=\$((ROOT_DEV_SIZE - 1))
 
@@ -759,22 +765,9 @@ get_variables () {
   ROOT_PART_END=\$(echo "\$ROOT_PART_LINE" | cut -d ":" -f 3)
 }
 
-fix_partuuid() {
+do_resize() {
   mount -o remount,rw "\$ROOT_PART_DEV"
   mount -o remount,rw "\$BOOT_PART_DEV"
-  DISKID="\$(tr -dc 'a-f0-9' < /dev/hwrng | dd bs=1 count=8 2>/dev/null)"
-  fdisk "\$ROOT_DEV" > /dev/null <<EOF
-x
-i
-0x\$DISKID
-r
-w
-EOF
-  if [ "\$?" -eq 0 ]; then
-    sed -i "s/\${OLD_DISKID}/\${DISKID}/g" /etc/fstab
-    sed -i "s/\${OLD_DISKID}/\${DISKID}/" /boot/cmdline.txt
-    sync
-  fi
 
   resize2fs "\$ROOT_PART_DEV"
   rm /expand-fs.sh
@@ -825,7 +818,7 @@ main () {
     return 1
   fi
 
-  fix_partuuid
+  do_resize
 
   return 0
 }
