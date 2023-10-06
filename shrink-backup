@@ -582,10 +582,6 @@ function do_backup() {
   if [ "$PROMPTS" == true ]; then
     img_size=$(ls -lh "$IMG_FILE" | awk '{print $5}')
     echo '##############################################################################'
-    echo '# IF YOU ARE UPDATING A RPI IMG MADE WITH AN OLDER VERSION OF THIS SCRIPT'
-    echo '# AND HAS RESTORED THAT IMG, PLEASE MAKE A FRESH IMAGE!!!!'
-    echo '# Visit https://github.com/UnconnectedBedna/shrink-backup for more info'
-    echo '# ----------------------------------------------------------------------------'
     echo "# Updating $IMG_FILE"
     echo "# Write to logfile: $DEBUG"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
@@ -605,10 +601,6 @@ function do_backup() {
     debug 'USER_INPUT' 'Y or y pressed to confirm'
   else
     echo '##############################################################################'
-    echo '# IF YOU ARE UPDATING A RPI IMG MADE WITH AN OLDER VERSION OF THIS SCRIPT'
-    echo '# AND HAS RESTORED THAT IMG, PLEASE MAKE A FRESH IMAGE!!!!'
-    echo '# Visit https://github.com/UnconnectedBedna/shrink-backup for more info'
-    echo '# ----------------------------------------------------------------------------'
     echo '# DISABLE PROMPTS SELECTED'
     echo "# Write to logfile: $DEBUG"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
