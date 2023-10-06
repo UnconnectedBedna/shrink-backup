@@ -4,12 +4,6 @@ _I made this script because I wanted a universal method of backing up my SBC:s i
 
 Autoexpansion tested on **Raspberry Pi** os, **Armbian**, **Manjaro-arm** and **ArchLinuxARM** for rpi with **ext4** root partition.
 
-Because of me relying on raspi-config script to autoexpand rpi images in previous versions of this script, it means images that has been restored on rpi now have a different `PARTUUID` from the img file<br>
-**If you are currently running on a restored img on rpi, PLEASE MAKE A FRESH IMG!**<br>
-If you are trying to restore an img updated from a restored rpi img (made with older versions of this script), please edit `/etc/fstab` and `/boot/cmdline.txt` to the `PARTUUID` on the img file partitions.<br>
-You can find the `PARTUUID` on the img file looping the img and running `lsblk -o name,partuuid`. Nothing is lost.<br>
-**I am very sorry if this has affected you, I have made changes to the script and are no longer relying on the raspi-config script.**
-
 **Latest release:** [shrink-backup.v0.9.2](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v0.9.2/shrink-backup.v0.9.2.tar.gz)<br>
 [**Testing branch**](https://github.com/UnconnectedBedna/shrink-backup/tree/testing) if you want to have the absolute latest version. Resizing of existing img file is next step on the roadmap and is being developed here.
 
