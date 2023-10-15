@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # shrink-backup
-# version 0.9.2
+# version 0.9.3
 # backup tool for backing up and updating .img files with autoexpansion on various operating systems
 #
 #    This program is free software: you can redistribute it and/or modify
@@ -501,8 +501,8 @@ function make_img() {
     debug 'INFO' 'Separate boot partition detected, mounting boot inside img file'
     BOOT_PATH=$(cat /etc/fstab | grep '/boot' | awk '{print $2}')
     debug 'DEBUG' "Fetching boot mount path from fstab, BOOT_PATH=$BOOT_PATH"
-    if ! [ -d ${TMP_DIR}/boot ]; then
-      mkdir ${TMP_DIR}/boot
+    if ! [ -d ${TMP_DIR}${BOOT_PATH} ]; then
+      mkdir -p ${TMP_DIR}${BOOT_PATH}
       debug 'DEBUG' "Creating boot directory in img file, mkdir ${TMP_DIR}/boot"
     fi
     if ! output=$(mount "$LOOP1" "${TMP_DIR}${BOOT_PATH}" 2>&1); then
@@ -728,132 +728,57 @@ function autoexpansion_armbian() {
 
 # Enabling autoexpansion for Raspberry pi
 function autoexpansion_rpi() {
-  debug 'DEBUG' "Creating expansion script ${TMP_DIR}/expand-fs.sh"
-  cat << EOF2 > "${TMP_DIR}/expand-fs.sh"
-#!/bin/sh
-
-reboot_pi () {
-  umount /boot
-  mount / -o remount,ro
-  sync
-  reboot -f
-  sleep 5
-  exit 0
-}
-
-get_variables () {
-  ROOT_PART_DEV=\$(findmnt / -o source -n)
-  ROOT_PART_NAME=\$(echo "\$ROOT_PART_DEV" | cut -d "/" -f 3)
-  ROOT_DEV_NAME=\$(echo /sys/block/*/"\${ROOT_PART_NAME}" | cut -d "/" -f 4)
-  ROOT_DEV="/dev/\${ROOT_DEV_NAME}"
-  ROOT_PART_NUM=\$(cat "/sys/block/\${ROOT_DEV_NAME}/\${ROOT_PART_NAME}/partition")
-
-  BOOT_PART_DEV=\$(findmnt /boot -o source -n)
-  BOOT_PART_NAME=\$(echo "\$BOOT_PART_DEV" | cut -d "/" -f 3)
-  BOOT_DEV_NAME=\$(echo /sys/block/*/"\${BOOT_PART_NAME}" | cut -d "/" -f 4)
-  BOOT_PART_NUM=\$(cat "/sys/block/\${BOOT_DEV_NAME}/\${BOOT_PART_NAME}/partition")
-
-  ROOT_DEV_SIZE=\$(cat "/sys/block/\${ROOT_DEV_NAME}/size")
-  TARGET_END=\$((ROOT_DEV_SIZE - 1))
-
-  PARTITION_TABLE=\$(parted -m "\$ROOT_DEV" unit s print | tr -d 's')
-
-  LAST_PART_NUM=\$(echo "\$PARTITION_TABLE" | tail -n 1 | cut -d ":" -f 1)
-
-  ROOT_PART_LINE=\$(echo "\$PARTITION_TABLE" | grep -e "^\${ROOT_PART_NUM}:")
-  ROOT_PART_START=\$(echo "\$ROOT_PART_LINE" | cut -d ":" -f 2)
-  ROOT_PART_END=\$(echo "\$ROOT_PART_LINE" | cut -d ":" -f 3)
-}
-
-do_resize() {
-  mount -o remount,rw "\$ROOT_PART_DEV"
-  mount -o remount,rw "\$BOOT_PART_DEV"
-
-  resize2fs "\$ROOT_PART_DEV"
-  rm /expand-fs.sh
-
-  mount -o remount,ro "\$ROOT_PART_DEV"
-  mount -o remount,ro "\$BOOT_PART_DEV"
-}
-
-check_variables () {
-  if [ "\$BOOT_DEV_NAME" != "\$ROOT_DEV_NAME" ]; then
-      FAIL_REASON="Boot and root partitions are on different devices"
-      return 1
+  if ! [ -d "${TMP_DIR}/etc/systemd/system/basic.target.wants" ]; then
+    debug 'DEBUG' "Systemd basic.arget.wants directory does not exist, running: mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants"
+    mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants
   fi
+  # Creating autoexpansion systemd unit file expand-fs.service
+  if ! [ -e "${TMP_DIR}/etc/systemd/system/expand-fs.service" ]; then
+    debug 'DEBUG' 'Systemd unit expand-fs.service does not exist, creating it'
+    cat << EOF > "${TMP_DIR}/etc/systemd/system/expand-fs.service"
+[Unit]
+Description=Extend root partition and resize ext4 file system
+After=local-fs.target
+Wants=local-fs.target
 
-  if [ "\$ROOT_PART_NUM" -ne "\$LAST_PART_NUM" ]; then
-    FAIL_REASON="Root partition should be last partition"
-    return 1
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c "/expand-fs.sh || exit 0"
+ExecStop=/bin/bash -c "/usr/bin/rm /etc/systemd/system/basic.target.wants/expand-fs.service && /usr/bin/rm /expand-fs.sh && /usr/bin/rm /etc/systemd/system/expand-fs.service && /usr/sbin/reboot -f || exit 0"
+
+[Install]
+WantedBy=basic.target
+EOF
   fi
-
-  if [ "\$ROOT_PART_END" -gt "\$TARGET_END" ]; then
-    FAIL_REASON="Root partition runs past the end of device"
-    return 1
+  if ! [ -e "${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service" ]; then
+    debug 'DEBUG' "Systemd service not enabled, creating symlink: ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service"
+    ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service
   fi
-
-  if [ ! -b "\$ROOT_DEV" ] || [ ! -b "\$ROOT_PART_DEV" ] || [ ! -b "\$BOOT_PART_DEV" ] ; then
-    FAIL_REASON="Could not determine partitions"
-    return 1
-  fi
-}
-
-main () {
-  get_variables
-
-  if ! check_variables; then
-    return 1
-  fi
-
-  if [ "\$ROOT_PART_END" -eq "\$TARGET_END" ]; then
-    mount -o remount,rw "\$BOOT_PART_DEV"
-    resize2fs "\$ROOT_PART_DEV"
-    rm /expand-fs.sh
-    mount -o remount,ro "\$ROOT_PART_DEV"
-    reboot_pi
-  fi
-
-  if ! parted -m "\$ROOT_DEV" u s resizepart "\$ROOT_PART_NUM" "\$TARGET_END"; then
-    FAIL_REASON="Root partition resize failed"
-    return 1
-  fi
-
-  do_resize
-
-  return 0
-}
-
-mount -t proc proc /proc
-mount -t sysfs sys /sys
-mount -t tmpfs tmp /run
-mkdir -p /run/systemd
-
-mount /boot
-mount / -o remount,ro
-
-sed -i 's| init=/expand-fs\.sh||' /boot/cmdline.txt
-sed -i 's| sdhci\.debug_quirks2=4||' /boot/cmdline.txt
-
-if ! grep -q splash /boot/cmdline.txt; then
-  sed -i "s/ quiet//g" /boot/cmdline.txt
-fi
-mount /boot -o remount,ro
+  # Creating script for autoexpansion
+  if ! [ -e "${TMP_DIR}/expand-fs.sh" ]; then
+    debug 'DEBUG' "Creating expansion script ${TMP_DIR}/expand-fs.sh"
+    cat << EOF2 > "${TMP_DIR}/expand-fs.sh"
+#!/usr/bin/bash
+MAJ_DEV_NUM=\$(lsblk -lpo mountpoint,maj:min,type,path | grep '/ ' | awk '{print \$2}' | cut -d : -f 1)
+MIN_DEV_NUM=\$(lsblk -lpo mountpoint,maj:min,type,path | grep '/ ' | awk '{print \$2}' | cut -d : -f 2)
+HD_DEV_PATH=\$(lsblk -lpo maj:min,type,path | grep "\$MAJ_DEV_NUM" | grep 'disk' | awk '{print \$3}')
+ROOT_DEV_PATH=\$(lsblk -lpo mountpoint,path | grep '/ ' | awk '{print \$2}')
+ROOT_DEV_START=\$(fdisk -lo start "\$HD_DEV_PATH" | tail -1)
+ROOT_DEV_START=\$(( ROOT_DEV_START * 512 ))
+sfdisk --delete "\$HD_DEV_PATH" "\$MIN_DEV_NUM"
+sleep 1
+parted -s -a none "\$HD_DEV_PATH" unit B mkpart primary "\$ROOT_DEV_START" 100%
+sleep 1
+resize2fs -f "\$ROOT_DEV_PATH"
+sleep 1
 sync
-
-if main; then
-  whiptail --infobox "Resized root filesystem. Rebooting in 5 seconds..." 20 60
-  sleep 5
-else
-  whiptail --msgbox "Could not expand filesystem, please try raspi-config or rc_gui.\n\${FAIL_REASON}" 20 60
-  sleep 5
-fi
-
-reboot_pi
+exit 0
 EOF2
-  debug 'DEBUG' "Adding 'init=/expand-fs.sh' to ${TMP_DIR}/boot/cmdline.txt"
-  sed -i 's/rootwait/& init=\/expand-fs.sh/' ${TMP_DIR}/boot/cmdline.txt
-  debug 'DEBUG' "Creating ${TMP_DIR}/expand-fs.sh executable: chmod +x ${TMP_DIR}/expand-fs.sh"
-  chmod +x ${TMP_DIR}/expand-fs.sh
+  fi
+  if ! [ -x "${TMP_DIR}/expand-fs.sh" ]; then
+    debug 'DEBUG' 'Making /expand-fs.sh executable'
+    chmod +x ${TMP_DIR}/expand-fs.sh
+  fi
   echo '## Raspberry pi filesystem autoresizing at boot...'
   debug 'INFO' 'Raspberry pi filesystem autoresizing at boot'
   sleep 1
@@ -923,12 +848,12 @@ function print_result() {
   if [ "$UPDATE" != true ]; then
     AFTER_SIZE=$(ls -lh "$IMG_FILE" | cut -d ' ' -f 5)
     echo '##############################################################################'
-    echo '# Backup done.'
-    echo "# Write to logfile: $DEBUG"
-    echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
-    echo "# Use exclude.txt: $EXCLUDE_FILE"
+    echo '## Backup done.'
+    echo "## Write to logfile: $DEBUG"
+    echo "## Autoexpand filesystem at boot: $AUTOEXPAND"
+    echo "## Use exclude.txt: $EXCLUDE_FILE"
     if [ "$RESIZE2FS_RUN" = true ]; then
-      echo "# $IMG_FILE is $AFTER_SIZE with a root partition of $(( RESIZE2FS_MIN / 1024 / 1024 ))MB."
+      echo "## $IMG_FILE is $AFTER_SIZE with a root partition of $(( RESIZE2FS_MIN / 1024 / 1024 ))MB."
       debug 'INFO' "$IMG_FILE is $AFTER_SIZE with a root partition of $(( RESIZE2FS_MIN / 1024 / 1024 ))MB"
     else
       echo "## $IMG_FILE is $AFTER_SIZE with $(( ADDED_SPACE / 1024 / 1024 ))MB extra space included."
@@ -937,10 +862,10 @@ function print_result() {
     debug 'INFO' 'Img file created and backup done'
   else
     echo '##############################################################################'
-    echo '# Backup done.'
-    echo "# Write to logfile: $DEBUG"
-    echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
-    echo "# Use exclude.txt: $EXCLUDE_FILE"
+    echo '## Backup done.'
+    echo "## Write to logfile: $DEBUG"
+    echo "## Autoexpand filesystem at boot: $AUTOEXPAND"
+    echo "## Use exclude.txt: $EXCLUDE_FILE"
     debug 'INFO' 'Img file updated'
   fi
 }
