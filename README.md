@@ -16,7 +16,7 @@ Backing up/restoring, to/from: usb-stick `/dev/sdX` with Raspberry pi os has bee
 
 **Ultra-fast incremental backups to existing img files.** 
 
-See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information about usage. (the information about `-d` option is depricated on this version, please disregard. Still a good read, I will update soon)<br>
+See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information about usage.<br>
 [Ideas and feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) is always appreciated, whether it's positive or negative. Please just keep it civil. :)
 
 **Don't forget to make the script executable if you git clone.**
