@@ -293,6 +293,7 @@ function make_img() {
       echo ''
       echo '##############################################################################'
       echo "# A backup will be created at $IMG_FILE"
+      echo '# ----------------------------------------------------------------------------'
       echo "# Write to logfile: $DEBUG"
       echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
       echo "# Use exclude.txt: $EXCLUDE_FILE"
@@ -304,6 +305,7 @@ function make_img() {
       echo ''
       echo '##############################################################################'
       echo "# A backup will be created at $IMG_FILE"
+      echo '# ----------------------------------------------------------------------------'
       echo "# Write to logfile: $DEBUG"
       echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
       echo "# Use exclude.txt: $EXCLUDE_FILE"
@@ -346,6 +348,7 @@ function make_img() {
       echo '##############################################################################'
       echo '# DISABLE PROMPTS SELECTED (-y), NO WARNINGS ABOUT DELETION!!!'
       echo "# A backup will be created at $IMG_FILE"
+      echo '# ----------------------------------------------------------------------------'
       echo "# Write to logfile: $DEBUG"
       echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
       echo "# Use exclude.txt: $EXCLUDE_FILE"
@@ -358,6 +361,7 @@ function make_img() {
       echo '##############################################################################'
       echo '# DISABLE PROMPTS SELECTED (-y), NO WARNINGS ABOUT DELETION!!!'
       echo "# A backup will be created at $IMG_FILE"
+      echo '# ----------------------------------------------------------------------------'
       echo "# Write to logfile: $DEBUG"
       echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
       echo "# Use exclude.txt: $EXCLUDE_FILE"
@@ -582,11 +586,8 @@ function do_backup() {
   if [ "$PROMPTS" == true ]; then
     img_size=$(ls -lh "$IMG_FILE" | awk '{print $5}')
     echo '##############################################################################'
-    echo '# IF YOU ARE UPDATING A RPI IMG MADE WITH AN OLDER VERSION OF THIS SCRIPT'
-    echo '# AND HAS RESTORED THAT IMG, PLEASE MAKE A FRESH IMAGE!!!!'
-    echo '# Visit https://github.com/UnconnectedBedna/shrink-backup for more info'
-    echo '# ----------------------------------------------------------------------------'
     echo "# Updating $IMG_FILE"
+    echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
@@ -605,11 +606,9 @@ function do_backup() {
     debug 'USER_INPUT' 'Y or y pressed to confirm'
   else
     echo '##############################################################################'
-    echo '# IF YOU ARE UPDATING A RPI IMG MADE WITH AN OLDER VERSION OF THIS SCRIPT'
-    echo '# AND HAS RESTORED THAT IMG, PLEASE MAKE A FRESH IMAGE!!!!'
-    echo '# Visit https://github.com/UnconnectedBedna/shrink-backup for more info'
-    echo '# ----------------------------------------------------------------------------'
     echo '# DISABLE PROMPTS SELECTED'
+    echo "# Updating $IMG_FILE"
+    echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
@@ -684,28 +683,27 @@ function autoexpansion_manjaro() {
     debug 'DEBUG' "Systemd basic.arget.wants directory does not exist, running: mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants"
     mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants
   fi
+
   # Creating autoexpansion systemd unit file expand-fs.service
-  if ! [ -e "${TMP_DIR}/etc/systemd/system/expand-fs.service" ]; then
-    debug 'DEBUG' 'Systemd unit expand-fs.service does not exist, creating it'
-    cat << EOF > "${TMP_DIR}/etc/systemd/system/expand-fs.service"
+  debug 'DEBUG' 'Systemd unit expand-fs.service does not exist, creating it'
+  cat << EOF > "${TMP_DIR}/etc/systemd/system/expand-fs.service"
 [Unit]
 Description=Extend root partition and resize ext4 file system
 After=local-fs.target
 Wants=local-fs.target
 
 [Service]
-ExecStart=/bin/bash -c "/usr/bin/resize-fs || exit 0"
-ExecStop=/bin/bash -c "/usr/bin/rm /etc/systemd/system/basic.target.wants/expand-fs.service || exit 0"
 Type=oneshot
+ExecStart=/bin/bash -c "/usr/bin/resize-fs || exit 0"
+ExecStop=/bin/bash -c "/usr/bin/rm /etc/systemd/system/basic.target.wants/expand-fs.service && /usr/bin/rm /etc/systemd/system/expand-fs.service && /usr/bin/reboot -f || exit 0"
 
 [Install]
 WantedBy=basic.target
 EOF
-  fi
-  if ! [ -e "${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service" ]; then
-    debug 'DEBUG' "Systemd service not enabled, creating symlink: ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service"
-    ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service
-  fi
+
+  debug 'DEBUG' "Systemd service not enabled, creating symlink: ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service"
+  ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service
+
   echo '## Manjaro filesystem autoresizing at boot...'
   debug 'INFO' 'Manjaro filesystem autoresizing at boot'
   sleep 1
