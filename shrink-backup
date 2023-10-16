@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # shrink-backup
-# version 0.9.3
+# version 0.9.4-beta
 # backup tool for backing up and updating .img files with autoexpansion on various operating systems
 #
 #    This program is free software: you can redistribute it and/or modify
@@ -14,7 +14,7 @@
 #    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #    GNU General Public License for more details.
 #
-#    09/2023
+#    10/2023
 #    Marcus Johansson
 #    https://github.com/UnconnectedBedna/shrink-backup
 ##########################################################################
@@ -732,10 +732,10 @@ function autoexpansion_rpi() {
     debug 'DEBUG' "Systemd basic.arget.wants directory does not exist, running: mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants"
     mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants
   fi
+
   # Creating autoexpansion systemd unit file expand-fs.service
-  if ! [ -e "${TMP_DIR}/etc/systemd/system/expand-fs.service" ]; then
-    debug 'DEBUG' 'Systemd unit expand-fs.service does not exist, creating it'
-    cat << EOF > "${TMP_DIR}/etc/systemd/system/expand-fs.service"
+  debug 'DEBUG' 'Creating systemd unit expand-fs.service'
+  cat << EOF > "${TMP_DIR}/etc/systemd/system/expand-fs.service"
 [Unit]
 Description=Extend root partition and resize ext4 file system
 After=local-fs.target
@@ -749,15 +749,13 @@ ExecStop=/bin/bash -c "/usr/bin/rm /etc/systemd/system/basic.target.wants/expand
 [Install]
 WantedBy=basic.target
 EOF
-  fi
-  if ! [ -e "${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service" ]; then
-    debug 'DEBUG' "Systemd service not enabled, creating symlink: ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service"
-    ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service
-  fi
+
+  debug 'DEBUG' "Enabling systemd service by creating symlink: ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service"
+  ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service
+
   # Creating script for autoexpansion
-  if ! [ -e "${TMP_DIR}/expand-fs.sh" ]; then
-    debug 'DEBUG' "Creating expansion script ${TMP_DIR}/expand-fs.sh"
-    cat << EOF2 > "${TMP_DIR}/expand-fs.sh"
+  debug 'DEBUG' "Creating expansion script ${TMP_DIR}/expand-fs.sh"
+  cat << EOF2 > "${TMP_DIR}/expand-fs.sh"
 #!/usr/bin/bash
 MAJ_DEV_NUM=\$(lsblk -lpo mountpoint,maj:min,type,path | grep '/ ' | awk '{print \$2}' | cut -d : -f 1)
 MIN_DEV_NUM=\$(lsblk -lpo mountpoint,maj:min,type,path | grep '/ ' | awk '{print \$2}' | cut -d : -f 2)
@@ -765,20 +763,17 @@ HD_DEV_PATH=\$(lsblk -lpo maj:min,type,path | grep "\$MAJ_DEV_NUM" | grep 'disk'
 ROOT_DEV_PATH=\$(lsblk -lpo mountpoint,path | grep '/ ' | awk '{print \$2}')
 ROOT_DEV_START=\$(fdisk -lo start "\$HD_DEV_PATH" | tail -1)
 ROOT_DEV_START=\$(( ROOT_DEV_START * 512 ))
+
 sfdisk --delete "\$HD_DEV_PATH" "\$MIN_DEV_NUM"
-sleep 1
 parted -s -a none "\$HD_DEV_PATH" unit B mkpart primary "\$ROOT_DEV_START" 100%
-sleep 1
 resize2fs -f "\$ROOT_DEV_PATH"
-sleep 1
 sync
 exit 0
 EOF2
-  fi
-  if ! [ -x "${TMP_DIR}/expand-fs.sh" ]; then
-    debug 'DEBUG' 'Making /expand-fs.sh executable'
-    chmod +x ${TMP_DIR}/expand-fs.sh
-  fi
+
+  debug 'DEBUG' 'Making /expand-fs.sh executable'
+  chmod +x ${TMP_DIR}/expand-fs.sh
+
   echo '## Raspberry pi filesystem autoresizing at boot...'
   debug 'INFO' 'Raspberry pi filesystem autoresizing at boot'
   sleep 1
@@ -792,50 +787,48 @@ function autoexpansion_arch() {
     debug 'DEBUG' "Systemd basic.arget.wants directory does not exist, running: mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants"
     mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants
   fi
+
   # Creating autoexpansion systemd unit file expand-fs.service
-  if ! [ -e "${TMP_DIR}/etc/systemd/system/expand-fs.service" ]; then
-    debug 'DEBUG' 'Systemd unit expand-fs.service does not exist, creating it'
-    cat << EOF > "${TMP_DIR}/etc/systemd/system/expand-fs.service"
+  debug 'DEBUG' 'Creating systemd unit expand-fs.service'
+  cat << EOF > "${TMP_DIR}/etc/systemd/system/expand-fs.service"
 [Unit]
 Description=Extend root partition and resize ext4 file system
 After=local-fs.target
 Wants=local-fs.target
 
 [Service]
-ExecStart=/bin/bash -c "/expand-fs.sh || exit 0"
-ExecStop=/bin/bash -c "/usr/bin/rm /etc/systemd/system/basic.target.wants/expand-fs.service && /usr/bin/rm /expand-fs.sh || exit 0"
 Type=oneshot
+ExecStart=/bin/bash -c "/expand-fs.sh || exit 0"
+ExecStop=/bin/bash -c "/usr/bin/rm /etc/systemd/system/basic.target.wants/expand-fs.service && /usr/bin/rm /expand-fs.sh && /usr/bin/rm /etc/systemd/system/expand-fs.service && /usr/bin/reboot -f || exit 0"
 
 [Install]
 WantedBy=basic.target
 EOF
-  fi
-  if ! [ -e "${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service" ]; then
-    debug 'DEBUG' "Systemd service not enabled, creating symlink: ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service"
-    ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service
-  fi
+
+  debug 'DEBUG' "Enabling systemd service by creating symlink: ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service"
+  ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service
+
   # Creating script for autoexpansion
-  if ! [ -e "${TMP_DIR}/expand-fs.sh" ]; then
-    debug 'DEBUG' '/expand-fs.sh does not exist, creating'
-    cat << EOF > "${TMP_DIR}/expand-fs.sh"
+  debug 'DEBUG' 'Creating expansion script ${TMP_DIR}/expand-fs.sh'
+  cat << EOF2 > "${TMP_DIR}/expand-fs.sh"
 #!/usr/bin/bash
 MAJ_DEV_NUM=\$(lsblk -lpo mountpoint,maj:min,type,path | grep '/ ' | awk '{print \$2}' | cut -d : -f 1)
+MIN_DEV_NUM=\$(lsblk -lpo mountpoint,maj:min,type,path | grep '/ ' | awk '{print \$2}' | cut -d : -f 2)
 HD_DEV_PATH=\$(lsblk -lpo maj:min,type,path | grep "\$MAJ_DEV_NUM" | grep 'disk' | awk '{print \$3}')
 ROOT_DEV_PATH=\$(lsblk -lpo mountpoint,path | grep '/ ' | awk '{print \$2}')
 ROOT_DEV_START=\$(fdisk -lo start "\$HD_DEV_PATH" | tail -1)
 ROOT_DEV_START=\$(( ROOT_DEV_START * 512 ))
 
-sfdisk --delete "\$HD_DEV_PATH" 2
+sfdisk --delete "\$HD_DEV_PATH" "\$MIN_DEV_NUM"
 parted -s -a none "\$HD_DEV_PATH" unit B mkpart primary "\$ROOT_DEV_START" 100%
 resize2fs -pf "\$ROOT_DEV_PATH"
-
+sync
 exit 0
-EOF
-  fi
-  if ! [ -x "${TMP_DIR}/expand-fs.sh" ]; then
-    debug 'DEBUG' 'Making /expand-fs.sh executable'
-    chmod +x ${TMP_DIR}/expand-fs.sh
-  fi
+EOF2
+
+  debug 'DEBUG' 'Making /expand-fs.sh executable'
+  chmod +x ${TMP_DIR}/expand-fs.sh
+
   echo '## ArchLinuxArm filesystem autoresizing at boot...'
   debug 'INFO' 'ArchLinuxArm filesystem autoresizing at boot'
   sleep 1
