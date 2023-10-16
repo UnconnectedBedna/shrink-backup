@@ -21,7 +21,8 @@ See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit mor
 
 **Don't forget to make the script executable if you git clone.**
 
-**To restore a backup, simply "burn" the img file to a device using your favorite method.**
+**To restore a backup, simply "burn" the img file to a device using your favorite method.**<br>
+When booting up a restored image with autoresize active, wait until the the reboot sequence has occured. The login prompt may very well become visible before the autoresize function has rebooted.
 
 ## Usage
 ```
