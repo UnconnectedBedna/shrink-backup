@@ -11,7 +11,7 @@ Autoexpansion tested on **Raspberry Pi** os (bookworm and older), **Armbian**, *
 
 **Can back up any device as long as root is `ext4`**<br>
 Default device that will be backed up is detected by scanning what disk-device `root` resides on.<br>
-This means that _if_ `boot` is a partition, that partition must be on the **same device as `root`**<br>
+This means that _if_ `boot` is a partition, that partition must be on the **same device as `root`**.<br>
 Backing up/restoring, to/from: usb-stick `/dev/sdX` with Raspberry pi os has been tested and works. Ie, writing an sd-card img to a usb-stick and vice versa works.
 
 **Ultra-fast incremental backups to existing img files.** 
@@ -19,7 +19,7 @@ Backing up/restoring, to/from: usb-stick `/dev/sdX` with Raspberry pi os has bee
 See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information about usage.<br>
 [Ideas and feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) is always appreciated, whether it's positive or negative. Please just keep it civil. :)
 
-**Don't forget to make the script executable if you git clone.**
+**Don't forget to make the script executable.**
 
 **To restore a backup, simply "burn" the img file to a device using your favorite method.**<br>
 When booting up a restored image with autoresize active, wait until the the reboot sequence has occured. The login prompt may very well become visible before the autoresize function has rebooted.
