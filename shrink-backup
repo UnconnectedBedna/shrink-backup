@@ -294,8 +294,8 @@ function do_mount() {
     debug 'INFO' 'Separate boot partition detected, mounting boot inside root'
     if ! [ -d ${TMP_DIR}${BOOT_PATH} ]; then
       debug 'INFO' 'Boot directory did not exist'
-      debug 'DEBUG' "Running: mkdir ${TMP_DIR}${BOOT_PATH}"
-      mkdir ${TMP_DIR}${BOOT_PATH}
+      debug 'DEBUG' "Running: mkdir -p ${TMP_DIR}${BOOT_PATH}"
+      mkdir -p ${TMP_DIR}${BOOT_PATH}
     fi
     debug 'DEBUG' "Running: mount $IMG_DEV_BOOT_PATH ${TMP_DIR}${BOOT_PATH}"
     if ! output=$(mount "$IMG_DEV_BOOT_PATH" "${TMP_DIR}${BOOT_PATH}" 2>&1); then
