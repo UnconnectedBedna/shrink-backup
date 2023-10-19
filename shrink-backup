@@ -453,6 +453,11 @@ function do_resize() {
       exit 1
     fi
 
+    # Check img filesystem
+    debug 'INFO' 'Scanning filesystem'
+    debug 'DEBUG' 'Running function: do_e2fsck'
+    do_e2fsck
+
   elif [ "$*" = 'shrink' ]; then
 
     #debug 'INFO' 'Fetching new size of filesystem with fdisk'
@@ -1082,8 +1087,8 @@ EOF
   cat << EOF2 > "${TMP_DIR}/expand-fs.sh"
 #!/usr/bin/bash
 LOCAL_DEV_MAJ=\$(lsblk -lpo mountpoint,maj:min,type,path | grep '/ ' | awk '{print \$2}' | cut -d : -f 1)
-LOCAL_ROOT_PARTN=\$(lsblk -lpo mountpoint,maj:min,type,path | grep '/ ' | awk '{print \$2}' | cut -d : -f 2)
 LOCAL_DEV_PATH=\$(lsblk -lpo maj:min,type,path | grep "\$LOCAL_DEV_MAJ" | grep 'disk' | awk '{print \$3}')
+LOCAL_ROOT_PARTN=\$(parted -sm "\$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
 LOCAL_DEV_ROOT_PATH=\$(lsblk -lpo mountpoint,path | grep '/ ' | awk '{print \$2}')
 LOCAL_ROOT_START=\$(fdisk --byte -lo start "\$LOCAL_DEV_PATH" | tail -1)
 
