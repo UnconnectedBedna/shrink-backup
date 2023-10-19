@@ -166,8 +166,9 @@ function get_dev_variables() {
 
   # Check if separate boot and root partition exists and set variables accordingly
   LOCAL_DEV_MAJ=$(lsblk -lpo mountpoint,maj:min | grep '/ ' | awk '{print $2}' | cut -d : -f 1)
-  LOCAL_ROOT_PARTN=$(lsblk -lpo mountpoint,partn | grep '/ ' | awk '{print $2}')
+  #LOCAL_ROOT_PARTN=$(lsblk -lpo mountpoint,partn | grep '/ ' | awk '{print $2}') # can only be used on arch :(
   LOCAL_DEV_PATH=$(lsblk -lpo maj:min,type,path | grep "$LOCAL_DEV_MAJ" | grep 'disk' | awk '{print $3}')
+  LOCAL_ROOT_PARTN=$(parted -sm "$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
   debug 'DEBUG' "LOCAL_DEV_PATH=${LOCAL_DEV_PATH} | LOCAL_DEV_MAJ=$LOCAL_DEV_MAJ | LOCAL_ROOT_PARTN=$LOCAL_ROOT_PARTN"
   if [ $(lsblk | grep -c 'boot') -ne 0 ]; then
     debug 'INFO' 'Separate boot partition detected'
@@ -378,7 +379,8 @@ function do_resize() {
   # Gather information
   debug 'INFO' 'Fetching root partition number by using lsblk'
   debug 'DEBUG' "Running: lsblk -lpo path,partn | grep $IMG_DEV_ROOT_PATH | awk '{print \$2}'"
-  IMG_ROOT_PARTN=$(lsblk -lpo path,partn | grep "$IMG_DEV_ROOT_PATH" | awk '{print $2}')
+  #IMG_ROOT_PARTN=$(lsblk -lpo path,partn | grep "$IMG_DEV_ROOT_PATH" | awk '{print $2}') # can only be used on arch :(
+  IMG_ROOT_PARTN=$(parted -sm "$LOOP" print | tail -1 | cut -d : -f 1)
   debug 'DEBUG' "IMG_ROOT_PARTN=$IMG_ROOT_PARTN"
 
   # Check img filesystem
@@ -847,7 +849,7 @@ function do_backup() {
     IMG_ROOT_SIZE=$(fdisk --bytes -lo size "$LOOP" | tail -1)
     debug 'DEBUG' "IMG_ROOT_SIZE=$IMG_ROOT_SIZE Bytes | LOCAL_RESIZE2FS_MIN=$LOCAL_RESIZE2FS_MIN Bytes"
 
-    if [ "$IMG_ROOT_SIZE" -lt "$LOCAL_RESIZE2FS_MIN" ] && (( LOCAL_RESIZE2FS_MIN - IMG_ROOT_SIZE >= 134217728 )); then # 128MB in Bytes
+    if [ "$IMG_ROOT_SIZE" -lt "$LOCAL_RESIZE2FS_MIN" ] && (( LOCAL_RESIZE2FS_MIN - IMG_ROOT_SIZE >= 268435456 )); then # 256MB in Bytes
       difference=$(( ( LOCAL_RESIZE2FS_MIN - IMG_ROOT_SIZE ) / 1024 / 1024 ))
       difference="$difference MB, Expanding img filesystem"
     elif [ "$IMG_ROOT_SIZE" -gt "$LOCAL_RESIZE2FS_MIN" ] && (( IMG_ROOT_SIZE - LOCAL_RESIZE2FS_MIN >= 536870912 )); then # 512MB in Bytes
@@ -931,7 +933,8 @@ function do_backup() {
   # Checking if resizing should be performed
 #   if [ "$RESIZE2FS_RUN" == true ]; then
 
-    if [ "$IMG_ROOT_SIZE" -lt "$LOCAL_RESIZE2FS_MIN" ] && (( LOCAL_RESIZE2FS_MIN - IMG_ROOT_SIZE >= 134217728 )); then # 128MB in Bytes
+  if [ "$RESIZE2FS_RUN" == true ]; then
+    if [ "$IMG_ROOT_SIZE" -lt "$LOCAL_RESIZE2FS_MIN" ] && (( LOCAL_RESIZE2FS_MIN - IMG_ROOT_SIZE >= 268435456 )); then # 256MB in Bytes
       difference=$(( ( LOCAL_RESIZE2FS_MIN - IMG_ROOT_SIZE ) / 1024 / 1024 ))
       debug 'INFO' 'Img root partition size is smaller than resize2fs recommended minimum'
       debug 'DEBUG' "Difference=$difference MB"
@@ -963,6 +966,7 @@ function do_backup() {
       debug 'INFO' 'Img root partition is >=64MB smaller or <=512MB bigger compared size to resize2fs recommended minimum, not resizing'
       sleep 1
     fi
+  fi
 
 #   else
 #
