@@ -429,10 +429,13 @@ function do_resize() {
 
     echo '## Removing partition...'
     sleep 1
-    debug 'INFO' 'Removing partition with sfdisk'
-    debug 'DEBUG' "Running: sfdisk --delete $LOOP $IMG_ROOT_PARTN"
+    #debug 'INFO' 'Removing partition with sfdisk'
+    #debug 'DEBUG' "Running: sfdisk --delete $LOOP $IMG_ROOT_PARTN"
     #sfdisk --delete /dev/loop0 1
-    sfdisk --delete "$LOOP" "$IMG_ROOT_PARTN"
+    #sfdisk --delete "$LOOP" "$IMG_ROOT_PARTN"
+    debug 'INFO' 'Removing partition with sfdisk'
+    debug 'DEBUG' "Running: parted -s $LOOP rm $IMG_ROOT_PARTN"
+    parted -s "$LOOP" rm "$IMG_ROOT_PARTN"
     if (( $? != 0 )); then
       echo 'SFDISK FAILED!!!'
       exit 1
