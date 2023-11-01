@@ -433,11 +433,12 @@ function do_resize() {
     #debug 'DEBUG' "Running: sfdisk --delete $LOOP $IMG_ROOT_PARTN"
     #sfdisk --delete /dev/loop0 1
     #sfdisk --delete "$LOOP" "$IMG_ROOT_PARTN"
-    debug 'INFO' 'Removing partition with sfdisk'
+    debug 'INFO' 'Removing partition with parted'
     debug 'DEBUG' "Running: parted -s $LOOP rm $IMG_ROOT_PARTN"
     parted -s "$LOOP" rm "$IMG_ROOT_PARTN"
     if (( $? != 0 )); then
-      echo 'SFDISK FAILED!!!'
+      #echo 'SFDISK FAILED!!!'
+      echo 'PARTED FAILED!!!'
       exit 1
     fi
 
@@ -759,8 +760,10 @@ function make_img() {
   echo '## Removing root partition...'
   sleep 1
   debug 'INFO' 'Using sfdisk to remove root partition'
-  debug 'DEBUG' "Running: sfdisk --delete -f $LOOP $LOCAL_ROOT_PARTN"
-  if ! output=$(sfdisk --delete -f "$LOOP" "$LOCAL_ROOT_PARTN" 2>&1); then
+  #debug 'DEBUG' "Running: sfdisk --delete -f $LOOP $LOCAL_ROOT_PARTN"
+  debug 'DEBUG' "Running: parted -s $LOOP rm $LOCAL_ROOT_PARTN"
+  #if ! output=$(sfdisk --delete -f "$LOOP" "$LOCAL_ROOT_PARTN" 2>&1); then
+  if ! output=$(parted -s "$LOOP" rm "$LOCAL_ROOT_PARTN" 2>&1); then
     echo -e "$output\n## SFDISK FAILED!!!"
     debug 'BREAK'
     debug 'ERROR' "SFDISK FAILED:\n$output\n------------------------------------------------------------------------------"
