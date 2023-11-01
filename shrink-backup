@@ -167,19 +167,25 @@ function get_dev_variables() {
   # Check if separate boot and root partition exists and set variables accordingly
   LOCAL_DEV_MAJ=$(lsblk -lpo mountpoint,maj:min | grep '/ ' | awk '{print $2}' | cut -d : -f 1)
   #LOCAL_ROOT_PARTN=$(lsblk -lpo mountpoint,partn | grep '/ ' | awk '{print $2}') # can only be used on arch :(
-  LOCAL_DEV_PATH=$(lsblk -lpo maj:min,type,path | grep "$LOCAL_DEV_MAJ" | grep 'disk' | awk '{print $3}')
-  LOCAL_ROOT_PARTN=$(parted -sm "$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
-  debug 'DEBUG' "LOCAL_DEV_PATH=${LOCAL_DEV_PATH} | LOCAL_DEV_MAJ=$LOCAL_DEV_MAJ | LOCAL_ROOT_PARTN=$LOCAL_ROOT_PARTN"
+  #LOCAL_DEV_PATH=$(lsblk -lpo maj:min,type,path | grep "$LOCAL_DEV_MAJ" | grep 'disk' | awk '{print $3}')
   if [ $(lsblk | grep -c 'boot') -ne 0 ]; then
     debug 'INFO' 'Separate boot partition detected'
+    LOCAL_DEV_MIN=$(lsblk -lpo mountpoint,maj:min | grep '/boot' | awk '{print $2}' | cut -d : -f 2)
+    LOCAL_DEV_MIN=$(( LOCAL_DEV_MIN - 1 ))
+    LOCAL_DEV_PATH=$(lsblk -lpo maj:min,type,path | grep "${LOCAL_DEV_MAJ}:${LOCAL_DEV_MIN}" | grep 'disk' | awk '{print $3}')
     LOCAL_DEV_BOOT_PATH=$(lsblk -lpo mountpoint,path | grep 'boot' | awk '{print $2}')
     LOCAL_DEV_ROOT_PATH=$(lsblk -lpo mountpoint,path | grep '/ ' | awk '{print $2}')
     debug 'DEBUG' "LOCAL_DEV_ROOT_PATH=${LOCAL_DEV_ROOT_PATH} | LOCAL_DEV_BOOT_PATH=$LOCAL_DEV_BOOT_PATH"
   else
     debug 'INFO' 'No boot partition detected'
+    LOCAL_DEV_MIN=$(lsblk -lpo mountpoint,maj:min | grep '/ ' | awk '{print $2}' | cut -d : -f 2)
+    LOCAL_DEV_MIN=$(( LOCAL_DEV_MIN - 1 ))
+    LOCAL_DEV_PATH=$(lsblk -lpo maj:min,type,path | grep "${LOCAL_DEV_MAJ}:${LOCAL_DEV_MIN}" | grep 'disk' | awk '{print $3}')
     LOCAL_DEV_ROOT_PATH=$(lsblk -lpo mountpoint,path | grep '/ ' | awk '{print $2}')
     debug 'DEBUG' "LOCAL_DEV_ROOT_PATH=$LOCAL_DEV_ROOT_PATH"
   fi
+  LOCAL_ROOT_PARTN=$(parted -sm "$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
+  debug 'DEBUG' "LOCAL_DEV_PATH=${LOCAL_DEV_PATH} | LOCAL_DEV_MAJ=$LOCAL_DEV_MAJ | LOCAL_ROOT_PARTN=$LOCAL_ROOT_PARTN"
 
   # Collecting data and making calculations
   debug 'INFO' 'Calculating size for dd to cover bootsector in blocks (512B block size) and adding 256 blocks to overlap into root (only used on new images)'
