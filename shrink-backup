@@ -164,6 +164,36 @@ function debug() {
 # Function to gather device information
 function get_dev_variables() {
 
+  # Set ADDED_SPACE to 0 if RESIZE2FS_RUN option is enabled
+  if [ "$RESIZE2FS_RUN" == true ]; then
+    ADDED_SPACE=0
+    debug 'INFO' '-a selected by user'
+    debug 'DEBUG' "ADDED_SPACE=$ADDED_SPACE"
+  fi
+
+  # Regular expression for whole numbers
+  RE='^[0-9]+$'
+
+  # Validate the added space argument as a whole number
+  # -z = zero value, -n = non-zero value, -f = file, || = or, && = and
+  if ! [[ "$ADDED_SPACE" =~ $RE ]]; then
+    debug 'WARNING' 'User defined ADDED_SPACE is not a regualar expression (whole number)'
+    while ! [[ "$ADDED_SPACE" =~ $RE ]]
+    do
+      #if [ "$COUNTER" > 0 ] || test -n "$ADDED_SPACE"; then
+      if [ "$COUNTER" -gt 0 ] || [ -n "$ADDED_SPACE" ]; then
+        echo 'Added space must be a whole number'
+        debug 'INFO' 'Added space must be a whole number'
+      fi
+      echo 'How much space in MB should be added?'
+      debug 'INFO' 'How much space in MB should be added?'
+      read ADDED_SPACE
+      (( COUNTER++ ))
+      #(( COUNTER += 1 ))
+    done
+    debug 'USER_INPUT' "User requested ${ADDED_SPACE}MB as ADDED_SPACE"
+  fi
+
   # Check if separate boot and root partition exists and set variables accordingly
   LOCAL_DEV_MAJ=$(lsblk -lpo mountpoint,maj:min | grep '/ ' | awk '{print $2}' | cut -d : -f 1)
   #LOCAL_ROOT_PARTN=$(lsblk -lpo mountpoint,partn | grep '/ ' | awk '{print $2}') # can only be used on arch :(
@@ -208,6 +238,33 @@ function get_dev_variables() {
   #LOCAL_USED_SPACE=$(( LOCAL_DF_OUTPUT * 1024 )) # bytes, df is in 1k blocks
   ADDED_SPACE=$(( ADDED_SPACE * 1024 * 1024 )) # bytes
   WIGGLEROOM=134217728 # 128MB = 134217728B, 192MB = 201326592B
+
+  # Use resize2fs to calulate size if option is selected
+  if [ "$RESIZE2FS_RUN" == true ]; then
+    debug 'INFO' 'Setting TOTAL (space needed for files on root) to size calculated by resize2fs'
+    debug 'DEBUG' "LOCAL_RESIZE2FS_MIN=${LOCAL_RESIZE2FS_MIN} Bytes"
+    TOTAL=$LOCAL_RESIZE2FS_MIN # bytes
+  else
+    debug 'INFO' 'Calculating TOTAL (space needed for files on root) by adding LOCAL_USED_SPACE and ADDED_SPACE'
+    debug 'DEBUG' "LOCAL_USED_SPACE=${LOCAL_USED_SPACE} Bytes"
+    debug 'DEBUG' "ADDED_SPACE=${ADDED_SPACE} Bytes"
+    TOTAL=$(( LOCAL_USED_SPACE + ADDED_SPACE )) # bytes
+  fi
+  debug 'DEBUG' "TOTAL=${TOTAL} Bytes"
+
+  TRUNCATE_TOTAL=$(( LOCAL_BOOTSECTOR + TOTAL )) # bytes
+  debug 'INFO' 'Calculating .img file size by adding LOCAL_BOOTSECTOR to TOTAL'
+  debug 'DEBUG' "TRUNCATE_TOTAL=${TRUNCATE_TOTAL} Bytes"
+  #TRUNCATE_TOTAL=$(( BLOCKSIZE + LOCAL_BOOTSECTOR + TOTAL )) # bytes, this was when I was using end instead of start with fdisk
+  #TRUNCATE_TOTAL=$(( ( 1 + 33 ) * BLOCKSIZE + TOTAL + LOCAL_BOOTSECTOR )) # bytes, something about GPT needing 33 extra blocks
+
+  # Add 128MB extra space if resize2fs reports bigger minimum than created
+  if [ "$TOTAL" -lt "$LOCAL_RESIZE2FS_MIN" ]; then
+    debug 'WARNING' 'Adding WIGGLEROOM (128MB) because manually requested ADDED_SPACE is less than resize2fs caluclated size'
+    WIGGLE_USE=true
+    TRUNCATE_TOTAL=$(( TRUNCATE_TOTAL + WIGGLEROOM ))
+    debug 'DEBUG' "WIGGLEROOM=${WIGGLEROOM} Bytes | TRUNCATE_TOTAL=${TRUNCATE_TOTAL} Bytes"
+  fi
 
   return 0
 }
@@ -294,7 +351,7 @@ function do_mount() {
   fi
 
   # Checking if boot partition exists and if true mount boot
-  if [ -n "$LOCAL_DEV_BOOT_PATH" ]; then
+  if [ $(lsblk | grep -c 'boot') -ne 0 ]; then
     echo '## Mounting img boot partition...'
     sleep 1
     debug 'INFO' 'Separate boot partition detected, mounting boot inside root'
@@ -434,8 +491,9 @@ function do_resize() {
     #sfdisk --delete /dev/loop0 1
     #sfdisk --delete "$LOOP" "$IMG_ROOT_PARTN"
     debug 'INFO' 'Removing partition with parted'
-    debug 'DEBUG' "Running: parted -s $LOOP rm $IMG_ROOT_PARTN"
-    parted -s "$LOOP" rm "$IMG_ROOT_PARTN"
+    debug 'DEBUG' "Running: printf 'Ignore\n'$IMG_ROOT_PARTN | parted $LOOP rm $IMG_ROOT_PARTN ---pretend-input-tty"
+    #parted -s "$LOOP" rm "$IMG_ROOT_PARTN"
+    printf 'Ignore\n'$IMG_ROOT_PARTN | parted $LOOP rm $IMG_ROOT_PARTN ---pretend-input-tty
     if (( $? != 0 )); then
       #echo 'SFDISK FAILED!!!'
       echo 'PARTED FAILED!!!'
@@ -568,68 +626,11 @@ function do_rsync() {
 # Function to create a backup img file
 function make_img() {
 
-  # Set ADDED_SPACE to 0 if RESIZE2FS_RUN option is enabled
-  if [ "$RESIZE2FS_RUN" == true ]; then
-    debug 'INFO' '-a selected by user'
-    debug 'DEBUG' 'ADDED_SPACE=0'
-    ADDED_SPACE=0
-  fi
-
-  # Regular expression for whole numbers
-  RE='^[0-9]+$'
-
-  # Validate the added space argument as a whole number
-  # -z = zero value, -n = non-zero value, -f = file, || = or, && = and
-  if ! [[ "$ADDED_SPACE" =~ $RE ]]; then
-    debug 'WARNING' 'User defined ADDED_SPACE is not a regualar expression'
-    while ! [[ "$ADDED_SPACE" =~ $RE ]]
-    do
-      #if [ "$COUNTER" > 0 ] || test -n "$ADDED_SPACE"; then
-      if [ "$COUNTER" -gt 0 ] || [ -n "$ADDED_SPACE" ]; then
-        echo 'Added space must be a whole number'
-        debug 'INFO' 'Added space must be a whole number'
-      fi
-      echo 'How much space in MB should be added?'
-      debug 'INFO' 'How much space in MB should be added?'
-      read ADDED_SPACE
-      (( COUNTER++ ))
-      #(( COUNTER += 1 ))
-    done
-    debug 'USER_INPUT' "User requested ${ADDED_SPACE}MB as ADDED_SPACE"
-  fi
-
   debug 'DEBUG' 'Running function: get_dev_variables'
   get_dev_variables
 
   debug 'DEBUG' 'Running function: get_shared_variables'
   get_shared_variables
-
-  # Use resize2fs to calulate size if option is selected
-  if [ "$RESIZE2FS_RUN" == true ]; then
-    debug 'INFO' 'Setting TOTAL (space needed for files on root) to size calculated by resize2fs'
-    debug 'DEBUG' "LOCAL_RESIZE2FS_MIN=${LOCAL_RESIZE2FS_MIN} Bytes"
-    TOTAL=$LOCAL_RESIZE2FS_MIN # bytes
-  else
-    debug 'INFO' 'Calculating TOTAL (space needed for files on root) by adding LOCAL_USED_SPACE and ADDED_SPACE'
-    debug 'DEBUG' "LOCAL_USED_SPACE=${LOCAL_USED_SPACE} Bytes"
-    debug 'DEBUG' "ADDED_SPACE=${ADDED_SPACE} Bytes"
-    TOTAL=$(( LOCAL_USED_SPACE + ADDED_SPACE )) # bytes
-  fi
-  debug 'DEBUG' "TOTAL=${TOTAL} Bytes"
-
-  TRUNCATE_TOTAL=$(( LOCAL_BOOTSECTOR + TOTAL )) # bytes
-  debug 'INFO' 'Calculating .img file size by adding LOCAL_BOOTSECTOR to TOTAL'
-  debug 'DEBUG' "TRUNCATE_TOTAL=${TRUNCATE_TOTAL} Bytes"
-  #TRUNCATE_TOTAL=$(( BLOCKSIZE + LOCAL_BOOTSECTOR + TOTAL )) # bytes, this was when I was using end instead of start with fdisk
-  #TRUNCATE_TOTAL=$(( ( 1 + 33 ) * BLOCKSIZE + TOTAL + LOCAL_BOOTSECTOR )) # bytes, something about GPT needing 33 extra blocks
-
-  # Add 128MB extra space if resize2fs reports bigger minimum than created
-  if [ "$TOTAL" -lt "$LOCAL_RESIZE2FS_MIN" ]; then
-    debug 'WARNING' 'Adding WIGGLEROOM (128MB) because manually requested ADDED_SPACE is less than resize2fs caluclated size'
-    WIGGLE_USE=true
-    TRUNCATE_TOTAL=$(( TRUNCATE_TOTAL + WIGGLEROOM ))
-    debug 'DEBUG' "WIGGLEROOM=${WIGGLEROOM} Bytes | TRUNCATE_TOTAL=${TRUNCATE_TOTAL} Bytes"
-  fi
 
   # Display information
   if [ "$PROMPTS" == true ]; then
@@ -759,14 +760,18 @@ function make_img() {
   # Remove partition
   echo '## Removing root partition...'
   sleep 1
-  debug 'INFO' 'Using sfdisk to remove root partition'
+  #debug 'INFO' 'Using sfdisk to remove root partition'
+  debug 'INFO' 'Using parted to remove root partition'
   #debug 'DEBUG' "Running: sfdisk --delete -f $LOOP $LOCAL_ROOT_PARTN"
-  debug 'DEBUG' "Running: parted -s $LOOP rm $LOCAL_ROOT_PARTN"
+  #debug 'DEBUG' "Running: parted -s $LOOP rm $LOCAL_ROOT_PARTN"
+  debug 'DEBUG' "Running: printf 'Ignore\n'$LOCAL_ROOT_PARTN | parted $LOOP rm $LOCAL_ROOT_PARTN ---pretend-input-tty"
   #if ! output=$(sfdisk --delete -f "$LOOP" "$LOCAL_ROOT_PARTN" 2>&1); then
-  if ! output=$(parted -s "$LOOP" rm "$LOCAL_ROOT_PARTN" 2>&1); then
-    echo -e "$output\n## SFDISK FAILED!!!"
+  if ! output=$(printf 'Ignore\n'$LOCAL_ROOT_PARTN | parted $LOOP rm $LOCAL_ROOT_PARTN ---pretend-input-tty 2>&1); then
+    #echo -e "$output\n## SFDISK FAILED!!!"
+    echo -e "$output\n## PARTED FAILED!!!"
     debug 'BREAK'
-    debug 'ERROR' "SFDISK FAILED:\n$output\n------------------------------------------------------------------------------"
+    #debug 'ERROR' "SFDISK FAILED:\n$output\n------------------------------------------------------------------------------"
+    debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
     exit 1
   fi
   sleep 1
@@ -842,17 +847,9 @@ function do_backup() {
   debug 'DEBUG' 'Running functino: get_shared_variables'
   get_shared_variables
 
-  if [ "$RESIZE2FS_RUN" == true ]; then
+  if [ "$RESIZE2FS_RUN" == true ] || [ "$ADDED_SPACE" -ne 0 ]; then
     debug 'DEBUG' 'Running function: get_dev_variables'
     get_dev_variables
-
-    debug 'INFO' 'Setting TOTAL (space needed for files on root) to size calculated by resize2fs'
-    TOTAL="$LOCAL_RESIZE2FS_MIN" # bytes
-    debug 'DEBUG' "TOTAL=${TOTAL} Bytes"
-    debug 'INFO' 'Calculating .img file size by adding LOCAL_BOOTSECTOR to TOTAL'
-    TRUNCATE_TOTAL=$(( LOCAL_BOOTSECTOR + TOTAL )) # bytes
-    debug 'DEBUG' "TRUNCATE_TOTAL=${TRUNCATE_TOTAL} Bytes"
-    sleep 1
   fi
 
   # Loop img file
@@ -864,16 +861,15 @@ function do_backup() {
   if [ "$RESIZE2FS_RUN" == true ]; then
     debug 'DEBUG' "Running: fdisk --bytes -lo size $LOOP | tail -1"
     IMG_ROOT_SIZE=$(fdisk --bytes -lo size "$LOOP" | tail -1)
-    debug 'DEBUG' "IMG_ROOT_SIZE=$IMG_ROOT_SIZE Bytes | LOCAL_RESIZE2FS_MIN=$LOCAL_RESIZE2FS_MIN Bytes"
+    diff=$(( ( LOCAL_RESIZE2FS_MIN - IMG_ROOT_SIZE ) / 1024 / 1024 ))
+    debug 'DEBUG' "IMG_ROOT_SIZE=$IMG_ROOT_SIZE Bytes | LOCAL_RESIZE2FS_MIN=$LOCAL_RESIZE2FS_MIN Bytes | diff=$diff MB"
 
     if [ "$IMG_ROOT_SIZE" -lt "$LOCAL_RESIZE2FS_MIN" ] && (( LOCAL_RESIZE2FS_MIN - IMG_ROOT_SIZE >= 268435456 )); then # 256MB in Bytes
-      difference=$(( ( LOCAL_RESIZE2FS_MIN - IMG_ROOT_SIZE ) / 1024 / 1024 ))
-      difference="$difference MB, Expanding img filesystem"
+      DIFFERENCE="$diff MB, Expanding img filesystem"
     elif [ "$IMG_ROOT_SIZE" -gt "$LOCAL_RESIZE2FS_MIN" ] && (( IMG_ROOT_SIZE - LOCAL_RESIZE2FS_MIN >= 536870912 )); then # 512MB in Bytes
-      difference=$(( ( IMG_ROOT_SIZE - LOCAL_RESIZE2FS_MIN ) / 1024 / 1024 ))
-      difference="$difference MB, Shrinking img filesystem"
+      DIFFERENCE="$diff MB, Shrinking img filesystem"
     else
-      difference='Too small, no resizing needed'
+      DIFFERENCE="Too small, no resizing needed ($diff MB)"
     fi
   fi
 
@@ -891,7 +887,7 @@ function do_backup() {
       echo "# Resize2fs decide minimum (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
       echo "# Old img size: ${IMG_SIZE}MB"
       echo "# New img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
-      echo "# Difference: $difference"
+      echo "# Difference: $DIFFERENCE"
     else
       #echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB with $(( ADDED_SPACE / 1024 / 1024 ))MB extra space included."
       #echo "# Manually added space: $(( ADDED_SPACE / 1024 / 1024 ))MB"
@@ -931,7 +927,7 @@ function do_backup() {
       echo "# Resize2fs decide minimum (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
       echo "# Old img size: ${IMG_SIZE}MB"
       echo "# New img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
-      echo "# Difference: $difference"
+      echo "# Difference: $DIFFERENCE"
     else
       #echo "# Manually added space: $(( ADDED_SPACE / 1024 / 1024 ))MB"
       echo "# Total img size: ${IMG_SIZE}MB"
@@ -952,16 +948,14 @@ function do_backup() {
 
   if [ "$RESIZE2FS_RUN" == true ]; then
     if [ "$IMG_ROOT_SIZE" -lt "$LOCAL_RESIZE2FS_MIN" ] && (( LOCAL_RESIZE2FS_MIN - IMG_ROOT_SIZE >= 268435456 )); then # 256MB in Bytes
-      difference=$(( ( LOCAL_RESIZE2FS_MIN - IMG_ROOT_SIZE ) / 1024 / 1024 ))
       debug 'INFO' 'Img root partition size is smaller than resize2fs recommended minimum'
-      debug 'DEBUG' "Difference=$difference MB"
+      debug 'DEBUG' "Difference=$diff MB"
       debug 'DEBUG' "Running function: do_resize 'expand'"
       do_resize 'expand'
 
     elif [ "$IMG_ROOT_SIZE" -gt "$LOCAL_RESIZE2FS_MIN" ] && (( IMG_ROOT_SIZE - LOCAL_RESIZE2FS_MIN >= 536870912 )); then # 512MB in Bytes
-      difference=$(( ( IMG_ROOT_SIZE - LOCAL_RESIZE2FS_MIN ) / 1024 / 1024 ))
       debug 'INFO' 'Img root partition size is bigger than resize2fs recommended minimum'
-      debug 'DEBUG' "Difference=$difference MB"
+      debug 'DEBUG' "Difference=$diff MB"
 
       # Mount img file
       debug 'INFO' 'Mounting img file'
@@ -997,6 +991,11 @@ function do_backup() {
 #     debug 'DEBUG' 'Running function: do_rsync'
 #     do_rsync
 #   fi
+
+  if [ "$ADDED_SPACE" -ne 0 ]; then
+    debug 'INFO' 'Manually added space provided by user'
+    debug 'DEBUG' "Running function: do_resize 'expand'"
+  fi
 
   # Mount img file
   debug 'INFO' 'Mounting img file'
@@ -1223,6 +1222,13 @@ do
     break
   fi
 done
+
+# Setting adding ADDED_SPACE to 0 if variable is a zero value
+if [ -z "$ADDED_SPACE" ]; then
+  ADDED_SPACE=0
+  debug 'INFO' 'Extra space not provided by user, setting to 0'
+  debug 'DEBUG' "ADDED_SPACE=$ADDED_SPACE"
+fi
 
 # Check if the image file has the correct extension
 if [[ "$IMG_FILE" != *.img ]]; then
