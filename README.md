@@ -7,7 +7,7 @@ Autoexpansion tested on **Raspberry Pi** os (bookworm and older), **Armbian**, *
 **Latest release:** [shrink-backup.v0.9.3](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v0.9.3/shrink-backup.v0.9.3.tar.gz)<br>
 [**Testing branch**](https://github.com/UnconnectedBedna/shrink-backup/tree/testing) if you want to have the absolute latest version. Resizing of existing img file and btrfs cloning are next on the roadmap and is being developed here.
 
-**Very fast restore because of minimal size of img file.**
+**Very fast restore thanks to minimal size of img file.**
 
 **Can back up any device as long as root is `ext4`**<br>
 Default device that will be backed up is detected by scanning what disk-device `root` resides on.<br>
@@ -31,8 +31,10 @@ Script for creating an .img file and subsequently keeing it updated (-U), autoex
 Directory where .img file is created is automatically excluded in backup
 ########################################################################
 Usage: sudo shrink-backup [-Uatyelh] imagefile.img [extra space (MB)]
-  -U         Update the img file (rsync to existing backup .img), no resizing, -a is disregarded
-  -a         Let resize2fs decide minimum space (extra space is ignored), disabled if using -U
+  -U         Update the img file (rsync to existing img), [extra space] extends img size/root partition
+  -a         Let resize2fs decide minimum space (extra space is ignored)
+             When used in combination with -U:
+             Expand if img is +256MB smaller resize2fs recommended minimum, shrink if +512MB bigger
   -t         Use exclude.txt in same folder as script to set excluded directories
              One directory per line: "/dir" or "/dir/*" to only exclude contents
   -y         Disable prompts in script
@@ -40,9 +42,12 @@ Usage: sudo shrink-backup [-Uatyelh] imagefile.img [extra space (MB)]
   -l         Write debug messages in logfile shrink-backup.log in same directory as script
   -h --help  Show this help snippet
 ########################################################################
-Example: sudo shrink-backup -a /path/to/backup.img
-Example: sudo shrink-backup -e -y /path/to/backup.img 1000
-Example: sudo shrink-backup -Ut /path/to/backup.img
+Examples:
+sudo shrink-backup -a /path/to/backup.img (create img, resize2fs calcualtes size)
+sudo shrink-backup -e -y /path/to/backup.img 1024 (create img, ignore prompts, do not autoexpand, add 1024MB extra space)
+sudo shrink-backup -Utl /path/to/backup.img (update img backup, use exclude.txt and write log to shrink-backup.log)
+sudo shrink-backup -Ua /path/to/backup.img (update img backup, resize2fs calculates and resizes img file if needed)
+sudo shrink-backup -U /path/to/backup.img 1024 (update img backup, expand img size/root partition with 1024MB)
 ```
 
 The folder where the img file is created will ALWAYS be excluded in the backup.<br>
@@ -65,7 +70,8 @@ If `-t` is **NOT** selected the following folders will be excluded:
 /var/swap
 ```
 
-**Rsync WILL cross filesystem boundries, so make sure you exclude external drives unless you want them included in the backup.**
+**Rsync WILL cross filesystem boundries, so make sure you exclude external drives unless you want them included in the backup.**<br>
+Not excluding other partitions will copy the data to the img root partition, not create more partitions.
 
 Use `-l` to write debug info into `shrink-backup.log` file located in the same directory as the script.
 
@@ -131,7 +137,13 @@ If the filesystem you back up from increases in size, an update (`-U`) of the im
 To update an existing img file simply use the `-U` option and the path to the img file.<br>
 Example: `sudo shrink-backup -U /path/to/backup.img`
 
-Changing size in an update is not possible at the moment but is in the todo list for the future.
+If `-a` is used in combination with `-U`, the script will compare the root partition on the img file to the size `resize2fs` recommends as minimum.<br>
+The img file needs to be **+256MB** smaller than `resize2fs` recommended minimum to be expanded.<br>
+The img file needs to be **+512MB** bigger than `resize2fs` recommended minimum to be shrunk.<br>
+This is to protect from unessesary resizing operations most likely not needed.
+
+If manually added space is used in combination with `-U`, the img file/root partition will be expanded by that amount. No checks are being performed to make sure the data you want to back up will actually fit.<br>
+Only expansion is possible with this method.
 
 **Thank you for using my software <3**
 
