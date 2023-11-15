@@ -26,7 +26,7 @@ When booting up a restored image with autoresize active, wait until the the rebo
 
 ## Usage
 ```
-sudo shrink-backup -h
+shrink-backup -h
 Script for creating an .img file and subsequently keeing it updated (-U), autoexpansion is enabled by default
 Directory where .img file is created is automatically excluded in backup
 ########################################################################
