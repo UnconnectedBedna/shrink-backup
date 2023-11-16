@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # shrink-backup
-# version 0.9.4-beta
+# version 0.9.4
 # backup tool for backing up and updating .img files with autoexpansion on various operating systems
 #
 #    This program is free software: you can redistribute it and/or modify
@@ -102,11 +102,12 @@ Script for creating an .img file and subsequently keeing it updated (-U), autoex
 Directory where .img file is created is automatically excluded in backup
 ########################################################################
 Usage: sudo $(basename "$0") [-Uatyelh] imagefile.img [extra space (MB)]
-  -U         Update the img file (rsync to existing backup .img), extra space extends img size/root partition
-             Only add extra space if needed
+  -U         Update the img file (rsync to existing img), [extra space] extends img size/root partition
   -a         Let resize2fs decide minimum space (extra space is ignored)
+                 When used in combination with -U:
+                 Expand if img is +256MB smaller resize2fs recommended minimum, shrink if +512MB bigger
   -t         Use exclude.txt in same folder as script to set excluded directories
-             One directory per line: "/dir" or "/dir/*" to only exclude contents
+                 One directory per line: "/dir" or "/dir/*" to only exclude contents
   -y         Disable prompts in script
   -e         DO NOT expand filesystem when image is booted
   -l         Write debug messages in logfile shrink-backup.log located in same directory as script
@@ -116,7 +117,7 @@ Examples:
 sudo $(basename "$0") -a /path/to/backup.img (create img, resize2fs calcualtes size)
 sudo $(basename "$0") -e -y /path/to/backup.img 1024 (create img, ignore prompts, do not autoexpand, add 1024MB extra space)
 sudo $(basename "$0") -Utl /path/to/backup.img (update img backup, use exclude.txt and write log to shrink-backup.log)
-sudo $(basename "$0") -Ua /path/to/backup.img (update img backup, resize2fs calculates and resizes if needed)
+sudo $(basename "$0") -Ua /path/to/backup.img (update img backup, resize2fs calculates and resizes img file if needed)
 sudo $(basename "$0") -U /path/to/backup.img 1024 (update img backup, expand img size/root partition with 1024MB)
 EOM
   echo "$help"
@@ -143,8 +144,6 @@ if [ "$EUID" != 0 ]; then
   echo 'THIS SCRIPT MUST BE RUN WITH SUDO!'
   help
 fi
-
-
 
 function debug() {
   local log_level="$1"
@@ -198,7 +197,7 @@ function get_dev_variables() {
   # Collecting data and making calculations
   debug 'INFO' 'Calculating size for dd to cover bootsector in blocks (512B block size) and adding 256 blocks to overlap into root (only used in img creation)'
   debug 'DEBUG' "Running: fdisk -lo start "$LOCAL_DEV_PATH" | tail -1"
-  LOCAL_ROOT_START=$(fdisk -lo start "$LOCAL_DEV_PATH" | tail -1) # blocks, 512B block size
+  LOCAL_ROOT_START=$(fdisk -lo start "$LOCAL_DEV_PATH" | tail -1 | awk '{print $1}') # blocks, 512B block size
   LOCAL_BOOTSECTOR=$(( LOCAL_ROOT_START - 1 )) # blocks, to set the actual bootsector
   LOCAL_DDBOOTSECTOR=$(( LOCAL_BOOTSECTOR + 256 )) # blocks, adding 256 extra to cover root filesystem
   debug 'DEBUG' "LOCAL_ROOT_START=$LOCAL_ROOT_START Blocks | LOCAL_BOOTSECTOR=$LOCAL_BOOTSECTOR Blocks | LOCAL_DDBOOTSECTOR=$LOCAL_DDBOOTSECTOR Blocks"
@@ -406,20 +405,19 @@ function do_resize() {
 
   # Reading offset for img root partition
   debug 'INFO' 'Using fdisk to find img root partition offset'
-  debug 'DEBUG' "Running: fdisk --bytes -lo start $IMG_FILE | tail -1"
-  IMG_ROOT_START=$(fdisk --bytes -lo start "$IMG_FILE" | tail -1) # bytes
-  debug 'DEBUG' "IMG_ROOT_START=${IMG_ROOT_START} Bytes"
+  debug 'DEBUG' "Running: fdisk -lo start $IMG_FILE | tail -1"
+  IMG_ROOT_START=$(fdisk -lo start "$IMG_FILE" | tail -1 | awk '{print $1}') # blocks, 521B block size
+  debug 'DEBUG' "IMG_ROOT_START=$IMG_ROOT_START Blocks"
+  IMG_ROOT_START=$(( IMG_ROOT_START * 512 )) # bytes
+  debug 'DEBUG' "IMG_ROOT_START=$IMG_ROOT_START Bytes"
 
   # Converting TOTAL > TOTALK (bytes > kilobytes)
   debug 'INFO' 'Converting TOTAL > TOTALK (bytes > kilobytes)'
   TOTALK=$(( TOTAL / 1024 )) # kilobytes
-  #echo "Total: $(( TOTAL / 1024 / 1024 ))MB (${TOTAL}bytes)"
   debug 'DEBUG' "TOTAL=$TOTAL Bytes | TOTALK=$TOTALK Kilobytes"
 
   # Gather information
-  debug 'INFO' 'Fetching root partition number by using lsblk'
-  #debug 'DEBUG' "Running: lsblk -lpo path,partn | grep $IMG_DEV_ROOT_PATH | awk '{print \$2}'"
-  #IMG_ROOT_PARTN=$(lsblk -lpo path,partn | grep "$IMG_DEV_ROOT_PATH" | awk '{print $2}') # can only be used on arch :(
+  debug 'INFO' 'Using lsblk to fetch root partition number'
   debug 'DEBUG' "Running: parted -sm "$LOOP" print | tail -1 | cut -d : -f 1"
   IMG_ROOT_PARTN=$(parted -sm "$LOOP" print | tail -1 | cut -d : -f 1)
   debug 'DEBUG' "IMG_ROOT_PARTN=$IMG_ROOT_PARTN"
@@ -441,16 +439,11 @@ function do_resize() {
     debug 'DEBUG' "Running: losetup -d $LOOP"
     losetup -d "$LOOP"
 
-    echo "## Resizing image file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB..."
+    echo "## Resizing image file..."
     sleep 1
     debug 'INFO' 'Using truncate to resize img file'
     debug 'DEBUG' "Running: truncate --size=$TRUNCATE_TOTAL $IMG_FILE"
-    if ! output$(truncate --size="$TRUNCATE_TOTAL" "$IMG_FILE" 2<&1); then
-    #truncate --size="$TRUNCATE_TOTAL" "$IMG_FILE"
-    #if (( $? != 0 )); then
-    #  echo 'TRUNCATE FAILED!!!'
-    #  exit 1
-    #fi
+    if ! output=$(truncate --size="$TRUNCATE_TOTAL" "$IMG_FILE" 2>&1); then
       echo -e "$output\n## TRUNCATE FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "TRUNCATE FAILED:\n$output\n------------------------------------------------------------------------------"
@@ -462,28 +455,15 @@ function do_resize() {
     debug 'DEBUG' 'Running function: do_loop'
     do_loop
 
-#     echo '## Resizing partition...'
-#     sleep 1
-#     debug 'INFO' 'Expanding partition with parted'
-#     debug 'DEBUG' "Running: -s -a none parted $LOOP unit B resizepart $IMG_ROOT_PARTN $TOTAL"
-#     parted -s -a none "$LOOP" unit B resizepart "$IMG_ROOT_PARTN" "$TOTAL"
-
     echo '## Removing partition...'
     sleep 1
-    #debug 'INFO' 'Removing partition with sfdisk'
+    #debug 'INFO' 'Using sfdisk to remove partition'
     #debug 'DEBUG' "Running: sfdisk --delete $LOOP $IMG_ROOT_PARTN"
-    #sfdisk --delete -f /dev/loop0 1
     #sfdisk --delete -f "$LOOP" "$IMG_ROOT_PARTN" # seems to fail if img size is very big
     #debug 'DEBUG' "Running: parted -s $LOOP rm $IMG_ROOT_PARTN"
     #parted -s "$LOOP" rm "$IMG_ROOT_PARTN" # does not work, still asking for user confirmation even though --script is used
     debug 'INFO' 'Using parted to remove root partition'
     debug 'DEBUG' "Running: printf 'Ignore\\\n'$IMG_ROOT_PARTN | parted $LOOP rm $IMG_ROOT_PARTN ---pretend-input-tty"
-    #printf 'Ignore\n'$IMG_ROOT_PARTN | parted $LOOP rm $IMG_ROOT_PARTN ---pretend-input-tty
-    #if (( $? != 0 )); then
-    #  echo 'SFDISK FAILED!!!'
-    #  echo 'PARTED FAILED!!!'
-    #  exit 1
-    #fi
     #if ! output=$(sfdisk --delete -f "$LOOP" "$IMG_ROOT_PARTN" 2>&1); then
     if ! output=$(printf 'Ignore\n'$IMG_ROOT_PARTN | parted $LOOP rm $IMG_ROOT_PARTN ---pretend-input-tty 2>&1); then
       #echo -e "$output\n## SFDISK FAILED!!!"
@@ -498,23 +478,20 @@ function do_resize() {
     sleep 1
     debug 'INFO' 'Using parted to recreate root partition'
     debug 'DEBUG' "Running: parted -s -a none $LOOP unit B mkpart primary ext4 $IMG_ROOT_START 100%"
-    if ! output=$(parted -s -a none "$LOOP" unit B mkpart primary ext4 "$LOCAL_ROOT_START" 100% 2>&1); then
+    if ! output=$(parted -s -a none "$LOOP" unit B mkpart primary ext4 "$IMG_ROOT_START" 100% 2>&1); then
       echo -e "$output\n## PARTED FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
     fi
+    debug 'DEBUG' "$output\n------------------------------------------------------------------------------"
 
     echo '## Resizing filesystem...'
     sleep 1
     debug 'INFO' 'Using resize2fs to expand filesystem'
+    debug 'BREAK'
     debug 'DEBUG' "Running: resize2fs -p -f $IMG_DEV_ROOT_PATH"
-    #resize2fs -p -f "$IMG_DEV_ROOT_PATH"
-    #if (( $? != 0 )); then
-    #  echo 'RESIZE2FS FAILED!!!'
-    #  exit 1
-    #fi
-    if ! output=$(resize2fs -p -f "$IMG_DEV_ROOT_PATH" 2<&1); then
+    if ! output=$(resize2fs -p -f "$IMG_DEV_ROOT_PATH" 2>&1); then
       echo -e "$output\n## RESIZE2FS FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "RESIZE2FS FAILED:\n$output\n------------------------------------------------------------------------------"
@@ -528,54 +505,39 @@ function do_resize() {
 
   elif [ "$*" = 'shrink' ]; then
 
-    #debug 'INFO' 'Fetching new size of filesystem with fdisk'
-    #debug 'DEBUG' "Running: fdisk --bytes -lo start $IMG_FILE | tail -1"
-    #IMG_ROOT_END=$(fdisk --bytes -lo end "$IMG_FILE" | tail -1) # bytes
-    #debug 'DEBUG' "IMG_ROOT_END=$IMG_ROOT_END Bytes"
-
     echo '## Shrinking filesystem...'
     sleep 1
     debug 'INFO' 'Using resize2fs to shrink filesystem'
+    debug 'BREAK'
     debug 'DEBUG' "Running: resize2fs -p -f $IMG_DEV_ROOT_PATH ${TOTALK}K"
-    #resize2fs -p -f $IMG_DEV_ROOT_PATH ${TOTALK}K
-    #if (( $? != 0 )); then
-    #  echo 'RESIZE2FS FAILED!!!'
-    #  exit 1
-    #fi
-    if ! output=$(resize2fs -p -f "$IMG_DEV_ROOT_PATH" 2<&1); then
+    if ! output=$(resize2fs -p -f "$IMG_DEV_ROOT_PATH" "$TOTALK"K 2>&1 | tee /dev/tty); then
       echo -e "$output\n## RESIZE2FS FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "RESIZE2FS FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
     fi
+    debug 'DEBUG' "$output\n------------------------------------------------------------------------------"
 
     echo '## Shrinking partition...'
     sleep 1
     debug 'INFO' 'Using parted to shrink partition'
-    debug 'DEBUG' "Running: -s -a none parted $LOOP unit B resizepart $IMG_ROOT_PARTN $TOTAL"
-    #parted /dev/loop0 resizepart 1 100%
-    parted -s -a none "$LOOP" unit B resizepart "$IMG_ROOT_PARTN" "$TOTAL"
-#     if (( $? != 0 )); then
-#       echo 'PARTED FAILED!!!'
-#       exit 1
-#     fi
-    if ! output=$(parted -s -a none "$LOOP" unit B resizepart "$IMG_ROOT_PARTN" "$TOTAL" 2<&1); then
+    #debug 'DEBUG' "Running: parted -s -a none $LOOP unit B resizepart $IMG_ROOT_PARTN $TRUNCATE_TOTAL"
+    debug 'DEBUG' "Running: printf 'Yes\\\n' | parted -a none $LOOP unit B resizepart $IMG_ROOT_PARTN $TRUNCATE_TOTAL ---pretend-input-tty"
+    #parted -s -a none "$LOOP" unit B resizepart "$IMG_ROOT_PARTN" "$TOTAL"
+    #if ! output=$(parted -s -a none "$LOOP" unit B resizepart "$IMG_ROOT_PARTN" "$TRUNCATE_TOTAL" 2>&1); then # does not work, still asking for user confirmation even though --script is used
+    if ! output=$(printf 'Yes\n' | parted -a none "$LOOP" unit B resizepart "$IMG_ROOT_PARTN" "$TRUNCATE_TOTAL" ---pretend-input-tty 2>&1); then
       echo -e "$output\n## PARTED FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
     fi
+    debug 'DEBUG' "$output\n------------------------------------------------------------------------------"
 
     echo '## Shrinking img file...'
     sleep 1
-    debug 'INFO' 'Using parted to shrink img file'
+    debug 'INFO' 'Using truncate to shrink img file'
     debug 'DEBUG' "Running: truncate --size=$TRUNCATE_TOTAL $IMG_FILE"
-    #truncate --size="$TRUNCATE_TOTAL" "$IMG_FILE"
-    #if (( $? != 0 )); then
-    #  echo 'TRUNCATE FAILED!!!'
-    #  exit 1
-    #fi
-    if ! output=$(truncate --size=$TRUNCATE_TOTAL "$IMG_FILE" 2>&1); then
+    if ! output=$(truncate --size="$TRUNCATE_TOTAL" "$IMG_FILE" 2>&1); then
       echo -e "$output\n## TRUNCATE FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "TRUNCATE FAILED:\n$output\n------------------------------------------------------------------------------"
@@ -762,11 +724,11 @@ function make_img() {
   sleep 1
 
   # Truncate file to correct size
-  echo "## Resizing img file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB..."
+  echo "## Resizing img file..."
   sleep 1
   debug 'INFO' "Using truncate to resize img file' to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
   debug 'DEBUG' "Running: truncate --size=$TRUNCATE_TOTAL $IMG_FILE"
-  if ! output=$(truncate --size=$TRUNCATE_TOTAL "$IMG_FILE" 2>&1); then
+  if ! output=$(truncate --size="$TRUNCATE_TOTAL" "$IMG_FILE" 2>&1); then
     echo -e "$output\n## TRUNCATE FAILED!!!"
     debug 'BREAK'
     debug 'ERROR' "TRUNCATE FAILED:\n$output\n------------------------------------------------------------------------------"
@@ -784,13 +746,11 @@ function make_img() {
   sleep 1
   #debug 'INFO' 'Using sfdisk to remove root partition'
   #debug 'DEBUG' "Running: sfdisk --delete -f $LOOP $LOCAL_ROOT_PARTN"
-  #sfdisk --delete -f /dev/loop0 1
-  #sfdisk --delete -f "$LOOP" "$LOCAL_ROOT_PARTN" # seems to fail if img size is very big
   #debug 'DEBUG' "Running: parted -s $LOOP rm $LOCAL_ROOT_PARTN"
   #parted -s "$LOOP" rm "$IMG_ROOT_PARTN" # does not work, still asking for user confirmation even though --script is used
   debug 'INFO' 'Using parted to remove root partition'
   debug 'DEBUG' "Running: printf 'Ignore\\\n'$LOCAL_ROOT_PARTN | parted $LOOP rm $LOCAL_ROOT_PARTN ---pretend-input-tty"
-  #if ! output=$(sfdisk --delete -f "$LOOP" "$LOCAL_ROOT_PARTN" 2>&1); then
+  #if ! output=$(sfdisk --delete -f "$LOOP" "$LOCAL_ROOT_PARTN" 2>&1); then # seems to fail if img size is very big
   if ! output=$(printf 'Ignore\n'$LOCAL_ROOT_PARTN | parted $LOOP rm $LOCAL_ROOT_PARTN ---pretend-input-tty 2>&1); then
     #echo -e "$output\n## SFDISK FAILED!!!"
     echo -e "$output\n## PARTED FAILED!!!"
@@ -1006,19 +966,6 @@ function do_backup() {
     fi
   fi
 
-#   else
-#
-#     # Mount img file
-#     debug 'INFO' 'Mounting img file'
-#     debug 'DEBUG' 'Running function: do_mount'
-#     do_mount
-#
-#     # Copy files
-#     debug 'INFO' 'Backing up files'
-#     debug 'DEBUG' 'Running function: do_rsync'
-#     do_rsync
-#   fi
-
   # Expand img file if ADDED_SPACE not 0
   if [ "$ADDED_SPACE" -ne 0 ]; then
     debug 'DEBUG' "Running function: do_resize 'expand'"
@@ -1223,6 +1170,9 @@ function print_result() {
       echo "## $IMG_FILE is ${AFTER_SIZE}MB with $(( ADDED_SPACE / 1024 / 1024 ))MB extra space included."
       debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MB with $(( ADDED_SPACE / 1024 / 1024 ))MB extra space included"
     fi
+    if [ $AUTOEXPAND == true ]; then
+      echo "## Please wait for the system to reboot after restoring an image with autoexpansion."
+    fi
   else
     echo '## Backup done.'
     echo '##############################################################################'
@@ -1232,6 +1182,9 @@ function print_result() {
     echo "## $IMG_FILE is ${AFTER_SIZE}MB"
     debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MB"
     debug 'INFO' 'Img file updated'
+  fi
+  if [ $AUTOEXPAND == true ]; then
+    echo "## Please wait for the system to reboot after restoring an image with autoexpansion."
   fi
   echo '##############################################################################'
   debug 'INFO' 'Img file created and backup done'
