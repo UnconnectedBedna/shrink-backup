@@ -4,13 +4,13 @@ _I made this script because I wanted a universal method of backing up my SBC:s i
 
 Autoexpansion tested on **Raspberry Pi** os (bookworm and older), **Armbian**, **Manjaro-arm** and **ArchLinuxARM** for rpi with **ext4** root partition.
 
-**Latest release:** [shrink-backup.v0.9.3](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v0.9.3/shrink-backup.v0.9.3.tar.gz)<br>
+**Latest release:** [shrink-backup.v0.9.3](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v0.9.3/shrink-backup.v0.9.4.tar.gz)<br>
 [**Testing branch**](https://github.com/UnconnectedBedna/shrink-backup/tree/testing) if you want to have the absolute latest version. Resizing of existing img file and btrfs cloning are next on the roadmap and is being developed here.
 
 **Very fast restore thanks to minimal size of img file.**
 
 **Can back up any device as long as root is `ext4`**<br>
-Default device that will be backed up is detected by scanning what disk-device `root` resides on.<br>
+Default device that will be backed up is determined by scanning what disk-device `root` resides on.<br>
 This means that _if_ `boot` is a partition, that partition must be on the **same device as `root`**.<br>
 Backing up/restoring, to/from: usb-stick `/dev/sdX` with Raspberry pi os has been tested and works. Ie, writing an sd-card img to a usb-stick and vice versa works.
 
@@ -76,7 +76,7 @@ Not excluding other partitions will copy the data to the img root partition, not
 Use `-l` to write debug info into `shrink-backup.log` file located in the same directory as the script.
 
 **Applications used in the script:**
-- fdisk (sfdisk)
+- fdisk (sfdisk used in autoexpansion)
 - dd
 - parted
 - e2fsck
@@ -90,9 +90,6 @@ Theoretically the script should work on any device as long as root filesystem is
 Since the script uses `lsblk` to figure out where the root resides it does not matter what device it is on.<br>
 Even if you forget to disable autoexpansion on a non supported system, the backup will not fail. :)
 
-See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information.<br>
-[Feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) is highly apreciated!<br>
-
 ### Order of operations - Image creation:
 1. Uses `lsblk` to figure out the correct disk device to back up.
 2. Reads the block sizes of the partitions.
@@ -105,7 +102,8 @@ Added space is added on top of `df` reported "used space", not the size of the p
 
 The script can be instructed to set the img size by requesting recomended minimum size from `e2fsck` by using the `-a` option.<br>
 This is not the absolute smallest size you can achieve but is the "safest" way to create a "smallest possible" img file.<br>
-If you do not increase the size of the filesystem you are backing up from too much, you can most likely keep it updated with the update function (`-U`) of the script.
+If you do not increase the size of the filesystem you are backing up from too much, you can most likely keep it updated with the update function (`-U`) of the script.<br>
+By using `-a` in combination with `-U` the script will resize the img file if needed. Please see section about image update further down for more information.
 
 ### Smallest possible image
 
@@ -126,7 +124,8 @@ Example:
 Because of how filesystems work, `df` is never a true representation of what will actually fit in a created img file.<br>
 Each file, no matter the size, will take up one block of the filesystem, so if you have a LOT of very small files (running docker f.ex) the "0 added space method" might fail during rsync. Increase the 0 a little bit and retry.<br>
 This also means you have VERY little free space on the img file after creation.<br>
-If the filesystem you back up from increases in size, an update (`-U`) of the img file might fail.
+If the filesystem you back up from increases in size, an update (`-U`) of the img file might fail.<br>
+By using `-a` in combination with `-U` the script will resize the img file if needed. Please see section about image update below for more information.
 
 ### Order of operations - Image update:
 1. Probes the img file for information about partitions.
