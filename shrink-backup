@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # shrink-backup
-# version 0.9.4-beta
+# version 0.9.4
 # backup tool for backing up and updating .img files with autoexpansion on various operating systems
 #
 #    This program is free software: you can redistribute it and/or modify
@@ -144,8 +144,6 @@ if [ "$EUID" != 0 ]; then
   echo 'THIS SCRIPT MUST BE RUN WITH SUDO!'
   help
 fi
-
-
 
 function debug() {
   local log_level="$1"
@@ -384,6 +382,175 @@ function do_e2fsck() {
       debug 'DEBUG' 'Running function: do_mount'
       sleep 1
       do_mount
+    fi
+
+  else
+    echo '## Checking img filesystem...'
+    sleep 1
+
+    output=$(e2fsck -p -f "$IMG_DEV_ROOT_PATH" 2>&1)
+    echo "$output"
+    debug 'BREAK'
+    debug 'DEBUG' "Running: e2fsck -p -f $IMG_DEV_ROOT_PATH\n$output\n------------------------------------------------------------------------------"
+    sleep 1
+  fi
+
+  return 0
+}
+
+
+
+# Function to resize image
+function do_resize() {
+
+  # Reading offset for img root partition
+  debug 'INFO' 'Using fdisk to find img root partition offset'
+  debug 'DEBUG' "Running: fdisk -lo start $IMG_FILE | tail -1"
+  IMG_ROOT_START=$(fdisk -lo start "$IMG_FILE" | tail -1 | awk '{print $1}') # blocks, 521B block size
+  debug 'DEBUG' "IMG_ROOT_START=$IMG_ROOT_START Blocks"
+  IMG_ROOT_START=$(( IMG_ROOT_START * 512 )) # bytes
+  debug 'DEBUG' "IMG_ROOT_START=$IMG_ROOT_START Bytes"
+
+  # Converting TOTAL > TOTALK (bytes > kilobytes)
+  debug 'INFO' 'Converting TOTAL > TOTALK (bytes > kilobytes)'
+  TOTALK=$(( TOTAL / 1024 )) # kilobytes
+  debug 'DEBUG' "TOTAL=$TOTAL Bytes | TOTALK=$TOTALK Kilobytes"
+
+  # Gather information
+  debug 'INFO' 'Using lsblk to fetch root partition number'
+  debug 'DEBUG' "Running: parted -sm "$LOOP" print | tail -1 | cut -d : -f 1"
+  IMG_ROOT_PARTN=$(parted -sm "$LOOP" print | tail -1 | cut -d : -f 1)
+  debug 'DEBUG' "IMG_ROOT_PARTN=$IMG_ROOT_PARTN"
+
+  # Check img filesystem
+  debug 'INFO' 'Scanning filesystem'
+  debug 'DEBUG' 'Running function: do_e2fsck'
+  do_e2fsck
+
+  if [ "$*" = 'expand' ]; then
+
+    echo '## Expanding img filesystem...'
+    sleep 1
+
+    # Removing loop for tuncate to take effect
+    echo '## Removing loop...'
+    sleep 1
+    debug 'INFO' 'Removing loop for truncate to take effect'
+    debug 'DEBUG' "Running: losetup -d $LOOP"
+    losetup -d "$LOOP"
+
+    echo "## Resizing image file..."
+    sleep 1
+    debug 'INFO' 'Using truncate to resize img file'
+    debug 'DEBUG' "Running: truncate --size=$TRUNCATE_TOTAL $IMG_FILE"
+    if ! output=$(truncate --size="$TRUNCATE_TOTAL" "$IMG_FILE" 2>&1); then
+      echo -e "$output\n## TRUNCATE FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "TRUNCATE FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+
+    # Loop img file
+    debug 'INFO' 'Re-looping img file to fetch new img size'
+    debug 'DEBUG' 'Running function: do_loop'
+    do_loop
+
+    echo '## Removing partition...'
+    sleep 1
+    #debug 'INFO' 'Using sfdisk to remove partition'
+    #debug 'DEBUG' "Running: sfdisk --delete $LOOP $IMG_ROOT_PARTN"
+    #sfdisk --delete -f "$LOOP" "$IMG_ROOT_PARTN" # seems to fail if img size is very big
+    #debug 'DEBUG' "Running: parted -s $LOOP rm $IMG_ROOT_PARTN"
+    #parted -s "$LOOP" rm "$IMG_ROOT_PARTN" # does not work, still asking for user confirmation even though --script is used
+    debug 'INFO' 'Using parted to remove root partition'
+    debug 'DEBUG' "Running: printf 'Ignore\\\n'$IMG_ROOT_PARTN | parted $LOOP rm $IMG_ROOT_PARTN ---pretend-input-tty"
+    #if ! output=$(sfdisk --delete -f "$LOOP" "$IMG_ROOT_PARTN" 2>&1); then
+    if ! output=$(printf 'Ignore\n'$IMG_ROOT_PARTN | parted $LOOP rm $IMG_ROOT_PARTN ---pretend-input-tty 2>&1); then
+      #echo -e "$output\n## SFDISK FAILED!!!"
+      echo -e "$output\n## PARTED FAILED!!!"
+      debug 'BREAK'
+      #debug 'ERROR' "SFDISK FAILED:\n$output\n------------------------------------------------------------------------------"
+      debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+
+    echo '## Recreating partition...'
+    sleep 1
+    debug 'INFO' 'Using parted to recreate root partition'
+    debug 'DEBUG' "Running: parted -s -a none $LOOP unit B mkpart primary ext4 $IMG_ROOT_START 100%"
+    if ! output=$(parted -s -a none "$LOOP" unit B mkpart primary ext4 "$IMG_ROOT_START" 100% 2>&1); then
+      echo -e "$output\n## PARTED FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+    debug 'DEBUG' "$output\n------------------------------------------------------------------------------"
+
+    echo '## Resizing filesystem...'
+    sleep 1
+    debug 'INFO' 'Using resize2fs to expand filesystem'
+    debug 'BREAK'
+    debug 'DEBUG' "Running: resize2fs -p -f $IMG_DEV_ROOT_PATH"
+    if ! output=$(resize2fs -p -f "$IMG_DEV_ROOT_PATH" 2>&1); then
+      echo -e "$output\n## RESIZE2FS FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "RESIZE2FS FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+
+    # Check img filesystem
+    debug 'INFO' 'Scanning filesystem'
+    debug 'DEBUG' 'Running function: do_e2fsck'
+    do_e2fsck
+
+  elif [ "$*" = 'shrink' ]; then
+
+    echo '## Shrinking filesystem...'
+    sleep 1
+    debug 'INFO' 'Using resize2fs to shrink filesystem'
+    debug 'BREAK'
+    debug 'DEBUG' "Running: resize2fs -p -f $IMG_DEV_ROOT_PATH ${TOTALK}K"
+    if ! output=$(resize2fs -p -f "$IMG_DEV_ROOT_PATH" "$TOTALK"K 2>&1 | tee /dev/tty); then
+      echo -e "$output\n## RESIZE2FS FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "RESIZE2FS FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+    debug 'DEBUG' "$output\n------------------------------------------------------------------------------"
+
+    echo '## Shrinking partition...'
+    sleep 1
+    debug 'INFO' 'Using parted to shrink partition'
+    #debug 'DEBUG' "Running: parted -s -a none $LOOP unit B resizepart $IMG_ROOT_PARTN $TRUNCATE_TOTAL"
+    debug 'DEBUG' "Running: printf 'Yes\\\n' | parted -a none $LOOP unit B resizepart $IMG_ROOT_PARTN $TRUNCATE_TOTAL ---pretend-input-tty"
+    #parted -s -a none "$LOOP" unit B resizepart "$IMG_ROOT_PARTN" "$TOTAL"
+    #if ! output=$(parted -s -a none "$LOOP" unit B resizepart "$IMG_ROOT_PARTN" "$TRUNCATE_TOTAL" 2>&1); then # does not work, still asking for user confirmation even though --script is used
+    if ! output=$(printf 'Yes\n' | parted -a none "$LOOP" unit B resizepart "$IMG_ROOT_PARTN" "$TRUNCATE_TOTAL" ---pretend-input-tty 2>&1); then
+      echo -e "$output\n## PARTED FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+    debug 'DEBUG' "$output\n------------------------------------------------------------------------------"
+
+    echo '## Shrinking img file...'
+    sleep 1
+    debug 'INFO' 'Using truncate to shrink img file'
+    debug 'DEBUG' "Running: truncate --size=$TRUNCATE_TOTAL $IMG_FILE"
+    if ! output=$(truncate --size="$TRUNCATE_TOTAL" "$IMG_FILE" 2>&1); then
+      echo -e "$output\n## TRUNCATE FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "TRUNCATE FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+
+    # Final check of img filesystem
+    debug 'INFO' 'Finalizing filesystem'
+    debug 'DEBUG' "Running do_e2fsck 'final'"
+    do_e2fsck 'final'
+
+  fi
+=======
     fi
 
   else
@@ -764,13 +931,11 @@ function make_img() {
   sleep 1
   #debug 'INFO' 'Using sfdisk to remove root partition'
   #debug 'DEBUG' "Running: sfdisk --delete -f $LOOP $LOCAL_ROOT_PARTN"
-  #sfdisk --delete -f /dev/loop0 1
-  #sfdisk --delete -f "$LOOP" "$LOCAL_ROOT_PARTN" # seems to fail if img size is very big
   #debug 'DEBUG' "Running: parted -s $LOOP rm $LOCAL_ROOT_PARTN"
   #parted -s "$LOOP" rm "$IMG_ROOT_PARTN" # does not work, still asking for user confirmation even though --script is used
   debug 'INFO' 'Using parted to remove root partition'
   debug 'DEBUG' "Running: printf 'Ignore\\\n'$LOCAL_ROOT_PARTN | parted $LOOP rm $LOCAL_ROOT_PARTN ---pretend-input-tty"
-  #if ! output=$(sfdisk --delete -f "$LOOP" "$LOCAL_ROOT_PARTN" 2>&1); then
+  #if ! output=$(sfdisk --delete -f "$LOOP" "$LOCAL_ROOT_PARTN" 2>&1); then # seems to fail if img size is very big
   if ! output=$(printf 'Ignore\n'$LOCAL_ROOT_PARTN | parted $LOOP rm $LOCAL_ROOT_PARTN ---pretend-input-tty 2>&1); then
     #echo -e "$output\n## SFDISK FAILED!!!"
     echo -e "$output\n## PARTED FAILED!!!"
@@ -985,19 +1150,6 @@ function do_backup() {
       sleep 1
     fi
   fi
-
-#   else
-#
-#     # Mount img file
-#     debug 'INFO' 'Mounting img file'
-#     debug 'DEBUG' 'Running function: do_mount'
-#     do_mount
-#
-#     # Copy files
-#     debug 'INFO' 'Backing up files'
-#     debug 'DEBUG' 'Running function: do_rsync'
-#     do_rsync
-#   fi
 
   # Expand img file if ADDED_SPACE not 0
   if [ "$ADDED_SPACE" -ne 0 ]; then
