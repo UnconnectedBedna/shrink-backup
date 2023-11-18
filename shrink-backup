@@ -1078,7 +1078,8 @@ LOCAL_DEV_PTUUID=\$(lsblk -lpo mountpoint,ptuuid | grep '/ ' | awk '{print \$2}'
 LOCAL_DEV_PATH=\$(lsblk -lpo ptuuid,type,path | grep "\$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print \$3}')
 LOCAL_ROOT_PARTN=\$(parted -sm "\$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
 LOCAL_DEV_ROOT_PATH=\$(lsblk -lpo mountpoint,path | grep '/ ' | awk '{print \$2}')
-LOCAL_ROOT_START=\$(fdisk --bytes -lo start "\$LOCAL_DEV_PATH" | tail -1)
+LOCAL_ROOT_START=\$(fdisk -lo start "\$LOCAL_DEV_PATH" | tail -1 | awk '{print \$1}') # blocks, 512B block size
+LOCAL_ROOT_START=\$(( LOCAL_ROOT_START * 512 )) # bytes
 
 sfdisk --delete "\$LOCAL_DEV_PATH" "\$LOCAL_ROOT_PARTN"
 parted -s -a none "\$LOCAL_DEV_PATH" unit B mkpart primary ext4 "\$LOCAL_ROOT_START" 100%
