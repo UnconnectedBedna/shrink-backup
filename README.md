@@ -5,7 +5,7 @@ _I made this script because I wanted a universal method of backing up my SBC:s i
 Autoexpansion tested on **Raspberry Pi** os (bookworm and older), **Armbian**, **Manjaro-arm** and **ArchLinuxARM** for rpi with **ext4** root partition.
 
 **Latest release:** [shrink-backup.v0.9.4](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v0.9.4/shrink-backup.v0.9.4.tar.gz)<br>
-[**Testing branch**](https://github.com/UnconnectedBedna/shrink-backup/tree/testing) if you want to have the absolute latest version. Resizing of existing img file and btrfs cloning are next on the roadmap and is being developed here.
+[**Testing branch**](https://github.com/UnconnectedBedna/shrink-backup/tree/testing) if you want to have the absolute latest version. Resizing of existing img file to minimum size and btrfs cloning is next on the roadmap and is being developed here.
 
 **Very fast restore thanks to minimal size of img file.**
 
@@ -76,7 +76,8 @@ Not excluding other partitions will copy the data to the img root partition, not
 Use `-l` to write debug info into `shrink-backup.log` file located in the same directory as the script.
 
 **Applications used in the script:**
-- fdisk (sfdisk used in autoexpansion)
+- fdisk
+- sfdisk
 - dd
 - parted
 - e2fsck
@@ -107,7 +108,7 @@ By using `-a` in combination with `-U` the script will resize the img file if ne
 
 ### Smallest possible image
 
-To get the absolute smallest img file possible, do NOT set `-a` option and set "extra space" to 0
+To get the absolute smallest img file possible, do NOT use `-a` option and set "extra space" to 0
 
 Example: `sudo shrink-backup /path/to/backup.img 0`
 
@@ -136,6 +137,7 @@ By using `-a` in combination with `-U` the script will resize the img file if ne
 To update an existing img file simply use the `-U` option and the path to the img file.<br>
 Example: `sudo shrink-backup -U /path/to/backup.img`
 
+**Resizing img file when updating**<br>
 If `-a` is used in combination with `-U`, the script will compare the root partition on the img file to the size `resize2fs` recommends as minimum.<br>
 The img file needs to be **+256MB** smaller than `resize2fs` recommended minimum to be expanded.<br>
 The img file needs to be **+512MB** bigger than `resize2fs` recommended minimum to be shrunk.<br>

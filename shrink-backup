@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # shrink-backup
-# version 0.9.5
+# version 0.9.4
 # backup tool for backing up and updating .img files with autoexpansion on various operating systems
 #
 #    This program is free software: you can redistribute it and/or modify
@@ -457,20 +457,20 @@ function do_resize() {
 
     echo '## Removing partition...'
     sleep 1
-    #debug 'INFO' 'Using sfdisk to remove partition'
-    #debug 'DEBUG' "Running: sfdisk --delete $LOOP $IMG_ROOT_PARTN"
+    debug 'INFO' 'Using sfdisk to remove partition'
+    debug 'DEBUG' "Running: sfdisk --delete $LOOP $IMG_ROOT_PARTN"
     #sfdisk --delete -f "$LOOP" "$IMG_ROOT_PARTN" # seems to fail if img size is very big
     #debug 'DEBUG' "Running: parted -s $LOOP rm $IMG_ROOT_PARTN"
     #parted -s "$LOOP" rm "$IMG_ROOT_PARTN" # does not work, still asking for user confirmation even though --script is used
-    debug 'INFO' 'Using parted to remove root partition'
-    debug 'DEBUG' "Running: printf 'Ignore\\\n'$IMG_ROOT_PARTN | parted $LOOP rm $IMG_ROOT_PARTN ---pretend-input-tty"
-    #if ! output=$(sfdisk --delete -f "$LOOP" "$IMG_ROOT_PARTN" 2>&1); then
-    if ! output=$(printf 'Ignore\n'$IMG_ROOT_PARTN | parted $LOOP rm $IMG_ROOT_PARTN ---pretend-input-tty 2>&1); then
-      #echo -e "$output\n## SFDISK FAILED!!!"
-      echo -e "$output\n## PARTED FAILED!!!"
+    #debug 'INFO' 'Using parted to remove root partition'
+    #debug 'DEBUG' "Running: printf 'Ignore\\\n'$IMG_ROOT_PARTN | parted $LOOP rm $IMG_ROOT_PARTN ---pretend-input-tty"
+    if ! output=$(sfdisk --delete -f "$LOOP" "$IMG_ROOT_PARTN" 2>&1); then
+    #if ! output=$(printf 'Ignore\n'$IMG_ROOT_PARTN | parted $LOOP rm $IMG_ROOT_PARTN ---pretend-input-tty 2>&1); then
+      echo -e "$output\n## SFDISK FAILED!!!"
+      #echo -e "$output\n## PARTED FAILED!!!"
       debug 'BREAK'
-      #debug 'ERROR' "SFDISK FAILED:\n$output\n------------------------------------------------------------------------------"
-      debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
+      debug 'ERROR' "SFDISK FAILED:\n$output\n------------------------------------------------------------------------------"
+      #debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
     fi
 
@@ -744,19 +744,18 @@ function make_img() {
   # Remove partition
   echo '## Removing root partition...'
   sleep 1
-  #debug 'INFO' 'Using sfdisk to remove root partition'
-  #debug 'DEBUG' "Running: sfdisk --delete -f $LOOP $LOCAL_ROOT_PARTN"
-  #debug 'DEBUG' "Running: parted -s $LOOP rm $LOCAL_ROOT_PARTN"
+  debug 'INFO' 'Using sfdisk to remove root partition'
+  debug 'DEBUG' "Running: sfdisk --delete -f $LOOP $LOCAL_ROOT_PARTN"
   #parted -s "$LOOP" rm "$IMG_ROOT_PARTN" # does not work, still asking for user confirmation even though --script is used
-  debug 'INFO' 'Using parted to remove root partition'
-  debug 'DEBUG' "Running: printf 'Ignore\\\n'$LOCAL_ROOT_PARTN | parted $LOOP rm $LOCAL_ROOT_PARTN ---pretend-input-tty"
-  #if ! output=$(sfdisk --delete -f "$LOOP" "$LOCAL_ROOT_PARTN" 2>&1); then # seems to fail if img size is very big
-  if ! output=$(printf 'Ignore\n'$LOCAL_ROOT_PARTN | parted $LOOP rm $LOCAL_ROOT_PARTN ---pretend-input-tty 2>&1); then
-    #echo -e "$output\n## SFDISK FAILED!!!"
-    echo -e "$output\n## PARTED FAILED!!!"
+  #debug 'INFO' 'Using parted to remove root partition'
+  #debug 'DEBUG' "Running: printf 'Ignore\\\n'$LOCAL_ROOT_PARTN | parted $LOOP rm $LOCAL_ROOT_PARTN ---pretend-input-tty"
+  if ! output=$(sfdisk --delete -f "$LOOP" "$LOCAL_ROOT_PARTN" 2>&1); then # seems to fail if img size is very big
+  #if ! output=$(printf 'Ignore\n'$LOCAL_ROOT_PARTN | parted $LOOP rm $LOCAL_ROOT_PARTN ---pretend-input-tty 2>&1); then # fails on raspberry pi os
+    echo -e "$output\n## SFDISK FAILED!!!"
+    #echo -e "$output\n## PARTED FAILED!!!"
     debug 'BREAK'
-    #debug 'ERROR' "SFDISK FAILED:\n$output\n------------------------------------------------------------------------------"
-    debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
+    debug 'ERROR' "SFDISK FAILED:\n$output\n------------------------------------------------------------------------------"
+    #debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
     exit 1
   fi
   sleep 1
@@ -781,7 +780,7 @@ function make_img() {
   LABEL=( $(lsblk -o label "$LOCAL_DEV_ROOT_PATH" | tail -1) )
   UUID=( $(lsblk -o uuid "$LOCAL_DEV_ROOT_PATH" | tail -1) )
 
-  if ! output=$(mkfs.ext4 "$IMG_DEV_ROOT_PATH" -U "$UUID" -L "$LABEL" -F -v 2>&1 | tee /dev/tty ); then
+  if ! output=$(mkfs.ext4 "$IMG_DEV_ROOT_PATH" -U "$UUID" -L "$LABEL" -v 2>&1 | tee /dev/tty ); then
     echo -e "$output\n## MKFS.EXT4 FAILED!!!"
     debug 'BREAK'
     debug 'ERROR' "MKFS.EXT4 FAILED:\n$output\n------------------------------------------------------------------------------"
@@ -883,8 +882,7 @@ function do_backup() {
       echo "# New img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
       echo "# Difference: $(( ADDED_SPACE / 1024 / 1024 ))MB"
     else
-      #echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB with $(( ADDED_SPACE / 1024 / 1024 ))MB extra space included."
-      #echo "# Manually added space: $(( ADDED_SPACE / 1024 / 1024 ))MB"
+      echo "# Used space on root: $(( $(df / --output=used | tail -1) / 1024 ))MB"
       echo "# Total img size: $(( IMG_SIZE / 1024 / 1024 ))MB"
     fi
     echo '##############################################################################'
@@ -923,6 +921,8 @@ function do_backup() {
       echo "# New img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
       echo "# Difference: $(( ADDED_SPACE / 1024 / 1024 ))MB"
     else
+
+      echo "# Used space on root: $(( $(df / --output=used | tail -1) / 1024 ))MB"
       echo "# Total img size: $(( IMG_SIZE / 1024 / 1024 ))MB"
     fi
     echo '# PRESS CTRL+C WITHIN 5s TO CANCEL!'
