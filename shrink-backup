@@ -621,6 +621,7 @@ function make_img() {
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
     echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MB"
+    echo "# Estemated root usage: $(( $(df / --output=used | tail -1) / 1024 ))MB"
     if [ "$RESIZE2FS_RUN" == true ]; then
       echo "# Resize2fs decide minimum (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
       echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
@@ -679,6 +680,7 @@ function make_img() {
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
     echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MB"
+    echo "# Estemated root usage: $(( $(df / --output=used | tail -1) / 1024 ))MB"
     if [ "$RESIZE2FS_RUN" == true ]; then
       echo "# Resize2fs decide minimum (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
       echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
@@ -1072,11 +1074,11 @@ EOF
   debug 'DEBUG' "Creating expansion script ${TMP_DIR}/expand-fs.sh"
   cat << EOF2 > "${TMP_DIR}/expand-fs.sh"
 #!/usr/bin/bash
-LOCAL_DEV_MAJ=\$(lsblk -lpo mountpoint,maj:min,type,path | grep '/ ' | awk '{print \$2}' | cut -d : -f 1)
-LOCAL_DEV_PATH=\$(lsblk -lpo maj:min,type,path | grep "\$LOCAL_DEV_MAJ" | grep 'disk' | awk '{print \$3}')
+LOCAL_DEV_PTUUID=\$(lsblk -lpo mountpoint,ptuuid | grep '/ ' | awk '{print \$2}')
+LOCAL_DEV_PATH=\$(lsblk -lpo ptuuid,type,path | grep "\$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print \$3}')
 LOCAL_ROOT_PARTN=\$(parted -sm "\$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
 LOCAL_DEV_ROOT_PATH=\$(lsblk -lpo mountpoint,path | grep '/ ' | awk '{print \$2}')
-LOCAL_ROOT_START=\$(fdisk --byte -lo start "\$LOCAL_DEV_PATH" | tail -1)
+LOCAL_ROOT_START=\$(fdisk --bytes -lo start "\$LOCAL_DEV_PATH" | tail -1)
 
 sfdisk --delete "\$LOCAL_DEV_PATH" "\$LOCAL_ROOT_PARTN"
 parted -s -a none "\$LOCAL_DEV_PATH" unit B mkpart primary ext4 "\$LOCAL_ROOT_START" 100%
