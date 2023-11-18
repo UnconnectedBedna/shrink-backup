@@ -76,7 +76,8 @@ Not excluding other partitions will copy the data to the img root partition, not
 Use `-l` to write debug info into `shrink-backup.log` file located in the same directory as the script.
 
 **Applications used in the script:**
-- fdisk (sfdisk used in autoexpansion)
+- fdisk
+- sfdisk
 - dd
 - parted
 - e2fsck
