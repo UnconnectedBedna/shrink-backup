@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # shrink-backup
-# version 0.9.4
+# version 0.9.5-beta
 # backup tool for backing up and updating .img files with autoexpansion on various operating systems
 #
 #    This program is free software: you can redistribute it and/or modify
@@ -14,7 +14,7 @@
 #    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #    GNU General Public License for more details.
 #
-#    10/2023
+#    11/2023
 #    Marcus Johansson
 #    https://github.com/UnconnectedBedna/shrink-backup
 ##############################################################################
@@ -884,7 +884,7 @@ function do_backup() {
       echo "# New img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
       echo "# Difference: $(( ADDED_SPACE / 1024 / 1024 ))MB"
     else
-      echo "# Used space on root: $(( $(df / --output=used | tail -1) / 1024 ))MB"
+      echo "# Estemated root usage: $(( $(df / --output=used | tail -1) / 1024 ))MB"
       echo "# Total img size: $(( IMG_SIZE / 1024 / 1024 ))MB"
     fi
     echo '##############################################################################'
@@ -1130,11 +1130,12 @@ EOF
   debug 'DEBUG' 'Creating expansion script ${TMP_DIR}/expand-fs.sh'
   cat << EOF2 > "${TMP_DIR}/expand-fs.sh"
 #!/usr/bin/bash
-LOCAL_DEV_MAJ=\$(lsblk -lpo mountpoint,maj:min,type,path | grep '/ ' | awk '{print \$2}' | cut -d : -f 1)
-LOCAL_ROOT_PARTN=\$(lsblk -lpo mountpoint,maj:min,type,path | grep '/ ' | awk '{print \$2}' | cut -d : -f 2)
-LOCAL_DEV_PATH=\$(lsblk -lpo maj:min,type,path | grep "\$LOCAL_DEV_MAJ" | grep 'disk' | awk '{print \$3}')
+LOCAL_DEV_PTUUID=\$(lsblk -lpo mountpoint,ptuuid | grep '/ ' | awk '{print \$2}')
+LOCAL_DEV_PATH=\$(lsblk -lpo ptuuid,type,path | grep "\$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print \$3}')
+LOCAL_ROOT_PARTN=\$(parted -sm "\$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
 LOCAL_DEV_ROOT_PATH=\$(lsblk -lpo mountpoint,path | grep '/ ' | awk '{print \$2}')
-LOCAL_ROOT_START=\$(fdisk --bytes -lo start "\$LOCAL_DEV_PATH" | tail -1)
+LOCAL_ROOT_START=\$(fdisk -lo start "\$LOCAL_DEV_PATH" | tail -1 | awk '{print \$1}') # blocks, 512B block size
+LOCAL_ROOT_START=\$(( LOCAL_ROOT_START * 512 )) # bytes
 
 sfdisk --delete "\$LOCAL_DEV_PATH" "\$LOCAL_ROOT_PARTN"
 parted -s -a none "\$LOCAL_DEV_PATH" unit B mkpart primary ext4 "\$LOCAL_ROOT_START" 100%
@@ -1172,9 +1173,6 @@ function print_result() {
     else
       echo "## $IMG_FILE is ${AFTER_SIZE}MB with $(( ADDED_SPACE / 1024 / 1024 ))MB extra space included."
       debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MB with $(( ADDED_SPACE / 1024 / 1024 ))MB extra space included"
-    fi
-    if [ $AUTOEXPAND == true ]; then
-      echo "## Please wait for the system to reboot after restoring an image with autoexpansion."
     fi
   else
     echo '## Backup done.'
