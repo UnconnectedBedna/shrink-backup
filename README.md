@@ -5,7 +5,7 @@ _I made this script because I wanted a universal method of backing up my SBC:s i
 Autoexpansion tested on **Raspberry Pi** os (bookworm and older), **Armbian**, **Manjaro-arm** and **ArchLinuxARM** for rpi with **ext4** root partition.
 
 **Latest release:** [shrink-backup.v0.9.4](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v0.9.4/shrink-backup.v0.9.4.tar.gz)<br>
-[**Testing branch**](https://github.com/UnconnectedBedna/shrink-backup/tree/testing) if you want to have the absolute latest version. Resizing of existing img file to minimum size and btrfs cloning is next on the roadmap and is being developed here.
+[Testing branch](https://github.com/UnconnectedBedna/shrink-backup/tree/testing) if you want to have the absolute latest version. Resizing of existing img file to minimum size and btrfs cloning is next on the roadmap and is being developed here.
 
 **Very fast restore thanks to minimal size of img file.**
 
@@ -78,9 +78,10 @@ Use `-l` to write debug info into `shrink-backup.log` file located in the same d
 **Applications used in the script:**
 - fdisk
 - sfdisk
-- dd
 - parted
 - e2fsck
+- resize2fs
+- dd
 - truncate
 - mkfs.ext4
 - rsync
