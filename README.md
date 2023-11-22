@@ -166,7 +166,7 @@ Both in creation of a new img and when keeping it updated with `-U`.<br>
 My resoning for this is that this script is primarily for creating bootable img files, NOT to create perfectly cloned backups. Speed is also a strong argument here.
 
 The goal in developement of this script is ALWAYS to: as fast as possible create an img file that you can write directly to a sd-card and boot. That goal does NOT mix well with also creating a perfectly cloned backup.<br>
-This does mean the script careas MORE about the file integrity rather than the disk integrity. The compression f.ex might be different than on your root filesystem. Subvol id:s might change etc etc.<br>
+This does mean the script cares MORE about the file integrity rather than the disk integrity. The compression f.ex might be different than on your root filesystem. Subvol id:s might change etc etc.<br>
 But the main goal stays the same, the backup must contain ALL REQUESTED FILES, ie a bootable file backup. I do NOT want to be responsible for people loosing their data when using this script, hence this decision. :)
 
 All of this might change in the future though. Not the rsync part (I value speed very high), but the subvol id:s, compression and such is on my mind.<br>
