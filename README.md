@@ -2,14 +2,16 @@
 
 _I made this script because I wanted a universal method of backing up my SBC:s into small img files as fast as possible (with rsync), indepentent of what os is in use._
 
-Autoexpansion tested on **Raspberry Pi** os (bookworm and older), **Armbian**, **Manjaro-arm** and **ArchLinuxARM** for rpi with **ext4** root partition.
+Autoexpansion tested on **Raspberry Pi** os (bookworm and older), **Armbian**, **Manjaro-arm** and **ArchLinuxARM** for rpi with **ext4** root partition.<br>
+**btrfs** on root partition has been tested on **Manjaro-arm** and is still considered to be beta. Please see btrfs section at the bottom for more info.
 
 **Latest release:** [shrink-backup.v0.9.4](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v0.9.4/shrink-backup.v0.9.4.tar.gz)<br>
-[Testing branch](https://github.com/UnconnectedBedna/shrink-backup/tree/testing) if you want to have the absolute latest version. Resizing of existing img file to minimum size and btrfs cloning is next on the roadmap and is being developed here.
+[Testing branch](https://github.com/UnconnectedBedna/shrink-backup/tree/testing) if you want to have the absolute latest version. Resizing of existing img file to minimum size and btrfs backups is next on the roadmap and is being developed here.
 
 **Very fast restore thanks to minimal size of img file.**
 
 **Can back up any device as long as root is `ext4`**<br>
+`btrfs` is in beta.<br>
 Default device that will be backed up is determined by scanning what disk-device `root` resides on.<br>
 This means that _if_ `boot` is a partition, that partition must be on the **same device as `root`**.<br>
 Backing up/restoring, to/from: usb-stick `/dev/sdX` with Raspberry pi os has been tested and works. Ie, writing an sd-card img to a usb-stick and vice versa works.
@@ -32,7 +34,7 @@ Directory where .img file is created is automatically excluded in backup
 ########################################################################
 Usage: sudo shrink-backup [-Uatyelh] imagefile.img [extra space (MB)]
   -U         Update the img file (rsync to existing img), [extra space] extends img size/root partition
-  -a         Let resize2fs decide minimum space (extra space is ignored)
+  -a         Autoresize root partition (extra space is ignored)
                  When used in combination with -U:
                  Expand if img is +256MB smaller resize2fs recommended minimum, shrink if +512MB bigger
   -t         Use exclude.txt in same folder as script to set excluded directories
@@ -43,10 +45,10 @@ Usage: sudo shrink-backup [-Uatyelh] imagefile.img [extra space (MB)]
   -h --help  Show this help snippet
 ########################################################################
 Examples:
-sudo shrink-backup -a /path/to/backup.img (create img, resize2fs calcualtes size)
+sudo shrink-backup -a /path/to/backup.img (create img, automatically set size)
 sudo shrink-backup -e -y /path/to/backup.img 1024 (create img, ignore prompts, do not autoexpand, add 1024MB extra space)
 sudo shrink-backup -Utl /path/to/backup.img (update img backup, use exclude.txt and write log to shrink-backup.log)
-sudo shrink-backup -Ua /path/to/backup.img (update img backup, resize2fs calculates and resizes img file if needed)
+sudo shrink-backup -Ua /path/to/backup.img (update img backup, automatically resize img file if needed)
 sudo shrink-backup -U /path/to/backup.img 1024 (update img backup, expand img size/root partition with 1024MB)
 ```
 
@@ -89,6 +91,7 @@ Use `-l` to write debug info into `shrink-backup.log` file located in the same d
 ## Info
 
 Theoretically the script should work on any device as long as root filesystem is `ext4`. But IMHO is best applied on ARM hardware.<br>
+`btrfs` is usable but still experimental. Please see section about btrfs below for more information.<br>
 Since the script uses `lsblk` to figure out where the root resides it does not matter what device it is on.<br>
 Even if you forget to disable autoexpansion on a non supported system, the backup will not fail. :)
 
@@ -146,6 +149,28 @@ This is to protect from unessesary resizing operations most likely not needed.
 
 If manually added space is used in combination with `-U`, the img file/root partition will be expanded by that amount. No checks are being performed to make sure the data you want to back up will actually fit.<br>
 Only expansion is possible with this method.
+
+## btrfs
+
+**This is still in experimental stage so [ideas & feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) is HIGHLY appreciated!**<br>
+The subvolumes are mounted with default compression: `compress=zstd` (default means `zstd:3`)
+
+I am working against Manjaro-arm to create this functionality and the standard install creates root (`/@`) and home (`/@home`) subvolumes, so the script assumes this is the situation on ALL btrfs systems as of now.
+
+The backup img is **NOT a clone**. Snapshots are NOT used to create the backup.<br>
+The `UUID` will change on the created img filesystem (btrfs is way more picky than ext4 about this), but in the case of Manjaro (and raspberry pi too for that matter), that does not matter since `PARTUUID` is used in mounting, and that stays the same, but users should be aware.<br>
+Subvol id:s are NOT guaranteed to be the same.
+
+Instead of using btrfs send/recieve I opted for rsync, quck and dirty.<br>
+Both in creation of a new img and when keeping it updated with `-U`.<br>
+My resoning for this is that this script is primarily for creating bootable img files, NOT to create perfectly cloned backups. Speed is also a strong argument here.
+
+The goal in developement of this script is ALWAYS to: as fast as possible create an img file that you can write directly to a sd-card and boot. That goal does NOT mix well with also creating a perfectly cloned backup.<br>
+This does mean the script careas MORE about the file integrity rather than the disk integrity. The compression f.ex might be different than on your root filesystem. Subvol id:s might change etc etc.<br>
+But the main goal stays the same, the backup must contain ALL REQUESTED FILES, ie a bootable file backup. I do NOT want to be responsible for people loosing their data when using this script, hence this decision. :)
+
+All of this might change in the future though. Not the rsync part (I value speed very high), but the subvol id:s, compression and such is on my mind.<br>
+F.ex if more subvols (or less) than root and home is used I want the script to be able to handle that.
 
 **Thank you for using my software <3**
 
