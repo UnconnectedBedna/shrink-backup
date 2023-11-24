@@ -216,6 +216,10 @@ function get_dev_variables() {
     LOCAL_RESIZE2FS_MIN=$(echo "$LOCAL_RESIZE2FS_MIN" | tail -1 | awk '{print $1}')
     LOCAL_RESIZE2FS_MIN=$(( LOCAL_RESIZE2FS_MIN + 201326592 )) # 192MB = 201326592B
     debug 'DEBUG' "LOCAL_RESIZE2FS_MIN=$LOCAL_RESIZE2FS_MIN bytes"
+    debug 'INFO' 'Fetching btrfs subvolume info'
+    #SUBVOLUMES=( $(sudo btrfs subvolume list / | awk '{print $2,$9}') )
+    SUBVOLUMES=( $(sudo btrfs subvolume list / | awk '{print $9}') )
+    #subvolumes_count=$(( ${#SUBVOLUMES[@]} / 2 ))
   fi
   # Method 1, using the value of "size - available"
   LOCAL_DF_OUTPUT=( $(df / -k --sync --output=size,avail | tail -1) ) # 1k blocks, 0 is the first position in an array
@@ -444,7 +448,7 @@ function do_resize() {
 
     echo "## Resizing image file..."
     sleep 1
-    debug 'INFO' "Using truncate to resize img file' to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
+    debug 'INFO' "Using truncate to resize img file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
     debug 'DEBUG' "Running: truncate --size=$TRUNCATE_TOTAL $IMG_FILE"
     if ! output=$(truncate --size="$TRUNCATE_TOTAL" "$IMG_FILE" 2>&1); then
       echo -e "$output\n## TRUNCATE FAILED!!!"
@@ -538,7 +542,7 @@ function do_resize() {
 
     echo '## Shrinking img file...'
     sleep 1
-    debug 'INFO' 'Using truncate to shrink img file'
+    debug 'INFO' "Using truncate to shrink img file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
     debug 'DEBUG' "Running: truncate --size=$TRUNCATE_TOTAL $IMG_FILE"
     if ! output=$(truncate --size="$TRUNCATE_TOTAL" "$IMG_FILE" 2>&1); then
       echo -e "$output\n## TRUNCATE FAILED!!!"
@@ -690,7 +694,7 @@ function make_img() {
     fi
     echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
-    echo "# Autresize root partition:: $RESIZE2FS_RUN"
+    echo "# Autresize root partition: $RESIZE2FS_RUN"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
     echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MB"
@@ -743,7 +747,7 @@ function make_img() {
   # Truncate file to correct size
   echo "## Resizing img file..."
   sleep 1
-  debug 'INFO' "Using truncate to resize img file' to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
+  debug 'INFO' "Using truncate to resize img file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
   debug 'DEBUG' "Running: truncate --size=$TRUNCATE_TOTAL $IMG_FILE"
   if ! output=$(truncate --size="$TRUNCATE_TOTAL" "$IMG_FILE" 2>&1); then
     echo -e "$output\n## TRUNCATE FAILED!!!"
@@ -810,6 +814,7 @@ function make_img() {
   UUID=$(lsblk -o uuid "$LOCAL_DEV_ROOT_PATH" | tail -1)
   debug 'DEBUG' "LABLEL=$LABEL | UUID=$UUID"
 
+  # ext4
   if [ $FSTYPE = 'ext4' ]; then
     debug 'INFO' 'Using mkfs.ext4 to format root filesystem'
     if ! output=$(mkfs.ext4 "$IMG_DEV_ROOT_PATH" -U "$UUID" -L "$LABEL" -v 2>&1 | tee /dev/tty ); then
@@ -828,6 +833,7 @@ function make_img() {
     debug 'INFO' 'Running function: do_mount'
     do_mount
 
+  # btrfs
   else
     debug 'INFO' 'Using mkfs.btrfs to format root filesystem'
     partprobe "$LOOP"
@@ -854,7 +860,7 @@ function make_img() {
     echo '## Creating btrfs subvolumes...'
     debug 'INFO' 'Creating btrfs subvolumes'
     debug 'DEBUG' "Running: mount -o compress=zstd $IMG_DEV_ROOT_PATH $TMP_DIR"
-    if ! output=$(mount -o compress=zstd "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
+    if ! output=$(mount -o noatime,compress=zstd "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
       echo -e "$output\n## ROOT MOUNT FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "ROOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
@@ -862,47 +868,73 @@ function make_img() {
     fi
     sleep 1
 
-    debug 'DEBUG' "Running: btrfs subvolume create ${TMP_DIR}/@"
-    if ! output=$(btrfs subvolume create "$TMP_DIR"/@ 2>&1); then
-      echo -e "$output\n## CREATE ROOT SUBVOLUME FAILED!!!"
-      debug 'BREAK'
-      debug 'ERROR' "CREATE ROOT SUBVOLUME FAILED:\n$output\n------------------------------------------------------------------------------"
-      exit 1
-    fi
-    sleep 1
+    # Create top subvolumes, ${#SUBVOLUMES[@]} gives count
+    for ((i = 0; i < ${#SUBVOLUMES[@]}; i++)); do
+      SUBVOL_PATH="${SUBVOLUMES[i]}"
+      if [[ "$SUBVOL_PATH" == '@'* ]]; then
+        echo "## Creating subvolume: $SUBVOL_PATH"
+        debug 'DEBUG' "Running: btrfs subvolume create ${TMP_DIR}/${SUBVOL_PATH}"
+        if ! output=$(btrfs subvolume create "$TMP_DIR"/"$SUBVOL_PATH" 2>&1); then
+          echo -e "$output\n## CREATE SUBVOLUME FAILED!!!"
+          debug 'BREAK'
+          debug 'ERROR' "CREATE SUBVOLUME FAILED:\n$output\n------------------------------------------------------------------------------"
+          exit 1
+        fi
+      fi
+      sleep 1
+    done
 
-    debug 'DEBUG' "Running: btrfs subvolume create ${TMP_DIR}/@home"
-    if ! output=$(btrfs subvolume create "$TMP_DIR"/@home 2>&1); then
-      echo -e "$output\n## CREATE HOME SUBVOLUME FAILED!!!"
-      debug 'BREAK'
-      debug 'ERROR' "CREATE HOME SUBVOLUME FAILED:\n$output\n------------------------------------------------------------------------------"
-      exit 1
-    fi
-    sleep 1
-
-    echo '## Mounting img btrfs subvolumes...'
-    debug 'INFO' 'Unmounting btrfs partition and mounting subvolumes'
+    debug 'INFO' 'Unmounting btrfs filesystem & mounting root subvolume.'
+    debug 'DEBUG' "Running: umount $TMP_DIR"
     umount "$TMP_DIR"
     sleep 1
-
-    debug 'DEBUG' "Running: mount -o compress=zstd,subvol=@ $IMG_DEV_ROOT_PATH $TMP_DIR"
-    if ! output=$(mount -o compress=zstd,subvol=@ "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
-      echo -e "$output\n## ROOT SUBVOLUME MOUNT FAILED!!!"
-      debug 'BREAK'
-      debug 'ERROR' "ROOT SUBVOLUME MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
-      exit 1
-    fi
+    partprobe "$LOOP"
+    fstab=( $(cat /etc/fstab | grep "${SUBVOLUMES[0]}") )
+    debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH $TMP_DIR"
+    mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH $TMP_DIR
     sleep 1
 
-    debug 'DEBUG' "Running: mount -o compress=zstd,subvol=@home $IMG_DEV_ROOT_PATH $TMP_DIR"
-    mkdir -p ${TMP_DIR}/home
-    if ! output=$(mount -o compress=zstd,subvol=@home "$IMG_DEV_ROOT_PATH" "$TMP_DIR"/home 2>&1); then
-      echo -e "$output\n## HOME SUBVOLUME MOUNT FAILED!!!"
-      debug 'BREAK'
-      debug 'ERROR' "HOME SUBVOLUME MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
-      exit 1
-    fi
+    for ((i = 0; i < ${#SUBVOLUMES[@]}; i++)); do
+      SUBVOL_PATH="${SUBVOLUMES[i]}"
+      if [[ "$SUBVOL_PATH" != '@'* ]]; then
+        debug 'DEBUG' "Running: mkdir -p $TMP_DIR/$(dirname $SUBVOL_PATH)"
+        mkdir -p $TMP_DIR/$(dirname $SUBVOL_PATH)
+
+        echo "## Creating subvolume: $SUBVOL_PATH"
+        debug 'DEBUG' "Running: btrfs subvolume create ${TMP_DIR}/${SUBVOL_PATH}"
+        if ! output=$(btrfs subvolume create "$TMP_DIR"/"$SUBVOL_PATH" 2>&1); then
+          echo -e "$output\n## CREATE SUBVOLUME FAILED!!!"
+          debug 'BREAK'
+          debug 'ERROR' "CREATE SUBVOLUME FAILED:\n$output\n------------------------------------------------------------------------------"
+          exit 1
+        fi
+      fi
+      sleep 1
+    done
+
+    echo '## Mounting img btrfs subvolumes...'
+    debug 'INFO' 'Mounting subvolumes'
     sleep 1
+    partprobe "$LOOP"
+
+    # Starting with i=1 so root is skipped
+    for ((i = 1; i < ${#SUBVOLUMES[@]}; i++)); do
+      SUBVOL_PATH="${SUBVOLUMES[i]}"
+      if $(cat /etc/fstab | grep -q "$SUBVOL_PATH"); then
+        fstab=( $(cat /etc/fstab | grep "$SUBVOL_PATH") )
+        debug 'DEBUG' "Running: mkdir -p ${TMP_DIR}${fstab[1]}"
+        mkdir -p ${TMP_DIR}${fstab[1]}
+        echo "## Mounting subvolume: $SUBVOL_PATH"
+        debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH ${TMP_DIR}${fstab[1]}"
+        if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" ${TMP_DIR}${fstab[1]} 2>&1); then
+          echo -e "$output\n## SUBVOLUME MOUNT FAILED!!!"
+          debug 'BREAK'
+          debug 'ERROR' "SUBVOLUME MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+          exit 1
+        fi
+      fi
+      sleep 1
+    done
 
     echo '## Mounting boot...'
     debug 'DEBUG' "Running: mount $IMG_DEV_BOOT_PATH ${TMP_DIR}${BOOT_PATH}"
@@ -981,14 +1013,19 @@ function do_backup() {
   if [ "$PROMPTS" == true ]; then
     echo '##############################################################################'
     echo "# Updating $IMG_FILE"
+    if [ "$FSTYPE" == 'ext4' ]; then
+      echo '# ext4 filesystem detected on root'
+    else
+      echo '# btrfs filesystem detected on root'
+    fi
     echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
-    echo "# Resize2fs decide size: $RESIZE2FS_RUN"
+    echo "# Autresize root partition: $RESIZE2FS_RUN"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
     if [ "$RESIZE2FS_RUN" == true ]; then
       echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MB"
-      echo "# Resize2fs decide minimum (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
+      echo "# Auto calculated size (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
       echo "# Old img size: $(( IMG_SIZE / 1024 / 1024 ))MB"
       echo "# New img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
       echo "# Difference: $DIFFERENCE"
@@ -1022,14 +1059,19 @@ function do_backup() {
     echo '##############################################################################'
     echo '# DISABLE PROMPTS SELECTED'
     echo "# Updating $IMG_FILE"
+    if [ "$FSTYPE" == 'ext4' ]; then
+      echo '# ext4 filesystem detected on root'
+    else
+      echo '# btrfs filesystem detected on root'
+    fi
     echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
-    echo "# Resize2fs decide size: $RESIZE2FS_RUN"
+    echo "# Autresize root partition: $RESIZE2FS_RUN"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
     if [ "$RESIZE2FS_RUN" == true ]; then
       echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MB"
-      echo "# Resize2fs decide minimum (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
+      echo "# Auto calculated size (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
       echo "# Old img size: $(( IMG_SIZE / 1024 / 1024 ))MB"
       echo "# New img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
       echo "# Difference: $DIFFERENCE"
