@@ -21,7 +21,7 @@ Backing up/restoring, to/from: usb-stick `/dev/sdX` with Raspberry pi os has bee
 See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information about usage.<br>
 [Ideas and feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) is always appreciated, whether it's positive or negative. Please just keep it civil. :)
 
-**Don't forget to make the script executable.**
+**Assure the script is executable.**
 
 **To restore a backup, simply "burn" the img file to a device using your favorite method.**<br>
 When booting up a restored image with autoresize active, wait until the the reboot sequence has occured. The login prompt may very well become visible before the autoresize function has rebooted.
