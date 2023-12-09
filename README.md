@@ -151,7 +151,7 @@ This is to protect from unnecessary resizing operations most likely not needed.
 Resizing **always** includes a small risk of corruption, please use with care (ie do not abuse). If you know your system will increase, maybe it's better to just add manual space in the creation? And then when you close in on the limit, use manual method to add more space instead of constantly using `-Ua`.<br>
 I have ran a lot of testing of this (on "weak" arm harware like rpi4) and it rarely fails, but it _does_ happen. I also run the backups over lan so that could also be a contributing factor for the failures. Just keep that in mind. :)
 
-If manually added space is used in combination with `-U`, the `root` partition on the img file will be expanded by that amount. No checks are being performed to make sure the data you want to back up will actually fit.<br>
+If manually added space is used in combination with `-U`, the `root` partition on the img file will be expanded by that amount. **No checks are being performed to make sure the data you want to back up will actually fit.**<br>
 Only expansion is possible with this method.
 
 ## btrfs
