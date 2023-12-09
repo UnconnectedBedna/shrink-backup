@@ -145,7 +145,7 @@ Example: `sudo shrink-backup -U /path/to/backup.img`
 If `-a` is used in combination with `-U`, the script will compare the root partition on the img file to the size `resize2fs` recommends as minimum.<br>
 The img file needs to be **+256MB** smaller than `resize2fs` recommended minimum to be expanded.<br>
 The img file needs to be **+512MB** bigger than `resize2fs` recommended minimum to be shrunk.<br>
-This is to protect from unessesary resizing operations most likely not needed.
+This is to protect from unnecessary resizing operations most likely not needed.
 
 **Disclaimer**<br>
 Resizing **always** includes a small risk of corruption, please use with care (ie do not abuse). If you know your system will increase, maybe it's better to just add manual space in the creation? And then when you close in on the limit, use manual method to add more space instead of constantly using `-Ua`.<br>
