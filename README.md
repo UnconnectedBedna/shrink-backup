@@ -98,7 +98,7 @@ Even if you forget to disable autoexpansion on a non supported system, the backu
 ### Order of operations - Image creation:
 1. Uses `lsblk` to figure out the correct disk device to back up.
 2. Reads the block sizes of the partitions.
-3. Uses `dd` to create the boot part of the system + a few megabytes to include the filesystem on root. (this _can_ be a partition)
+3. Uses `dd` to create the `boot` part of the system + a few megabytes to include the filesystem on `root`. (this _can_ be a partition)
 4. Removes and recreates the `root` partition, the size depends on options used when starting the script.
 5. Creates the `root` filesystem with the same `UUID` and `LABEL` as the system you are backing up from. (_MUST_ be `ext4`)
 6. Uses `rsync` to sync both partitions. (if more than one)
@@ -135,19 +135,23 @@ By using `-a` in combination with `-U` the script will resize the img file if ne
 ### Order of operations - Image update:
 1. Probes the img file for information about partitions.
 2. Mounts `root` partition with an offset for the loop.
-3. Checks if multiple partitions exists. If true, reads `fstab` on img file and mounts boot partition accordingly with an offset.
+3. Checks if multiple partitions exists. If true, reads `fstab` on img file and mounts `boot` partition accordingly with an offset.
 4. Uses `rsync` to sync both partitions. (if more than one)
 
 To update an existing img file simply use the `-U` option and the path to the img file.<br>
 Example: `sudo shrink-backup -U /path/to/backup.img`
 
-**Resizing img file when updating**<br>
+### Resizing img file when updating<br>
 If `-a` is used in combination with `-U`, the script will compare the root partition on the img file to the size `resize2fs` recommends as minimum.<br>
 The img file needs to be **+256MB** smaller than `resize2fs` recommended minimum to be expanded.<br>
 The img file needs to be **+512MB** bigger than `resize2fs` recommended minimum to be shrunk.<br>
 This is to protect from unessesary resizing operations most likely not needed.
 
-If manually added space is used in combination with `-U`, the img file/root partition will be expanded by that amount. No checks are being performed to make sure the data you want to back up will actually fit.<br>
+**Disclaimer**<br>
+Resizing **always** includes a small risk of corruption, please use with care (ie do not abuse). If you know your system will increase, maybe it's better to just add manual space in the creation? And then when you close in on the limit, use manual method to add more space instead of constantly using `-Ua`.<br>
+I have ran a lot of testing of this (on "weak" arm harware like rpi4) and it rarely fails, but it _does_ happen. I also run the backups over lan so that could also be a contributing factor for the failures. Just keep that in mind. :)
+
+If manually added space is used in combination with `-U`, the `root` partition on the img file will be expanded by that amount. No checks are being performed to make sure the data you want to back up will actually fit.<br>
 Only expansion is possible with this method.
 
 ## btrfs
