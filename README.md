@@ -159,7 +159,7 @@ Only expansion is possible with this method.
 **This is still in experimental stage so [ideas & feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) is HIGHLY appreciated!**<br>
 The subvolumes are mounted with default compression: `compress=zstd` (default means `zstd:3`)
 
-I am working against Manjaro-arm to create this functionality and the standard install creates root (`/@`) and home (`/@home`) subvolumes, so the script assumes this is the situation on ALL btrfs systems as of now.
+I am working against Manjaro-arm to create this functionality and the standard install creates root (`/@`) and home (`/@home`) subvolumes (and some nested ones that will also be included), so the script assumes this is the situation on ALL btrfs systems as of now.
 
 The backup img is **NOT a clone**. Snapshots are NOT used to create the backup.<br>
 The `UUID` will change on the created img filesystem (btrfs is way more picky than ext4 about this), but in the case of Manjaro (and raspberry pi too for that matter), that does not matter since `PARTUUID` is used in mounting, and that stays the same, but users should be aware.<br>
@@ -170,7 +170,7 @@ Both in creation of a new img and when keeping it updated with `-U`.<br>
 My resoning for this is that this script is primarily for creating bootable img files, NOT to create perfectly cloned backups. Speed is also a strong argument here.
 
 The goal in developement of this script is ALWAYS to: as fast as possible create an img file that you can write directly to a sd-card and boot. That goal does NOT mix well with also creating a perfectly cloned backup.<br>
-This does mean the script cares MORE about the file integrity rather than the disk integrity. The compression f.ex might be different than on your root filesystem. Subvol id:s might change etc etc.<br>
+This does mean the script cares MORE about the **file integrity** rather than the **filesystem integrity**. The compression f.ex might be different than on your root filesystem. Subvol id:s might change etc etc.<br>
 But the main goal stays the same, the backup must contain ALL REQUESTED FILES, ie a bootable file backup. I do NOT want to be responsible for people loosing their data when using this script, hence this decision. :)
 
 All of this might change in the future though. Not the rsync part (I value speed very high), but the subvol id:s, compression and such is on my mind.<br>
