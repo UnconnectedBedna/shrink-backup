@@ -53,14 +53,17 @@ function cleanup() {
       umount "$TMP_DIR"
       debug 'DEBUG' "Unmounting root partition in cleanup function: umount $TMP_DIR"
     fi
-    if losetup /dev/loop0 &>/dev/null; then
-      losetup -d /dev/loop0
-      debug 'DEBUG' 'Removing loop0 in cleanup function: losetup -d /dev/loop0'
+    #if losetup /dev/loop0 &>/dev/null; then
+    if losetup "$LOOP" &>/dev/null; then
+      #losetup -d /dev/loop0
+      losetup -d "$LOOP"
+      #debug 'DEBUG' 'Removing loop0 in cleanup function: losetup -d /dev/loop0'
+      debug 'DEBUG' "Removing loop in cleanup function: losetup -d $LOOP"
     fi
-    if losetup /dev/loop1 &>/dev/null; then
-      losetup -d /dev/loop1
-      debug 'DEBUG' 'Removing loop1 in cleanup function: losetup -d /dev/loop1'
-    fi
+#     if losetup /dev/loop1 &>/dev/null; then
+#       losetup -d /dev/loop1
+#       debug 'DEBUG' 'Removing loop1 in cleanup function: losetup -d /dev/loop1'
+#     fi
     if [ -d "$TMP_DIR" ]; then
       rm -rf "$TMP_DIR"
       debug 'DEBUG' "Removing temp directory in cleanup function: rm -rf $TMP_DIR"
@@ -280,12 +283,15 @@ function get_shared_variables() {
     debug 'INFO' 'Separate boot partition detected'
     debug 'DEBUG' "Running: cat /etc/fstab | grep '/boot' | awk '{print \$2}'"
     BOOT_PATH=$(cat /etc/fstab | grep '/boot' | awk '{print $2}')
-    IMG_DEV_BOOT_PATH='/dev/loop0p1'
-    IMG_DEV_ROOT_PATH='/dev/loop0p2'
+    #IMG_DEV_BOOT_PATH='/dev/loop0p1'
+    IMG_DEV_BOOT_PATH="${LOOP}p1"
+    #IMG_DEV_ROOT_PATH='/dev/loop0p2'
+    IMG_DEV_ROOT_PATH="${LOOP}p2"
     debug 'DEBUG' "BOOT_PATH=$BOOT_PATH | IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
   else
     debug 'INFO' 'No boot partition detected'
-    IMG_DEV_ROOT_PATH='/dev/loop0p1'
+    #IMG_DEV_ROOT_PATH='/dev/loop0p1'
+    IMG_DEV_ROOT_PATH="${LOOP}p1"
     debug 'DEBUG' "IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
   fi
   return 0
