@@ -276,7 +276,7 @@ function get_img_variables() {
 # Function for shared variables
 function get_shared_variables() {
 
-  LOOP=$(losetup -l)
+  LOOP=$(losetup -f)
   debug 'DEBUG' "LOOP=$LOOP"
 
   if [ $(lsblk | grep -c 'boot') -ne 0 ]; then
