@@ -14,7 +14,7 @@
 #    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #    GNU General Public License for more details.
 #
-#    11/2023
+#    01/2024
 #    Marcus Johansson
 #    https://github.com/UnconnectedBedna/shrink-backup
 ##############################################################################
@@ -273,7 +273,7 @@ function get_img_variables() {
 # Function for shared variables
 function get_shared_variables() {
 
-  LOOP='/dev/loop0'
+  LOOP=$(losetup -l)
   debug 'DEBUG' "LOOP=$LOOP"
 
   if [ $(lsblk | grep -c 'boot') -ne 0 ]; then
