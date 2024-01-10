@@ -214,15 +214,8 @@ function get_dev_variables() {
     LOCAL_RESIZE2FS_MIN=$(( LOCAL_RESIZE2FS_MIN * BLOCKSIZE )) # bytes
     debug 'DEBUG' "LOCAL_RESIZE2FS_MIN=${LOCAL_RESIZE2FS_MIN} Bytes"
   else
-    debug 'INFO' 'btrfs detected, using btrfs fi du to calculate recommended size and adding 192MB'
-    LOCAL_RESIZE2FS_MIN=$(btrfs filesystem du -s --raw / 2>/dev/null) # bytes
-    LOCAL_RESIZE2FS_MIN=$(echo "$LOCAL_RESIZE2FS_MIN" | tail -1 | awk '{print $1}')
-    LOCAL_RESIZE2FS_MIN=$(( LOCAL_RESIZE2FS_MIN + 201326592 )) # 192MB = 201326592B
-    debug 'DEBUG' "LOCAL_RESIZE2FS_MIN=$LOCAL_RESIZE2FS_MIN bytes"
-    debug 'INFO' 'Fetching btrfs subvolume info'
-    #SUBVOLUMES=( $(sudo btrfs subvolume list / | awk '{print $2,$9}') )
-    SUBVOLUMES=( $(sudo btrfs subvolume list / | awk '{print $9}') )
-    #subvolumes_count=$(( ${#SUBVOLUMES[@]} / 2 ))
+    debug 'INFO' 'Running function: get_btrfs_variables'
+    get_btrfs_variables
   fi
   # Method 1, using the value of "size - available"
   LOCAL_DF_OUTPUT=( $(df / -k --sync --output=size,avail | tail -1) ) # 1k blocks, 0 is the first position in an array
@@ -261,12 +254,72 @@ function get_dev_variables() {
 
 
 
+# Function to gather btrfs information
+function get_btrfs_variables() {
+
+  if [ $RESIZE2FS_RUN == true ]; then
+    debug 'INFO' 'Using btrfs fi du to calculate recommended size and adding 192MB'
+    LOCAL_RESIZE2FS_MIN=$(btrfs filesystem du -s --raw / 2>/dev/null) # bytes
+    LOCAL_RESIZE2FS_MIN=$(echo "$LOCAL_RESIZE2FS_MIN" | tail -1 | awk '{print $1}')
+    LOCAL_RESIZE2FS_MIN=$(( LOCAL_RESIZE2FS_MIN + 201326592 )) # 192MB = 201326592B
+    debug 'DEBUG' "LOCAL_RESIZE2FS_MIN=$LOCAL_RESIZE2FS_MIN bytes"
+  fi
+  debug 'DEBUG' "Running: btrfs subvolume list / | awk '{print \$9}'"
+  #LOCAL_SUBVOLUMES=( $(sudo btrfs subvolume list / | awk '{print $2,$9}') )
+  LOCAL_SUBVOLUMES=( $(btrfs subvolume list / | awk '{print $9}') )
+  #local_subvolumes_count=$(( ${#LOCAL_SUBVOLUMES[@]} / 2 ))
+  debug 'DEBUG' "LOCAL_SUBVOLUMES=$(echo ${LOCAL_SUBVOLUMES[@]})"
+  if [ "$EXCLUDE_FILE" == true ]; then
+    debug 'INFO' 'Filtering out volumes from exclude.txt'
+    for ((i = 0; i < ${#LOCAL_SUBVOLUMES[@]}; i++)); do
+      if $(echo "/${LOCAL_SUBVOLUMES[i]}" | grep -q -f "$(dirname $0)/exclude.txt"); then
+        debug 'DEBUG' "Filtering out subvolume: ${LOCAL_SUBVOLUMES[i]}"
+        unset LOCAL_SUBVOLUMES["$i"]
+      fi
+    done
+    debug 'DEBUG' "After filtering, LOCAL_SUBVOLUMES=$(echo ${LOCAL_SUBVOLUMES[@]})"
+  fi
+
+  return 0
+}
+
+
+
 # Function to gather image information
 function get_img_variables() {
 
   debug 'DEBUG' "Running: ls -l $IMG_FILE | awk '{print \$5}'"
   IMG_SIZE=$(ls -l "$IMG_FILE" | awk '{print $5}')
   debug 'DEBUG' "IMG_SIZE=$IMG_SIZE Bytes"
+
+  if [ "$FSTYPE" == 'btrfs' ]; then
+    # Check for temp directory and create if needed
+    if ! [ -d "$TMP_DIR" ]; then
+      echo '## Creating temp directory...'
+      sleep 1
+      debug 'INFO' 'Creating temp directory'
+      debug 'DEBUG' "Running: mktemp -d -t backup-XXXXXXXXXX"
+      TMP_DIR=$(mktemp -d -t backup-XXXXXXXXXX)
+      debug 'DEBUG' "TMP_DIR=$TMP_DIR"
+    fi
+    sleep 1
+    partprobe "$LOOP"
+    fstab=( $(cat /etc/fstab | grep '/ ') )
+    debug 'INFO' 'Mounting root to find subvolumes'
+    debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH $TMP_DIR"
+    if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
+      echo -e "$output\n## ROOT MOUNT FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "ROOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+    sleep 1
+    debug 'DEBUG' "Running: btrfs subvolume list $TMP_DIR | awk '{print \$9}'"
+    IMG_SUBVOLUMES=( $(btrfs subvolume list "$TMP_DIR" | awk '{print $9}') )
+    debug 'DEBUG' "IMG_SUBVOLUMES=$(echo ${IMG_SUBVOLUMES[@]})"
+    debug 'DEBUG' "Running: umount $TMP_DIR"
+    umount "$TMP_DIR"
+  fi
 
   return 0
 }
@@ -276,6 +329,7 @@ function get_img_variables() {
 # Function for shared variables
 function get_shared_variables() {
 
+  #LOOP='/dev/loop0'
   LOOP=$(losetup -f)
   debug 'DEBUG' "LOOP=$LOOP"
 
@@ -328,16 +382,86 @@ function do_mount() {
     TMP_DIR=$(mktemp -d -t backup-XXXXXXXXXX)
     debug 'DEBUG' "TMP_DIR=$TMP_DIR"
   fi
-
-  echo '## Mounting img root partition...'
   sleep 1
-  debug 'INFO' 'Mounting root partition from loop'
-  debug 'DEBUG' "Running: mount $IMG_DEV_ROOT_PATH $TMP_DIR"
-  if ! output=$(mount "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
-    echo -e "$output\n## ROOT MOUNT FAILED!!!"
-    debug 'BREAK'
-    debug 'ERROR' "ROOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
-    exit 1
+  partprobe "$LOOP"
+
+  # btrfs
+  if [ "$FSTYPE" = 'btrfs' ]; then
+    fstab=( $(cat /etc/fstab | grep '/ ') )
+    echo "## Mounting root subvolume..."
+    debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH $TMP_DIR"
+    if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
+      echo -e "$output\n## ROOT SUBVOLUME MOUNT FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "ROOT SUBVOLUME MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+    sleep 1
+
+    for ((i = 0; i < ${#LOCAL_SUBVOLUMES[@]}; i++)); do
+      SUBVOL_PATH="${LOCAL_SUBVOLUMES[i]}"
+      if $(cat /etc/fstab | grep -q "$SUBVOL_PATH") && [[ "$SUBVOL_PATH" != '@' ]]; then
+        fstab=( $(cat /etc/fstab | grep "$SUBVOL_PATH") )
+        if ! [ -d "${TMP_DIR}${fstab[1]}" ]; then
+          debug 'DEBUG' "Running: mkdir -p ${TMP_DIR}${fstab[1]}"
+          mkdir -p "${TMP_DIR}${fstab[1]}"
+        fi
+        echo "## Mounting subvolume: $SUBVOL_PATH"
+        debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH ${TMP_DIR}${fstab[1]}"
+        if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" ${TMP_DIR}${fstab[1]} 2>&1); then
+          echo -e "$output\n## SUBVOLUME MOUNT FAILED!!!"
+          debug 'BREAK'
+          debug 'ERROR' "SUBVOLUME MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+          exit 1
+        fi
+
+
+
+
+
+
+
+      elif [[ "$SUBVOL_PATH" != '@'* ]]; then
+        if ! [ -d "${TMP_DIR}/${SUBVOL_PATH}" ]; then
+          #debug 'DEBUG' "Running: mkdir -p ${TMP_DIR}/$(dirname $SUBVOL_PATH)"
+          debug 'DEBUG' "Running: mkdir -p ${TMP_DIR}/${SUBVOL_PATH}"
+          #mkdir -p ${TMP_DIR}/$(dirname $SUBVOL_PATH)
+          mkdir -p "${TMP_DIR}/${SUBVOL_PATH}"
+        fi
+      fi
+      sleep 1
+    done
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+  # ext4
+  else
+    echo '## Mounting img root partition...'
+    sleep 1
+    debug 'INFO' 'Mounting root partition from loop'
+    debug 'DEBUG' "Running: mount $IMG_DEV_ROOT_PATH $TMP_DIR"
+    if ! output=$(mount "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
+      echo -e "$output\n## ROOT MOUNT FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "ROOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
   fi
 
   # Checking if boot partition exists and if true mount boot
@@ -632,6 +756,8 @@ function make_img() {
       echo '# ext4 filesystem detected on root'
     else
       echo '# btrfs filesystem detected on root'
+      echo "# ${#LOCAL_SUBVOLUMES[@]} subvolumes"
+      echo "# Subvolumes: ${LOCAL_SUBVOLUMES[@]}"
     fi
     echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
@@ -697,6 +823,8 @@ function make_img() {
       echo '# ext4 filesystem detected on root'
     else
       echo '# btrfs filesystem detected on root'
+      echo "# ${#LOCAL_SUBVOLUMES[@]} subvolumes"
+      echo "# Subvolumes: ${LOCAL_SUBVOLUMES[@]}"
     fi
     echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
@@ -793,6 +921,7 @@ function make_img() {
   sleep 1
   debug 'INFO' 'Using parted to recreate root partition'
 
+  # ext4
   if [ $FSTYPE == 'ext4' ]; then
     debug 'DEBUG' "Running: parted -s -a none $LOOP unit B mkpart primary ext4 $LOCAL_ROOT_START 100%"
     if ! output=$(parted -s -a none "$LOOP" unit B mkpart primary ext4 "$LOCAL_ROOT_START" 100% 2>&1); then
@@ -802,6 +931,7 @@ function make_img() {
       exit 1
     fi
 
+  # btrfs
   else
     debug 'DEBUG' "Running: parted -s -a none $LOOP unit B mkpart primary btrfs $LOCAL_ROOT_START 100%"
     if ! output=$(parted -s -a none "$LOOP" unit B mkpart primary btrfs "$LOCAL_ROOT_START" 100% 2>&1); then
@@ -874,9 +1004,9 @@ function make_img() {
     fi
     sleep 1
 
-    # Create top subvolumes, ${#SUBVOLUMES[@]} gives count
-    for ((i = 0; i < ${#SUBVOLUMES[@]}; i++)); do
-      SUBVOL_PATH="${SUBVOLUMES[i]}"
+    # Create top subvolumes, ${#LOCAL_SUBVOLUMES[@]} gives count
+    for ((i = 0; i < ${#LOCAL_SUBVOLUMES[@]}; i++)); do
+      SUBVOL_PATH="${LOCAL_SUBVOLUMES[i]}"
       if [[ "$SUBVOL_PATH" == '@'* ]]; then
         echo "## Creating subvolume: $SUBVOL_PATH"
         debug 'DEBUG' "Running: btrfs subvolume create ${TMP_DIR}/${SUBVOL_PATH}"
@@ -890,52 +1020,75 @@ function make_img() {
       sleep 1
     done
 
-    debug 'INFO' 'Unmounting btrfs filesystem & mounting root subvolume.'
+    echo '## Mounting root...'
+    debug 'INFO' 'Unmounting btrfs filesystem & mounting root subvolume'
     debug 'DEBUG' "Running: umount $TMP_DIR"
     umount "$TMP_DIR"
     sleep 1
     partprobe "$LOOP"
-    fstab=( $(cat /etc/fstab | grep "${SUBVOLUMES[0]}") )
+    #fstab=( $(cat /etc/fstab | grep "${LOCAL_SUBVOLUMES[0]}") )
+    fstab=( $(cat /etc/fstab | grep '/ ') )
     debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH $TMP_DIR"
-    mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH $TMP_DIR
+    if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
+      echo -e "$output\n## ROOT SUBVOLUME MOUNT FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "ROOT SUBVOLUME MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
     sleep 1
 
-    for ((i = 0; i < ${#SUBVOLUMES[@]}; i++)); do
-      SUBVOL_PATH="${SUBVOLUMES[i]}"
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    # Create nested volumes/snapshots
+    debug 'INFO' 'Creating nested volumes/snapshots'
+    for ((i = 0; i < ${#LOCAL_SUBVOLUMES[@]}; i++)); do
+      SUBVOL_PATH="${LOCAL_SUBVOLUMES[i]}"
       if [[ "$SUBVOL_PATH" != '@'* ]]; then
         debug 'DEBUG' "Running: mkdir -p $TMP_DIR/$(dirname $SUBVOL_PATH)"
         mkdir -p $TMP_DIR/$(dirname $SUBVOL_PATH)
 
-        echo "## Creating subvolume: $SUBVOL_PATH"
+        echo "## Creating volume: $SUBVOL_PATH"
         debug 'DEBUG' "Running: btrfs subvolume create ${TMP_DIR}/${SUBVOL_PATH}"
         if ! output=$(btrfs subvolume create "$TMP_DIR"/"$SUBVOL_PATH" 2>&1); then
-          echo -e "$output\n## CREATE SUBVOLUME FAILED!!!"
+          echo -e "$output\n## CREATE VOLUME FAILED!!!"
           debug 'BREAK'
-          debug 'ERROR' "CREATE SUBVOLUME FAILED:\n$output\n------------------------------------------------------------------------------"
+          debug 'ERROR' "CREATE VOLUME FAILED:\n$output\n------------------------------------------------------------------------------"
           exit 1
         fi
       fi
       sleep 1
     done
 
-    echo '## Mounting img btrfs subvolumes...'
-    debug 'INFO' 'Mounting subvolumes'
+    echo '## Mounting img btrfs volumes...'
+    debug 'INFO' 'Mounting volumes'
     sleep 1
     partprobe "$LOOP"
 
-    # Starting with i=1 so root is skipped
-    for ((i = 1; i < ${#SUBVOLUMES[@]}; i++)); do
-      SUBVOL_PATH="${SUBVOLUMES[i]}"
-      if $(cat /etc/fstab | grep -q "$SUBVOL_PATH"); then
+    for ((i = 0; i < ${#LOCAL_SUBVOLUMES[@]}; i++)); do
+      SUBVOL_PATH="${LOCAL_SUBVOLUMES[i]}"
+      if $(cat /etc/fstab | grep -q "$SUBVOL_PATH") && [[ "$SUBVOL_PATH" != '@' ]]; then
         fstab=( $(cat /etc/fstab | grep "$SUBVOL_PATH") )
         debug 'DEBUG' "Running: mkdir -p ${TMP_DIR}${fstab[1]}"
         mkdir -p ${TMP_DIR}${fstab[1]}
         echo "## Mounting subvolume: $SUBVOL_PATH"
         debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH ${TMP_DIR}${fstab[1]}"
         if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" ${TMP_DIR}${fstab[1]} 2>&1); then
-          echo -e "$output\n## SUBVOLUME MOUNT FAILED!!!"
+          echo -e "$output\n## VOLUME MOUNT FAILED!!!"
           debug 'BREAK'
-          debug 'ERROR' "SUBVOLUME MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+          debug 'ERROR' "VOLUME MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
           exit 1
         fi
       fi
@@ -980,20 +1133,23 @@ function do_backup() {
     exit 1
   fi
 
-  debug 'INFO' 'Running function: get_img_variables'
-  get_img_variables
-
   debug 'INFO' 'Running function: get_shared_variables'
   get_shared_variables
 
-  if [ "$RESIZE2FS_RUN" == true ] || [ "$ADDED_SPACE" -ne 0 ]; then
-    debug 'INFO' 'Running function: get_dev_variables'
-    get_dev_variables
-  fi
-
-  # Loop img file
   debug 'INFO' 'Running function: do_loop'
   do_loop
+
+  debug 'INFO' 'Running function: get_img_variables'
+  get_img_variables
+
+  if [ "$RESIZE2FS_RUN" == true ] || [ "$ADDED_SPACE" -ne 0 ]; then
+    debug 'INFO' 'Running function: get_dev_variables'
+    # get_btrfs_variables is run within get_dev_variables
+    get_dev_variables
+  elif [ "$FSTYPE" == 'btrfs' ] && [ "$RESIZE2FS_RUN" == false ] && [ "$ADDED_SPACE" -eq 0 ]; then
+    debug 'INFO' 'Running function: get_btrfs_variables'
+    get_btrfs_variables
+  fi
 
   # Checking if resizing should be performed
   if [ "$RESIZE2FS_RUN" == true ]; then
@@ -1023,6 +1179,8 @@ function do_backup() {
       echo '# ext4 filesystem detected on root'
     else
       echo '# btrfs filesystem detected on root'
+      echo "# ${#LOCAL_SUBVOLUMES[@]} subvolumes"
+      echo "# Subvolumes: ${LOCAL_SUBVOLUMES[@]}"
     fi
     echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
@@ -1069,6 +1227,8 @@ function do_backup() {
       echo '# ext4 filesystem detected on root'
     else
       echo '# btrfs filesystem detected on root'
+      echo "# ${#LOCAL_SUBVOLUMES[@]} subvolumes"
+      echo "# Subvolumes: ${LOCAL_SUBVOLUMES[@]}"
     fi
     echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
@@ -1101,13 +1261,13 @@ function do_backup() {
   # Checking if resizing should be performed
   if [ "$RESIZE2FS_RUN" == true ]; then
     if [ "$IMG_ROOT_SIZE" -lt "$LOCAL_RESIZE2FS_MIN" ] && (( LOCAL_RESIZE2FS_MIN - IMG_ROOT_SIZE >= 268435456 )); then # 256MB in Bytes
-      debug 'INFO' 'Img root partition size is smaller than resize2fs recommended minimum'
+      debug 'INFO' 'Img root partition size is smaller than auto calculated size'
       debug 'DEBUG' "Difference=$diff MB"
       debug 'INFO' "Running function: do_resize 'expand'"
       do_resize 'expand'
 
     elif [ "$IMG_ROOT_SIZE" -gt "$LOCAL_RESIZE2FS_MIN" ] && (( IMG_ROOT_SIZE - LOCAL_RESIZE2FS_MIN >= 536870912 )); then # 512MB in Bytes
-      debug 'INFO' 'Img root partition size is bigger than resize2fs recommended minimum'
+      debug 'INFO' 'Img root partition size is bigger than auto calculated size'
       debug 'DEBUG' "diff=$diff MB"
 
       # Mount img file
@@ -1126,7 +1286,7 @@ function do_backup() {
       return 0
 
     else
-      debug 'INFO' 'Img root partition is <=256MB smaller or <=512MB bigger compared size to resize2fs recommended minimum, not resizing'
+      debug 'INFO' 'Img root partition is <=256MB smaller or <=512MB bigger compared to auto calculated size, not resizing'
       sleep 1
     fi
   fi
@@ -1146,10 +1306,11 @@ function do_backup() {
   debug 'INFO' 'Running function: do_rsync'
   do_rsync
 
-  # Final check of img filesystem
-  debug 'INFO' 'Finalizing filesystem'
-  debug 'INFO' "Running do_e2fsck 'final'"
-  do_e2fsck 'final'
+  if [ $FSTYPE == 'ext4' ]; then
+    # Final check of created img file
+    debug 'INFO' "Running do_e2fsck 'final'"
+    do_e2fsck 'final'
+  fi
 
   return 0
 }
@@ -1373,7 +1534,7 @@ echo '## Scanning filesystem and calculating...'
 
 # Check if debugging is requested
 if [ "$DEBUG" == true ]; then
-  echo "Debugging requested, writing to log file $LOG_FILE"
+  echo "## Debugging requested, writing to log file $LOG_FILE"
   debug 'INFO' "Debugging requested, writing to log file $LOG_FILE"
 fi
 
