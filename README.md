@@ -145,8 +145,8 @@ Example: `sudo shrink-backup -U /path/to/backup.img`
 
 ### Resizing img file when updating<br>
 If `-a` is used in combination with `-U`, the script will compare the root partition on the img file to the size `resize2fs` recommends as minimum.<br>
-The img file needs to be **+256MB** smaller than `resize2fs` recommended minimum to be expanded.<br>
-The img file needs to be **+512MB** bigger than `resize2fs` recommended minimum to be shrunk.<br>
+The img file needs to be **>=256MB** smaller than `resize2fs` recommended minimum to be expanded.<br>
+The img file needs to be **>=512MB** bigger than `resize2fs` recommended minimum to be shrunk.<br>
 This is to protect from unnecessary resizing operations most likely not needed.
 
 **Disclaimer**<br>
