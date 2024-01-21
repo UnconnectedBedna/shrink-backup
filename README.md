@@ -105,7 +105,7 @@ Even if you forget to disable autoexpansion on a non supported system, the backu
 5. Creates the `root` filesystem with the same `UUID` and `LABEL` as the system you are backing up from. (_MUST_ be `ext4`)
 6. Uses `rsync` to sync both partitions. (if more than one)
 
-Added space is added on top of `df` reported "used space", not the size of the partition. Added space is in MB, so if you want to add 1GB, add 1024.
+Added space is added on top of `df` reported "used space", not the size of the partition. Added space is in traditional binary system, so if you want to add 1GB, add 1024.
 
 The script can be instructed to set the img size by requesting recomended minimum size from `e2fsck` by using the `-a` option.<br>
 This is not the absolute smallest size you can achieve but is the "safest" way to create a "smallest possible" img file.<br>
