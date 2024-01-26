@@ -415,12 +415,6 @@ function do_mount() {
           exit 1
         fi
 
-
-
-
-
-
-
       elif [[ "$SUBVOL_PATH" != '@'* ]]; then
         if ! [ -d "${TMP_DIR}/${SUBVOL_PATH}" ]; then
           #debug 'DEBUG' "Running: mkdir -p ${TMP_DIR}/$(dirname $SUBVOL_PATH)"
@@ -431,24 +425,6 @@ function do_mount() {
       fi
       sleep 1
     done
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
   # ext4
   else
@@ -929,7 +905,7 @@ function make_img() {
         echo '## Did not manage to install sgdisk, please install gdisk and retry script...'
         debug 'ERROR' 'Did not succeed in installing sgdisk, aborting exit 1'
         echo '## Aborting...'
-        exit 1        
+        exit 1
       fi
 
     else
@@ -1089,21 +1065,6 @@ function make_img() {
       exit 1
     fi
     sleep 1
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     # Create nested volumes/snapshots
     debug 'INFO' 'Creating nested volumes/snapshots'
