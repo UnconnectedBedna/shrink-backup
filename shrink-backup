@@ -47,7 +47,7 @@ function cleanup() {
     fi
     if [ -n "$TMP_DIR" ] && grep -qs "${TMP_DIR}/home " /proc/mounts; then
       umount "$TMP_DIR"/home
-      debug 'DEBUG' "Unmounting home partition in cleanup function: umount $TMP_DIR"
+      debug 'DEBUG' "Unmounting home partition in cleanup function: umount ${TMP_DIR}/home"
     fi
     if [ -n "$TMP_DIR" ] && grep -qs "$TMP_DIR " /proc/mounts; then
       umount "$TMP_DIR"
@@ -174,13 +174,13 @@ function debug() {
 # Function to gather device information
 function get_dev_variables() {
 
-  if [ "$FSTYPE" == 'ext4' ]; then
-    LOCAL_DEV_PTUUID=$(lsblk -lpo mountpoint,ptuuid | grep '/ ' | awk '{print $2}')
-  else
-    LOCAL_DEV_PTUUID=$(lsblk -lpo fsroots,ptuuid | grep '/ ' | awk '{print $2}')
-  fi
-  LOCAL_DEV_PATH=$(lsblk -lpo ptuuid,type,path | grep "$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print $3}')
-  debug 'DEBUG' "LOCAL_DEV_PTUUID=$LOCAL_DEV_PTUUID | LOCAL_DEV_PATH=$LOCAL_DEV_PATH"
+#   if [ "$FSTYPE" == 'ext4' ]; then
+#     LOCAL_DEV_PTUUID=$(lsblk -lpo mountpoint,ptuuid | grep '/ ' | awk '{print $2}')
+#   else
+#     LOCAL_DEV_PTUUID=$(lsblk -lpo fsroots,ptuuid | grep '/ ' | awk '{print $2}')
+#   fi
+#   LOCAL_DEV_PATH=$(lsblk -lpo ptuuid,type,path | grep "$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print $3}')
+#   debug 'DEBUG' "LOCAL_DEV_PTUUID=$LOCAL_DEV_PTUUID | LOCAL_DEV_PATH=$LOCAL_DEV_PATH"
 
   # Check if separate boot and root partition exists and set variables accordingly
   if [ $(lsblk | grep -c 'boot') -ne 0 ]; then
@@ -432,24 +432,24 @@ function do_mount() {
       sleep 1
     done
 
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   # ext4
   else
     echo '## Mounting img root partition...'
@@ -597,12 +597,12 @@ function do_resize() {
     #debug 'INFO' 'Using sfdisk to remove root partition'
     debug 'INFO' 'Using parted to remove root partition'
     #debug 'DEBUG' "Running: sfdisk --delete -f $LOOP $IMG_ROOT_PARTN"
-    debug 'DEBUG' "Running: parted -s -f $LOOP rm $IMG_ROOT_PARTN"
+    debug 'DEBUG' "Running: parted -s $LOOP rm $IMG_ROOT_PARTN"
     #debug 'DEBUG' "Running: printf 'Ignore\\\n'$IMG_ROOT_PARTN | parted $LOOP rm $IMG_ROOT_PARTN ---pretend-input-tty"
 
     #if ! output=$(sfdisk --delete -f "$LOOP" "$IMG_ROOT_PARTN" 2>&1); then # might fail if img size is very big
-    if ! output=$(parted -s -f "$LOOP" rm "$IMG_ROOT_PARTN" 2>&1); then # for some reason this line works here but not when creating img
-    #if ! output=$(printf 'Ignore\n'$IMG_ROOT_PARTN | parted $LOOP rm $IMG_ROOT_PARTN ---pretend-input-tty 2>&1); then # raspberry pi os does not like this method
+    if ! output=$(parted -s "$LOOP" rm "$IMG_ROOT_PARTN" 2>&1); then # for some reason this line works here but not when creating img
+    #if ! output=$(printf 'Ignore\n'$IMG_ROOT_PARTN | parted $LOOP rm $IMG_ROOT_PARTN ---pretend-input-tty 2>&1); then # raspberry pi os does not like this method, keep for memory
       #echo -e "$output\n## SFDISK FAILED!!!"
       echo -e "$output\n## PARTED FAILED!!!"
       debug 'BREAK'
@@ -658,10 +658,10 @@ function do_resize() {
     sleep 1
     debug 'INFO' 'Using parted to shrink partition'
     debug 'BREAK'
-    #debug 'DEBUG' "Running: parted -s -f -a none $LOOP unit B resizepart $IMG_ROOT_PARTN $TRUNCATE_TOTAL"
+    #debug 'DEBUG' "Running: parted -s -a none $LOOP unit B resizepart $IMG_ROOT_PARTN $TRUNCATE_TOTAL"
     debug 'DEBUG' "Running: printf 'Yes\\\n' | parted -a none $LOOP unit B resizepart $IMG_ROOT_PARTN $TRUNCATE_TOTAL ---pretend-input-tty"
 
-    #if ! output=$(parted -s -f -a none "$LOOP" unit B resizepart "$IMG_ROOT_PARTN" "$TRUNCATE_TOTAL" 2>&1); then # does not work, still asking for user confirmation even though --script and -f (automatically answer "fix" to exceptions in script mode) is used
+    #if ! output=$(parted -s -a none "$LOOP" unit B resizepart "$IMG_ROOT_PARTN" "$TRUNCATE_TOTAL" 2>&1); then # retry this after -f got removed, before = does not work, still asking for user confirmation even though --script and -f (automatically answer "fix" to exceptions in script mode) is used
     if ! output=$(printf 'Yes\n' | parted -a none "$LOOP" unit B resizepart "$IMG_ROOT_PARTN" "$TRUNCATE_TOTAL" ---pretend-input-tty 2>&1); then
       echo -e "$output\n## PARTED FAILED!!!"
       debug 'BREAK'
@@ -756,12 +756,12 @@ function make_img() {
       echo '# ext4 filesystem detected on root'
     else
       echo '# btrfs filesystem detected on root'
-      echo "# ${#LOCAL_SUBVOLUMES[@]} subvolumes"
-      echo "# Subvolumes: ${LOCAL_SUBVOLUMES[@]}"
+      echo "# ${#LOCAL_SUBVOLUMES[@]} btrfs volumes will be included"
+      echo "# btrfs volumes: ${LOCAL_SUBVOLUMES[@]}"
     fi
     echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
-    echo "# Autresize root partition: $RESIZE2FS_RUN"
+    echo "# Autresize img root partition: $RESIZE2FS_RUN"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
     echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MB"
@@ -789,7 +789,7 @@ function make_img() {
     if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
       debug 'WARNING' 'Aborted by user, clean exit 2'
       echo ''
-      echo 'Aborting...'
+      echo '## Aborting...'
       exit 2
     fi
     echo ''
@@ -806,7 +806,7 @@ function make_img() {
       if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
         debug 'WARNING' 'Aborted by user, clean exit 2'
         echo ''
-        echo 'Aborting...'
+        echo '## Aborting...'
         exit 2
       fi
       echo ''
@@ -823,12 +823,12 @@ function make_img() {
       echo '# ext4 filesystem detected on root'
     else
       echo '# btrfs filesystem detected on root'
-      echo "# ${#LOCAL_SUBVOLUMES[@]} subvolumes"
-      echo "# Subvolumes: ${LOCAL_SUBVOLUMES[@]}"
+      echo "# ${#LOCAL_SUBVOLUMES[@]} btrfs volumes will be included"
+      echo "# btrfs volumes: ${LOCAL_SUBVOLUMES[@]}"
     fi
     echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
-    echo "# Autresize root partition: $RESIZE2FS_RUN"
+    echo "# Autresize img root partition: $RESIZE2FS_RUN"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
     echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MB"
@@ -898,21 +898,74 @@ function make_img() {
   # Remove partition
   echo '## Removing root partition...'
   sleep 1
-  debug 'INFO' 'Using sfdisk to remove root partition'
-  #debug 'INFO' 'Using parted to remove root partition'
-  debug 'DEBUG' "Running: sfdisk --delete -f $LOOP $LOCAL_ROOT_PARTN"
-  #debug 'DEBUG' "Running: parted -s -f $LOOP rm $LOCAL_ROOT_PARTN"
-  #debug 'DEBUG' "Running: printf 'Ignore\\\n'$LOCAL_ROOT_PARTN | parted $LOOP rm $LOCAL_ROOT_PARTN ---pretend-input-tty"
+  if [ $PARTITION_TABLE == 'gpt' ]; then
+    echo '## GPT partition table detected, sgdisk is needed, checking if installed...'
+    sleep 1
+    if [[ ! -f $(which sgdisk 2>&1) ]]; then
+      echo '## sgdisk is NOT installed...'
+      read -p "Do you want to try to install? [y/n] " -n 1 -r
+      debug 'INFO' 'Do you want to try to install? [y/n]'
+      if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
+        debug 'WARNING' 'Aborted by user, clean exit 2'
+        echo ''
+        echo '## Aborting...'
+        exit 2
+      fi
+      echo ''
+      debug 'INFO' 'Y or y pressed to confirm'
+      if [[ -f $(which apt 2>&1) ]]; then
+        echo '## apt found, trying to install gdisk...'
+        debug 'DEBUG' 'Running: apt update -y && apt upgrade -y && apt install gdisk -y'
+        sleep 1
+        apt update -y && apt upgrade -y && apt install gdisk -y
+        sleep 1
+      elif [[ -f $(which pacman 2>&1) ]]; then
+        echo '## pacman found, trying to install gdisk...'
+        debug 'DEBUG' 'Running: pacman -Syu && pacman -S gptfdisk'
+        sleep 1
+        pacman -Syu && pacman -S gptfdisk
+        sleep 1
+      else
+        echo '## Did not manage to install sgdisk, please install gdisk and retry script...'
+        debug 'ERROR' 'Did not succeed in installing sgdisk, aborting exit 1'
+        echo '## Aborting...'
+        exit 1        
+      fi
 
-  if ! output=$(sfdisk --delete -f "$LOOP" "$LOCAL_ROOT_PARTN" 2>&1); then # might fail if img size is very big
-  #if ! output=$(parted -s -f "$LOOP" rm "$LOCAL_ROOT_PARTN" 2>&1); then # does not work, still asking for user confirmation even though --script and -f (automatically answer "fix" to exceptions in script mode) is used. faults with: "Error: Can't have a partition outside the disk!". for some reason this line works in the resizing function
-  #if ! output=$(printf 'Ignore\n'$LOCAL_ROOT_PARTN | parted $LOOP rm $LOCAL_ROOT_PARTN ---pretend-input-tty 2>&1); then # raspberry pi os does not like this method, keep for memory
-    echo -e "$output\n## SFDISK FAILED!!!"
-    #echo -e "$output\n## PARTED FAILED!!!"
-    debug 'BREAK'
-    debug 'ERROR' "SFDISK FAILED:\n$output\n------------------------------------------------------------------------------"
-    #debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
-    exit 1
+    else
+
+      echo '## sgdisk is installed, resuming backup...'
+      sleep 1
+    fi
+
+    debug 'INFO' 'Using sgdisk to remove root partition'
+    debug 'DEBUG' "Running: sgdisk $LOOP -d $LOCAL_ROOT_PARTN"
+
+    if ! output=$(sgdisk "$LOOP" -d "$LOCAL_ROOT_PARTN" 2>&1); then
+      echo -e "$output\n## SGDISK FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "SGDISK FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+
+  else
+
+    debug 'INFO' 'Using sfdisk to remove root partition'
+    #debug 'INFO' 'Using parted to remove root partition'
+    debug 'DEBUG' "Running: sfdisk --delete -f $LOOP $LOCAL_ROOT_PARTN"
+    #debug 'DEBUG' "Running: parted -s $LOOP rm $LOCAL_ROOT_PARTN"
+    #debug 'DEBUG' "Running: printf 'Ignore\\\n'$LOCAL_ROOT_PARTN | parted $LOOP rm $LOCAL_ROOT_PARTN ---pretend-input-tty"
+
+    if ! output=$(sfdisk --delete -f "$LOOP" "$LOCAL_ROOT_PARTN" 2>&1); then # might fail if img size is very big
+    #if ! output=$(parted -s "$LOOP" rm "$LOCAL_ROOT_PARTN" 2>&1); then # retry this after -f got removed, before = does not work, still asking for user confirmation even though --script and -f (automatically answer "fix" to exceptions in script mode) is used. faults with: "Error: Can't have a partition outside the disk!". for some reason this line works in the resizing function
+    #if ! output=$(printf 'Ignore\n'$LOCAL_ROOT_PARTN | parted $LOOP rm $LOCAL_ROOT_PARTN ---pretend-input-tty 2>&1); then # raspberry pi os does not like this method, keep for memory
+      echo -e "$output\n## SFDISK FAILED!!!"
+      #echo -e "$output\n## PARTED FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "SFDISK FAILED:\n$output\n------------------------------------------------------------------------------"
+      #debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
   fi
   sleep 1
 
@@ -1037,21 +1090,21 @@ function make_img() {
     fi
     sleep 1
 
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     # Create nested volumes/snapshots
     debug 'INFO' 'Creating nested volumes/snapshots'
     for ((i = 0; i < ${#LOCAL_SUBVOLUMES[@]}; i++)); do
@@ -1179,12 +1232,12 @@ function do_backup() {
       echo '# ext4 filesystem detected on root'
     else
       echo '# btrfs filesystem detected on root'
-      echo "# ${#LOCAL_SUBVOLUMES[@]} subvolumes"
-      echo "# Subvolumes: ${LOCAL_SUBVOLUMES[@]}"
+      echo "# ${#LOCAL_SUBVOLUMES[@]} btrfs volumes will be included"
+      echo "# btrfs volumes: ${LOCAL_SUBVOLUMES[@]}"
     fi
     echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
-    echo "# Autresize root partition: $RESIZE2FS_RUN"
+    echo "# Autresize img root partition: $RESIZE2FS_RUN"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
     if [ "$RESIZE2FS_RUN" == true ]; then
@@ -1227,12 +1280,12 @@ function do_backup() {
       echo '# ext4 filesystem detected on root'
     else
       echo '# btrfs filesystem detected on root'
-      echo "# ${#LOCAL_SUBVOLUMES[@]} subvolumes"
-      echo "# Subvolumes: ${LOCAL_SUBVOLUMES[@]}"
+      echo "# ${#LOCAL_SUBVOLUMES[@]} btrfs volumes will be included"
+      echo "# btrfs volumes: ${LOCAL_SUBVOLUMES[@]}"
     fi
     echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
-    echo "# Autresize root partition: $RESIZE2FS_RUN"
+    echo "# Autresize img root partition: $RESIZE2FS_RUN"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
     if [ "$RESIZE2FS_RUN" == true ]; then
@@ -1548,6 +1601,18 @@ else
   debug 'INFO' 'btrfs root filesystem detected'
   debug 'DEBUG' "FSTYPE=$FSTYPE"
 fi
+
+# Check what partition table is in use and set LOCAL_DEV_PATH
+if [ "$FSTYPE" == 'ext4' ]; then
+  LOCAL_DEV_PTUUID=$(lsblk -lpo mountpoint,ptuuid | grep '/ ' | awk '{print $2}')
+else
+  LOCAL_DEV_PTUUID=$(lsblk -lpo fsroots,ptuuid | grep '/ ' | awk '{print $2}')
+fi
+LOCAL_DEV_PATH=$(lsblk -lpo ptuuid,type,path | grep "$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print $3}')
+debug 'DEBUG' "LOCAL_DEV_PTUUID=$LOCAL_DEV_PTUUID | LOCAL_DEV_PATH=$LOCAL_DEV_PATH"
+
+PARTITION_TABLE=$(parted "$LOCAL_DEV_PATH" print | grep 'Partition Table' | awk '{print $3}')
+debug 'DEBUG' "PARTITION_TABLE=$PARTITION_TABLE"
 
 debug 'DEBUG' "Update existing img file, UPDATE=$UPDATE"
 debug 'DEBUG' "Requesting size from resize2fs, RESIZE2FS_RUN=$RESIZE2FS_RUN"
