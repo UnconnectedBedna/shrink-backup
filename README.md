@@ -2,18 +2,15 @@
 
 _I made this script because I wanted a universal method of backing up my SBC:s into small img files as fast as possible (with rsync), indepentent of what os is in use._
 
-Autoexpansion tested on **Raspberry Pi** os (bookworm and older), **Armbian**, **Manjaro-arm** and **ArchLinuxARM** for rpi with **ext4** root partition.<br>
-**btrfs** on root partition has been tested on **Manjaro-arm** and is still considered to be beta. Please see btrfs section at the bottom for more info.
+Autoexpansion tested on **Raspberry Pi** os (bookworm and older), **Armbian**, **Manjaro-arm** and **ArchLinuxARM** for rpi with **ext4** root partition.
+(Now also experimental btrfs functionality, please read further down)
 
-**If you use encryption and `ext4`, use script at own risk. `fsck` is used multiple times on the backed up img (no risk to your running filesystem, it never touches that)**
-
-**Latest release:** [shrink-backup.v0.9.4](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v0.9.4/shrink-backup.v0.9.4.tar.gz)<br>
-[Testing branch](https://github.com/UnconnectedBedna/shrink-backup/tree/testing) if you want to have the absolute latest version. Resizing of existing img file to minimum size and btrfs backups is next on the roadmap and is being developed here.
+**Latest release:** [shrink-backup.v0.9.5](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v0.9.5/shrink-backup.v0.9.5.tar.gz)<br>
+[**Testing branch**](https://github.com/UnconnectedBedna/shrink-backup/tree/testing) if you want to have the absolute latest version, there might be bugs.
 
 **Very fast restore thanks to minimal size of img file.**
 
 **Can back up any device as long as root is `ext4`**<br>
-`btrfs` is in beta.<br>
 Default device that will be backed up is determined by scanning what disk-device `root` resides on.<br>
 This means that _if_ `boot` is a partition, that partition must be on the **same device as `root`**.<br>
 Backing up/restoring, to/from: usb-stick `/dev/sdX` with Raspberry pi os has been tested and works. Ie, writing an sd-card img to a usb-stick and vice versa works.
@@ -23,7 +20,7 @@ Backing up/restoring, to/from: usb-stick `/dev/sdX` with Raspberry pi os has bee
 See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information about usage.<br>
 [Ideas and feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) is always appreciated, whether it's positive or negative. Please just keep it civil. :)
 
-**Assure the script is executable.**
+**Don't forget to make the script executable.**
 
 **To restore a backup, simply "burn" the img file to a device using your favorite method.**<br>
 When booting up a restored image with autoresize active, wait until the the reboot sequence has occured. The login prompt may very well become visible before the autoresize function has rebooted.
@@ -36,7 +33,7 @@ Directory where .img file is created is automatically excluded in backup
 ########################################################################
 Usage: sudo shrink-backup [-Uatyelh] imagefile.img [extra space (MB)]
   -U         Update the img file (rsync to existing img), [extra space] extends img size/root partition
-  -a         Autoresize root partition (extra space is ignored)
+  -a         Let resize2fs decide minimum space (extra space is ignored)
                  When used in combination with -U:
                  Expand if img is +256MB smaller resize2fs recommended minimum, shrink if +512MB bigger
   -t         Use exclude.txt in same folder as script to set excluded directories
@@ -47,10 +44,10 @@ Usage: sudo shrink-backup [-Uatyelh] imagefile.img [extra space (MB)]
   -h --help  Show this help snippet
 ########################################################################
 Examples:
-sudo shrink-backup -a /path/to/backup.img (create img, automatically set size)
+sudo shrink-backup -a /path/to/backup.img (create img, resize2fs calcualtes size)
 sudo shrink-backup -e -y /path/to/backup.img 1024 (create img, ignore prompts, do not autoexpand, add 1024MB extra space)
 sudo shrink-backup -Utl /path/to/backup.img (update img backup, use exclude.txt and write log to shrink-backup.log)
-sudo shrink-backup -Ua /path/to/backup.img (update img backup, automatically resize img file if needed)
+sudo shrink-backup -Ua /path/to/backup.img (update img backup, resize2fs calculates and resizes img file if needed)
 sudo shrink-backup -U /path/to/backup.img 1024 (update img backup, expand img size/root partition with 1024MB)
 ```
 
@@ -82,30 +79,29 @@ Use `-l` to write debug info into `shrink-backup.log` file located in the same d
 **Applications used in the script:**
 - fdisk
 - sfdisk
+- dd
 - parted
 - e2fsck
-- resize2fs
-- dd
 - truncate
 - mkfs.ext4
 - rsync
+- gidisk (sgdisk is needed if the partition table is GPT, the script will inform you)
 
 ## Info
 
 Theoretically the script should work on any device as long as root filesystem is `ext4`. But IMHO is best applied on ARM hardware.<br>
-`btrfs` is usable but still experimental. Please see section about btrfs below for more information.<br>
 Since the script uses `lsblk` to figure out where the root resides it does not matter what device it is on.<br>
 Even if you forget to disable autoexpansion on a non supported system, the backup will not fail. :)
 
 ### Order of operations - Image creation:
 1. Uses `lsblk` to figure out the correct disk device to back up.
 2. Reads the block sizes of the partitions.
-3. Uses `dd` to create the `boot` part of the system + a few megabytes to include the filesystem on `root`. (this _can_ be a partition)
+3. Uses `dd` to create the boot part of the system + a few megabytes to include the filesystem on root. (this _can_ be a partition)
 4. Removes and recreates the `root` partition, the size depends on options used when starting the script.
 5. Creates the `root` filesystem with the same `UUID` and `LABEL` as the system you are backing up from. (_MUST_ be `ext4`)
 6. Uses `rsync` to sync both partitions. (if more than one)
 
-Added space is added on top of `df` reported "used space", not the size of the partition. Added space is in traditional binary system, so if you want to add 1GB, add 1024.
+Added space is added on top of `df` reported "used space", not the size of the partition. Added space is in MB, so if you want to add 1GB, add 1024.
 
 The script can be instructed to set the img size by requesting recomended minimum size from `e2fsck` by using the `-a` option.<br>
 This is not the absolute smallest size you can achieve but is the "safest" way to create a "smallest possible" img file.<br>
@@ -137,46 +133,31 @@ By using `-a` in combination with `-U` the script will resize the img file if ne
 ### Order of operations - Image update:
 1. Probes the img file for information about partitions.
 2. Mounts `root` partition with an offset for the loop.
-3. Checks if multiple partitions exists. If true, reads `fstab` on img file and mounts `boot` partition accordingly with an offset.
+3. Checks if multiple partitions exists. If true, reads `fstab` on img file and mounts boot partition accordingly with an offset.
 4. Uses `rsync` to sync both partitions. (if more than one)
 
 To update an existing img file simply use the `-U` option and the path to the img file.<br>
 Example: `sudo shrink-backup -U /path/to/backup.img`
 
-### Resizing img file when updating<br>
+**Resizing img file when updating**<br>
 If `-a` is used in combination with `-U`, the script will compare the root partition on the img file to the size `resize2fs` recommends as minimum.<br>
-The img file needs to be **>=256MB** smaller than `resize2fs` recommended minimum to be expanded.<br>
-The img file needs to be **>=512MB** bigger than `resize2fs` recommended minimum to be shrunk.<br>
-This is to protect from unnecessary resizing operations most likely not needed.
+The img file needs to be **+256MB** smaller than `resize2fs` recommended minimum to be expanded.<br>
+The img file needs to be **+512MB** bigger than `resize2fs` recommended minimum to be shrunk.<br>
+This is to protect from unessesary resizing operations most likely not needed.
 
-**Disclaimer**<br>
-Resizing **always** includes a small risk of corruption, please use with care (ie do not abuse). If you know your system will increase, maybe it's better to just add manual space in the creation? And then when you close in on the limit, use manual method to add more space instead of constantly using `-Ua`.<br>
-I have ran a lot of testing of this (on "weak" arm harware like rpi4) and it rarely fails, but it _does_ happen. I also run the backups over lan so that could also be a contributing factor for the failures. Just keep that in mind. :)
-
-If manually added space is used in combination with `-U`, the `root` partition on the img file will be expanded by that amount. **No checks are being performed to make sure the data you want to back up will actually fit.**<br>
+If manually added space is used in combination with `-U`, the img file/root partition will be expanded by that amount. No checks are being performed to make sure the data you want to back up will actually fit.<br>
 Only expansion is possible with this method.
 
 ## btrfs
 
-**This is still in experimental stage so [ideas & feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) is HIGHLY appreciated!**<br>
-The subvolumes are mounted with default compression: `compress=zstd` (default means `zstd:3`)
+**ALL testing has been done on Manjaro-arm**<br>
+**THIS IS NOT A CLONE, IT IS A BACKUP OF REQUIRED FILES FOR A BOOTABLE BTRFS SYSTEM!**
 
-I am working against Manjaro-arm to create this functionality and the standard install creates root (`/@`) and home (`/@home`) subvolumes (and some nested ones that will also be included), so the script assumes this is the situation on ALL btrfs systems as of now.
-
-The backup img is **NOT a clone**. Snapshots are NOT used to create the backup.<br>
-The `UUID` will change on the created img filesystem (btrfs is way more picky than ext4 about this), but in the case of Manjaro (and raspberry pi too for that matter), that does not matter since `PARTUUID` is used in mounting, and that stays the same, but users should be aware.<br>
-Subvol id:s are NOT guaranteed to be the same.
-
-Instead of using btrfs send/recieve I opted for rsync, quck and dirty.<br>
-Both in creation of a new img and when keeping it updated with `-U`.<br>
-My resoning for this is that this script is primarily for creating bootable img files, NOT to create perfectly cloned backups. Speed is also a strong argument here.
-
-The goal in developement of this script is ALWAYS to: as fast as possible create an img file that you can write directly to a sd-card and boot. That goal does NOT mix well with also creating a perfectly cloned backup.<br>
-This does mean the script cares MORE about the **file integrity** rather than the **filesystem integrity**. The compression f.ex might be different than on your root filesystem. Subvol id:s might change etc etc.<br>
-But the main goal stays the same, the backup must contain ALL REQUESTED FILES, ie a bootable file backup. I do NOT want to be responsible for people loosing their data when using this script, hence this decision. :)
-
-All of this might change in the future though. Not the rsync part (I value speed very high), but the subvol id:s, compression and such is on my mind.<br>
-F.ex if more subvols (or less) than root and home is used I want the script to be able to handle that.
+All options in script should work just as on `ext4`. The script will detect `btrfs` and act accordingly.<br>
+The script will treat snapshots as nested volumes, so make sure to exclude snapshots if you have any, or directories and nested volumes will be created on the img file. This can be done in `exclude.txt`, wildcards _should_ work.<br>
+When starting the script, the initial report window will tell you what volumes will be created. **Make sure these are correct before pressing Y**<br>
+As of now, top level subvolumes are checked for in `/etc/fstab` and mounted accordingly, mount options should be preseved (for exmaple if you change compression).<br>
+Autoresize function works on Manjaro-arm.
 
 **Thank you for using my software <3**
 
