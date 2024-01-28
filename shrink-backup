@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # shrink-backup
-# version 0.9.5-beta
+# version 0.9.5
 # backup tool for backing up and updating .img files with autoexpansion on various operating systems
 #
 #    This program is free software: you can redistribute it and/or modify
@@ -53,17 +53,10 @@ function cleanup() {
       umount "$TMP_DIR"
       debug 'DEBUG' "Unmounting root partition in cleanup function: umount $TMP_DIR"
     fi
-    #if losetup /dev/loop0 &>/dev/null; then
     if losetup "$LOOP" &>/dev/null; then
-      #losetup -d /dev/loop0
       losetup -d "$LOOP"
-      #debug 'DEBUG' 'Removing loop0 in cleanup function: losetup -d /dev/loop0'
       debug 'DEBUG' "Removing loop in cleanup function: losetup -d $LOOP"
     fi
-#     if losetup /dev/loop1 &>/dev/null; then
-#       losetup -d /dev/loop1
-#       debug 'DEBUG' 'Removing loop1 in cleanup function: losetup -d /dev/loop1'
-#     fi
     if [ -d "$TMP_DIR" ]; then
       rm -rf "$TMP_DIR"
       debug 'DEBUG' "Removing temp directory in cleanup function: rm -rf $TMP_DIR"
@@ -173,14 +166,6 @@ function debug() {
 
 # Function to gather device information
 function get_dev_variables() {
-
-#   if [ "$FSTYPE" == 'ext4' ]; then
-#     LOCAL_DEV_PTUUID=$(lsblk -lpo mountpoint,ptuuid | grep '/ ' | awk '{print $2}')
-#   else
-#     LOCAL_DEV_PTUUID=$(lsblk -lpo fsroots,ptuuid | grep '/ ' | awk '{print $2}')
-#   fi
-#   LOCAL_DEV_PATH=$(lsblk -lpo ptuuid,type,path | grep "$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print $3}')
-#   debug 'DEBUG' "LOCAL_DEV_PTUUID=$LOCAL_DEV_PTUUID | LOCAL_DEV_PATH=$LOCAL_DEV_PATH"
 
   # Check if separate boot and root partition exists and set variables accordingly
   if [ $(lsblk | grep -c 'boot') -ne 0 ]; then
@@ -337,14 +322,11 @@ function get_shared_variables() {
     debug 'INFO' 'Separate boot partition detected'
     debug 'DEBUG' "Running: cat /etc/fstab | grep '/boot' | awk '{print \$2}'"
     BOOT_PATH=$(cat /etc/fstab | grep '/boot' | awk '{print $2}')
-    #IMG_DEV_BOOT_PATH='/dev/loop0p1'
     IMG_DEV_BOOT_PATH="${LOOP}p1"
-    #IMG_DEV_ROOT_PATH='/dev/loop0p2'
     IMG_DEV_ROOT_PATH="${LOOP}p2"
     debug 'DEBUG' "BOOT_PATH=$BOOT_PATH | IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
   else
     debug 'INFO' 'No boot partition detected'
-    #IMG_DEV_ROOT_PATH='/dev/loop0p1'
     IMG_DEV_ROOT_PATH="${LOOP}p1"
     debug 'DEBUG' "IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
   fi
@@ -874,6 +856,8 @@ function make_img() {
   # Remove partition
   echo '## Removing root partition...'
   sleep 1
+
+  # GPT
   if [ $PARTITION_TABLE == 'gpt' ]; then
     echo '## GPT partition table detected, sgdisk is needed, checking if installed...'
     sleep 1
@@ -926,6 +910,7 @@ function make_img() {
 
   else
 
+    # MBR
     debug 'INFO' 'Using sfdisk to remove root partition'
     #debug 'INFO' 'Using parted to remove root partition'
     debug 'DEBUG' "Running: sfdisk --delete -f $LOOP $LOCAL_ROOT_PARTN"
