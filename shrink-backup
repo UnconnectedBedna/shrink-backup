@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # shrink-backup
-# version 0.9.4
+# version 0.9.5
 # backup tool for backing up and updating .img files with autoexpansion on various operating systems
 #
 #    This program is free software: you can redistribute it and/or modify
@@ -14,7 +14,7 @@
 #    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #    GNU General Public License for more details.
 #
-#    10/2023
+#    01/2024
 #    Marcus Johansson
 #    https://github.com/UnconnectedBedna/shrink-backup
 ##############################################################################
@@ -45,17 +45,17 @@ function cleanup() {
       umount "${TMP_DIR}${BOOT_PATH}"
       debug 'DEBUG' "Unmounting boot partition in cleanup function: umount ${TMP_DIR}${BOOT_PATH}"
     fi
+    if [ -n "$TMP_DIR" ] && grep -qs "${TMP_DIR}/home " /proc/mounts; then
+      umount "$TMP_DIR"/home
+      debug 'DEBUG' "Unmounting home partition in cleanup function: umount ${TMP_DIR}/home"
+    fi
     if [ -n "$TMP_DIR" ] && grep -qs "$TMP_DIR " /proc/mounts; then
       umount "$TMP_DIR"
       debug 'DEBUG' "Unmounting root partition in cleanup function: umount $TMP_DIR"
     fi
-    if losetup /dev/loop0 &>/dev/null; then
-      losetup -d /dev/loop0
-      debug 'DEBUG' 'Removing loop0 in cleanup function: losetup -d /dev/loop0'
-    fi
-    if losetup /dev/loop1 &>/dev/null; then
-      losetup -d /dev/loop1
-      debug 'DEBUG' 'Removing loop1 in cleanup function: losetup -d /dev/loop1'
+    if losetup "$LOOP" &>/dev/null; then
+      losetup -d "$LOOP"
+      debug 'DEBUG' "Removing loop in cleanup function: losetup -d $LOOP"
     fi
     if [ -d "$TMP_DIR" ]; then
       rm -rf "$TMP_DIR"
@@ -103,7 +103,7 @@ Directory where .img file is created is automatically excluded in backup
 ########################################################################
 Usage: sudo $(basename "$0") [-Uatyelh] imagefile.img [extra space (MB)]
   -U         Update the img file (rsync to existing img), [extra space] extends img size/root partition
-  -a         Let resize2fs decide minimum space (extra space is ignored)
+  -a         Autoresize root partition (extra space is ignored)
                  When used in combination with -U:
                  Expand if img is +256MB smaller resize2fs recommended minimum, shrink if +512MB bigger
   -t         Use exclude.txt in same folder as script to set excluded directories
@@ -114,10 +114,10 @@ Usage: sudo $(basename "$0") [-Uatyelh] imagefile.img [extra space (MB)]
   -h --help  Show this help snippet
 ########################################################################
 Examples:
-sudo $(basename "$0") -a /path/to/backup.img (create img, resize2fs calcualtes size)
+sudo $(basename "$0") -a /path/to/backup.img (create img, automatically set size)
 sudo $(basename "$0") -e -y /path/to/backup.img 1024 (create img, ignore prompts, do not autoexpand, add 1024MB extra space)
 sudo $(basename "$0") -Utl /path/to/backup.img (update img backup, use exclude.txt and write log to shrink-backup.log)
-sudo $(basename "$0") -Ua /path/to/backup.img (update img backup, resize2fs calculates and resizes img file if needed)
+sudo $(basename "$0") -Ua /path/to/backup.img (update img backup, automatically resizes img file if needed)
 sudo $(basename "$0") -U /path/to/backup.img 1024 (update img backup, expand img size/root partition with 1024MB)
 EOM
   echo "$help"
@@ -168,30 +168,19 @@ function debug() {
 function get_dev_variables() {
 
   # Check if separate boot and root partition exists and set variables accordingly
-  #LOCAL_DEV_MAJ=$(lsblk -lpo mountpoint,maj:min | grep '/ ' | awk '{print $2}' | cut -d : -f 1)
-  LOCAL_DEV_PTUUID=$(lsblk -lpo mountpoint,ptuuid | grep '/ ' | awk '{print $2}')
-  LOCAL_DEV_PATH=$(lsblk -lpo ptuuid,type,path | grep "$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print $3}')
-  #LOCAL_ROOT_PARTN=$(lsblk -lpo mountpoint,partn | grep '/ ' | awk '{print $2}') # PARTN can only be used on arch :(
-  #LOCAL_DEV_PATH=$(lsblk -lpo maj:min,type,path | grep "$LOCAL_DEV_MAJ" | grep 'disk' | awk '{print $3}')
-  debug 'DEBUG' "LOCAL_DEV_PTUUID=$LOCAL_DEV_PTUUID | LOCAL_DEV_PATH=$LOCAL_DEV_PATH"
   if [ $(lsblk | grep -c 'boot') -ne 0 ]; then
     debug 'INFO' 'Separate boot partition detected'
-    #LOCAL_DEV_MIN=$(lsblk -lpo mountpoint,maj:min | grep '/boot' | awk '{print $2}' | cut -d : -f 2)
-    #LOCAL_DEV_MIN=$(( LOCAL_DEV_MIN - 1 ))
-    #LOCAL_DEV_PATH=$(lsblk -lpo maj:min,type,path | grep "${LOCAL_DEV_MAJ}:${LOCAL_DEV_MIN}" | grep 'disk' | awk '{print $3}')
     LOCAL_DEV_BOOT_PATH=$(lsblk -lpo mountpoint,path | grep 'boot' | awk '{print $2}')
-    LOCAL_DEV_ROOT_PATH=$(lsblk -lpo mountpoint,path | grep '/ ' | awk '{print $2}')
-    debug 'DEBUG' "LOCAL_DEV_ROOT_PATH=${LOCAL_DEV_ROOT_PATH} | LOCAL_DEV_BOOT_PATH=$LOCAL_DEV_BOOT_PATH"
+    #LOCAL_DEV_ROOT_PATH=$(lsblk -lpo mountpoint,path | grep '/ ' | awk '{print $2}')
+    LOCAL_DEV_ROOT_PATH=$(mount | grep '/ ' | awk '{print $1}')
+    debug 'DEBUG' "LOCAL_DEV_BOOT_PATH=$LOCAL_DEV_BOOT_PATH | LOCAL_DEV_ROOT_PATH=$LOCAL_DEV_ROOT_PATH"
   else
     debug 'INFO' 'No boot partition detected'
-    #LOCAL_DEV_MIN=$(lsblk -lpo mountpoint,maj:min | grep '/ ' | awk '{print $2}' | cut -d : -f 2)
-    #LOCAL_DEV_MIN=$(( LOCAL_DEV_MIN - 1 ))
-    #LOCAL_DEV_PATH=$(lsblk -lpo maj:min,type,path | grep "${LOCAL_DEV_MAJ}:${LOCAL_DEV_MIN}" | grep 'disk' | awk '{print $3}')
-    LOCAL_DEV_ROOT_PATH=$(lsblk -lpo mountpoint,path | grep '/ ' | awk '{print $2}')
+    #LOCAL_DEV_ROOT_PATH=$(lsblk -lpo mountpoint,path | grep '/ ' | awk '{print $2}')
+    LOCAL_DEV_ROOT_PATH=$(mount | grep '/ ' | awk '{print $1}')
     debug 'DEBUG' "LOCAL_DEV_ROOT_PATH=$LOCAL_DEV_ROOT_PATH"
   fi
   LOCAL_ROOT_PARTN=$(parted -sm "$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
-  #debug 'DEBUG' "LOCAL_DEV_PATH=${LOCAL_DEV_PATH} | LOCAL_DEV_MAJ=$LOCAL_DEV_MAJ | LOCAL_ROOT_PARTN=$LOCAL_ROOT_PARTN"
   debug 'DEBUG' "LOCAL_ROOT_PARTN=$LOCAL_ROOT_PARTN"
 
   # Collecting data and making calculations
@@ -204,27 +193,31 @@ function get_dev_variables() {
   LOCAL_ROOT_START=$(( LOCAL_ROOT_START * 512 )) # bytes
   LOCAL_BOOTSECTOR=$(( LOCAL_BOOTSECTOR * 512 )) # bytes
   debug 'DEBUG' "LOCAL_ROOT_START=$LOCAL_ROOT_START Bytes | LOCAL_BOOTSECTOR=$LOCAL_BOOTSECTOR Bytes"
-  BLOCKSIZE=$(dumpe2fs -h "$LOCAL_DEV_ROOT_PATH" | grep "Block size" | awk '{print $3}') # bytes
-  LOCAL_RESIZE2FS_MIN=$(resize2fs -P "$LOCAL_DEV_ROOT_PATH" | awk '{print $7}' | tail -1) # blocks
-  LOCAL_RESIZE2FS_MIN=$(( LOCAL_RESIZE2FS_MIN * BLOCKSIZE )) # bytes
-  debug 'DEBUG' "LOCAL_RESIZE2FS_MIN=${LOCAL_RESIZE2FS_MIN} Bytes"
+  if [ $FSTYPE == 'ext4' ]; then
+    BLOCKSIZE=$(dumpe2fs -h "$LOCAL_DEV_ROOT_PATH" | grep "Block size" | awk '{print $3}') # bytes
+    LOCAL_RESIZE2FS_MIN=$(resize2fs -P "$LOCAL_DEV_ROOT_PATH" | awk '{print $7}') # blocks
+    LOCAL_RESIZE2FS_MIN=$(( LOCAL_RESIZE2FS_MIN * BLOCKSIZE )) # bytes
+    debug 'DEBUG' "LOCAL_RESIZE2FS_MIN=${LOCAL_RESIZE2FS_MIN} Bytes"
+  else
+    debug 'INFO' 'Running function: get_btrfs_variables'
+    get_btrfs_variables
+  fi
   # Method 1, using the value of "size - available"
-  LOCAL_DF_OUTPUT=( $(df / --output=size,avail | tail -1) ) # 1k blocks, 0 is the first position in an array
+  LOCAL_DF_OUTPUT=( $(df / -k --sync --output=size,avail | tail -1) ) # 1k blocks, 0 is the first position in an array
   LOCAL_USED_SPACE=$(( (${LOCAL_DF_OUTPUT[0]} - ${LOCAL_DF_OUTPUT[1]}) * 1024 )) # bytes, df is in 1k blocks, 0 is the first position
   # Method 2, using "used space" straight up
-  #LOCAL_DF_OUTPUT=( $(df / --output=used | tail -1) ) # 1k blocks
+  #LOCAL_DF_OUTPUT=( $(df / -k --sync --output=used | tail -1) ) # 1k blocks
   #LOCAL_USED_SPACE=$(( LOCAL_DF_OUTPUT * 1024 )) # bytes, df is in 1k blocks
   ADDED_SPACE=$(( ADDED_SPACE * 1024 * 1024 )) # bytes
   WIGGLEROOM=134217728 # 128MB = 134217728B, 192MB = 201326592B
 
-  # Use resize2fs to calulate size if option is selected
+  # Use resize2fs to set size if option is selected
   if [ "$RESIZE2FS_RUN" == true ]; then
     debug 'INFO' 'Setting TOTAL (space needed for files on root) to size calculated by resize2fs'
     TOTAL=$LOCAL_RESIZE2FS_MIN # bytes
   else
     debug 'INFO' 'Calculating TOTAL (space needed for files on root) by adding LOCAL_USED_SPACE and ADDED_SPACE'
-    debug 'DEBUG' "LOCAL_USED_SPACE=${LOCAL_USED_SPACE} Bytes"
-    debug 'DEBUG' "ADDED_SPACE=${ADDED_SPACE} Bytes"
+    debug 'DEBUG' "LOCAL_USED_SPACE=${LOCAL_USED_SPACE} Bytes | ADDED_SPACE=${ADDED_SPACE} Bytes"
     TOTAL=$(( LOCAL_USED_SPACE + ADDED_SPACE )) # bytes
   fi
   debug 'DEBUG' "TOTAL=${TOTAL} Bytes"
@@ -232,8 +225,6 @@ function get_dev_variables() {
   TRUNCATE_TOTAL=$(( LOCAL_BOOTSECTOR + TOTAL )) # bytes
   debug 'INFO' 'Calculating .img file size by adding LOCAL_BOOTSECTOR to TOTAL (only used in img creation)'
   debug 'DEBUG' "TRUNCATE_TOTAL=${TRUNCATE_TOTAL} Bytes"
-  #TRUNCATE_TOTAL=$(( BLOCKSIZE + LOCAL_BOOTSECTOR + TOTAL )) # bytes, this was when I was using end instead of start with fdisk
-  #TRUNCATE_TOTAL=$(( ( 1 + 33 ) * BLOCKSIZE + TOTAL + LOCAL_BOOTSECTOR )) # bytes, something about GPT needing 33 extra blocks
 
   # Add 128MB extra space if resize2fs reports bigger minimum than created
   if [ "$UPDATE" == false ] && [ "$TOTAL" -lt "$LOCAL_RESIZE2FS_MIN" ]; then
@@ -248,13 +239,72 @@ function get_dev_variables() {
 
 
 
+# Function to gather btrfs information
+function get_btrfs_variables() {
+
+  if [ $RESIZE2FS_RUN == true ]; then
+    debug 'INFO' 'Using btrfs fi du to calculate recommended size and adding 192MB'
+    LOCAL_RESIZE2FS_MIN=$(btrfs filesystem du -s --raw / 2>/dev/null) # bytes
+    LOCAL_RESIZE2FS_MIN=$(echo "$LOCAL_RESIZE2FS_MIN" | tail -1 | awk '{print $1}')
+    LOCAL_RESIZE2FS_MIN=$(( LOCAL_RESIZE2FS_MIN + 201326592 )) # 192MB = 201326592B
+    debug 'DEBUG' "LOCAL_RESIZE2FS_MIN=$LOCAL_RESIZE2FS_MIN bytes"
+  fi
+  debug 'DEBUG' "Running: btrfs subvolume list / | awk '{print \$9}'"
+  #LOCAL_SUBVOLUMES=( $(sudo btrfs subvolume list / | awk '{print $2,$9}') )
+  LOCAL_SUBVOLUMES=( $(btrfs subvolume list / | awk '{print $9}') )
+  #local_subvolumes_count=$(( ${#LOCAL_SUBVOLUMES[@]} / 2 ))
+  debug 'DEBUG' "LOCAL_SUBVOLUMES=$(echo ${LOCAL_SUBVOLUMES[@]})"
+  if [ "$EXCLUDE_FILE" == true ]; then
+    debug 'INFO' 'Filtering out volumes from exclude.txt'
+    for ((i = 0; i < ${#LOCAL_SUBVOLUMES[@]}; i++)); do
+      if $(echo "/${LOCAL_SUBVOLUMES[i]}" | grep -q -f "$(dirname $0)/exclude.txt"); then
+        debug 'DEBUG' "Filtering out subvolume: ${LOCAL_SUBVOLUMES[i]}"
+        unset LOCAL_SUBVOLUMES["$i"]
+      fi
+    done
+    debug 'DEBUG' "After filtering, LOCAL_SUBVOLUMES=$(echo ${LOCAL_SUBVOLUMES[@]})"
+  fi
+
+  return 0
+}
+
+
+
 # Function to gather image information
 function get_img_variables() {
 
-  debug 'INFO' 'Using ls to find img size and convert to MB'
   debug 'DEBUG' "Running: ls -l $IMG_FILE | awk '{print \$5}'"
   IMG_SIZE=$(ls -l "$IMG_FILE" | awk '{print $5}')
   debug 'DEBUG' "IMG_SIZE=$IMG_SIZE Bytes"
+
+  if [ "$FSTYPE" == 'btrfs' ]; then
+    # Check for temp directory and create if needed
+    if ! [ -d "$TMP_DIR" ]; then
+      echo '## Creating temp directory...'
+      sleep 1
+      debug 'INFO' 'Creating temp directory'
+      debug 'DEBUG' "Running: mktemp -d -t backup-XXXXXXXXXX"
+      TMP_DIR=$(mktemp -d -t backup-XXXXXXXXXX)
+      debug 'DEBUG' "TMP_DIR=$TMP_DIR"
+    fi
+    sleep 1
+    partprobe "$LOOP"
+    fstab=( $(cat /etc/fstab | grep '/ ') )
+    debug 'INFO' 'Mounting root to find subvolumes'
+    debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH $TMP_DIR"
+    if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
+      echo -e "$output\n## ROOT MOUNT FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "ROOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+    sleep 1
+    debug 'DEBUG' "Running: btrfs subvolume list $TMP_DIR | awk '{print \$9}'"
+    IMG_SUBVOLUMES=( $(btrfs subvolume list "$TMP_DIR" | awk '{print $9}') )
+    debug 'DEBUG' "IMG_SUBVOLUMES=$(echo ${IMG_SUBVOLUMES[@]})"
+    debug 'DEBUG' "Running: umount $TMP_DIR"
+    umount "$TMP_DIR"
+  fi
 
   return 0
 }
@@ -264,20 +314,20 @@ function get_img_variables() {
 # Function for shared variables
 function get_shared_variables() {
 
-  LOOP='/dev/loop0'
+  #LOOP='/dev/loop0'
+  LOOP=$(losetup -f)
   debug 'DEBUG' "LOOP=$LOOP"
 
   if [ $(lsblk | grep -c 'boot') -ne 0 ]; then
     debug 'INFO' 'Separate boot partition detected'
-    debug 'INFO' 'Fetching boot mount path from fstab'
     debug 'DEBUG' "Running: cat /etc/fstab | grep '/boot' | awk '{print \$2}'"
     BOOT_PATH=$(cat /etc/fstab | grep '/boot' | awk '{print $2}')
-    IMG_DEV_BOOT_PATH='/dev/loop0p1'
-    IMG_DEV_ROOT_PATH='/dev/loop0p2'
+    IMG_DEV_BOOT_PATH="${LOOP}p1"
+    IMG_DEV_ROOT_PATH="${LOOP}p2"
     debug 'DEBUG' "BOOT_PATH=$BOOT_PATH | IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
   else
     debug 'INFO' 'No boot partition detected'
-    IMG_DEV_ROOT_PATH='/dev/loop0p1'
+    IMG_DEV_ROOT_PATH="${LOOP}p1"
     debug 'DEBUG' "IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
   fi
   return 0
@@ -302,7 +352,7 @@ function do_loop() {
 
 
 
-# Function to loop and mount img file
+# Function to mount img file
 function do_mount() {
 
   # Check for temp directory and create if needed
@@ -314,16 +364,62 @@ function do_mount() {
     TMP_DIR=$(mktemp -d -t backup-XXXXXXXXXX)
     debug 'DEBUG' "TMP_DIR=$TMP_DIR"
   fi
-
-  echo '## Mounting img root partition...'
   sleep 1
-  debug 'INFO' 'Mounting root partition from loop'
-  debug 'DEBUG' "Running: mount $IMG_DEV_ROOT_PATH $TMP_DIR"
-  if ! output=$(mount "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
-    echo -e "$output\n## ROOT MOUNT FAILED!!!"
-    debug 'BREAK'
-    debug 'ERROR' "ROOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
-    exit 1
+  partprobe "$LOOP"
+
+  # btrfs
+  if [ "$FSTYPE" = 'btrfs' ]; then
+    fstab=( $(cat /etc/fstab | grep '/ ') )
+    echo "## Mounting root subvolume..."
+    debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH $TMP_DIR"
+    if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
+      echo -e "$output\n## ROOT SUBVOLUME MOUNT FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "ROOT SUBVOLUME MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+    sleep 1
+
+    for ((i = 0; i < ${#LOCAL_SUBVOLUMES[@]}; i++)); do
+      SUBVOL_PATH="${LOCAL_SUBVOLUMES[i]}"
+      if $(cat /etc/fstab | grep -q "$SUBVOL_PATH") && [[ "$SUBVOL_PATH" != '@' ]]; then
+        fstab=( $(cat /etc/fstab | grep "$SUBVOL_PATH") )
+        if ! [ -d "${TMP_DIR}${fstab[1]}" ]; then
+          debug 'DEBUG' "Running: mkdir -p ${TMP_DIR}${fstab[1]}"
+          mkdir -p "${TMP_DIR}${fstab[1]}"
+        fi
+        echo "## Mounting subvolume: $SUBVOL_PATH"
+        debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH ${TMP_DIR}${fstab[1]}"
+        if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" ${TMP_DIR}${fstab[1]} 2>&1); then
+          echo -e "$output\n## SUBVOLUME MOUNT FAILED!!!"
+          debug 'BREAK'
+          debug 'ERROR' "SUBVOLUME MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+          exit 1
+        fi
+
+      elif [[ "$SUBVOL_PATH" != '@'* ]]; then
+        if ! [ -d "${TMP_DIR}/${SUBVOL_PATH}" ]; then
+          #debug 'DEBUG' "Running: mkdir -p ${TMP_DIR}/$(dirname $SUBVOL_PATH)"
+          debug 'DEBUG' "Running: mkdir -p ${TMP_DIR}/${SUBVOL_PATH}"
+          #mkdir -p ${TMP_DIR}/$(dirname $SUBVOL_PATH)
+          mkdir -p "${TMP_DIR}/${SUBVOL_PATH}"
+        fi
+      fi
+      sleep 1
+    done
+
+  # ext4
+  else
+    echo '## Mounting img root partition...'
+    sleep 1
+    debug 'INFO' 'Mounting root partition from loop'
+    debug 'DEBUG' "Running: mount $IMG_DEV_ROOT_PATH $TMP_DIR"
+    if ! output=$(mount "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
+      echo -e "$output\n## ROOT MOUNT FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "ROOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
   fi
 
   # Checking if boot partition exists and if true mount boot
@@ -379,7 +475,7 @@ function do_e2fsck() {
     if [ "$AUTOEXPAND" == true ]; then
       echo '## Remounting for autoexpansion...'
       debug 'INFO' 'Remounting for autoexpansion function'
-      debug 'DEBUG' 'Running function: do_mount'
+      debug 'INFO' 'Running function: do_mount'
       sleep 1
       do_mount
     fi
@@ -417,14 +513,13 @@ function do_resize() {
   debug 'DEBUG' "TOTAL=$TOTAL Bytes | TOTALK=$TOTALK Kilobytes"
 
   # Gather information
-  debug 'INFO' 'Using lsblk to fetch root partition number'
+  debug 'INFO' 'Using parted to fetch root partition number'
   debug 'DEBUG' "Running: parted -sm "$LOOP" print | tail -1 | cut -d : -f 1"
   IMG_ROOT_PARTN=$(parted -sm "$LOOP" print | tail -1 | cut -d : -f 1)
   debug 'DEBUG' "IMG_ROOT_PARTN=$IMG_ROOT_PARTN"
 
   # Check img filesystem
-  debug 'INFO' 'Scanning filesystem'
-  debug 'DEBUG' 'Running function: do_e2fsck'
+  debug 'INFO' 'Running function: do_e2fsck'
   do_e2fsck
 
   if [ "$*" = 'expand' ]; then
@@ -441,7 +536,7 @@ function do_resize() {
 
     echo "## Resizing image file..."
     sleep 1
-    debug 'INFO' 'Using truncate to resize img file'
+    debug 'INFO' "Using truncate to resize img file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
     debug 'DEBUG' "Running: truncate --size=$TRUNCATE_TOTAL $IMG_FILE"
     if ! output=$(truncate --size="$TRUNCATE_TOTAL" "$IMG_FILE" 2>&1); then
       echo -e "$output\n## TRUNCATE FAILED!!!"
@@ -452,25 +547,25 @@ function do_resize() {
 
     # Loop img file
     debug 'INFO' 'Re-looping img file to fetch new img size'
-    debug 'DEBUG' 'Running function: do_loop'
+    debug 'INFO' 'Running function: do_loop'
     do_loop
 
     echo '## Removing partition...'
     sleep 1
-    debug 'INFO' 'Using sfdisk to remove partition'
-    debug 'DEBUG' "Running: sfdisk --delete $LOOP $IMG_ROOT_PARTN"
-    #sfdisk --delete -f "$LOOP" "$IMG_ROOT_PARTN" # seems to fail if img size is very big
-    #debug 'DEBUG' "Running: parted -s $LOOP rm $IMG_ROOT_PARTN"
-    #parted -s "$LOOP" rm "$IMG_ROOT_PARTN" # does not work, still asking for user confirmation even though --script is used
-    #debug 'INFO' 'Using parted to remove root partition'
+    #debug 'INFO' 'Using sfdisk to remove root partition'
+    debug 'INFO' 'Using parted to remove root partition'
+    #debug 'DEBUG' "Running: sfdisk --delete -f $LOOP $IMG_ROOT_PARTN"
+    debug 'DEBUG' "Running: parted -s $LOOP rm $IMG_ROOT_PARTN"
     #debug 'DEBUG' "Running: printf 'Ignore\\\n'$IMG_ROOT_PARTN | parted $LOOP rm $IMG_ROOT_PARTN ---pretend-input-tty"
-    if ! output=$(sfdisk --delete -f "$LOOP" "$IMG_ROOT_PARTN" 2>&1); then
-    #if ! output=$(printf 'Ignore\n'$IMG_ROOT_PARTN | parted $LOOP rm $IMG_ROOT_PARTN ---pretend-input-tty 2>&1); then
-      echo -e "$output\n## SFDISK FAILED!!!"
-      #echo -e "$output\n## PARTED FAILED!!!"
+
+    #if ! output=$(sfdisk --delete -f "$LOOP" "$IMG_ROOT_PARTN" 2>&1); then # might fail if img size is very big
+    if ! output=$(parted -s "$LOOP" rm "$IMG_ROOT_PARTN" 2>&1); then # for some reason this line works here but not when creating img
+    #if ! output=$(printf 'Ignore\n'$IMG_ROOT_PARTN | parted $LOOP rm $IMG_ROOT_PARTN ---pretend-input-tty 2>&1); then # raspberry pi os does not like this method, keep for memory
+      #echo -e "$output\n## SFDISK FAILED!!!"
+      echo -e "$output\n## PARTED FAILED!!!"
       debug 'BREAK'
-      debug 'ERROR' "SFDISK FAILED:\n$output\n------------------------------------------------------------------------------"
-      #debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
+      #debug 'ERROR' "SFDISK FAILED:\n$output\n------------------------------------------------------------------------------"
+      debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
     fi
 
@@ -484,7 +579,6 @@ function do_resize() {
       debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
     fi
-    debug 'DEBUG' "$output\n------------------------------------------------------------------------------"
 
     echo '## Resizing filesystem...'
     sleep 1
@@ -497,10 +591,10 @@ function do_resize() {
       debug 'ERROR' "RESIZE2FS FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
     fi
+    debug 'DEBUG' "$output\n------------------------------------------------------------------------------"
 
     # Check img filesystem
-    debug 'INFO' 'Scanning filesystem'
-    debug 'DEBUG' 'Running function: do_e2fsck'
+    debug 'INFO' 'Running function: do_e2fsck'
     do_e2fsck
 
   elif [ "$*" = 'shrink' ]; then
@@ -521,10 +615,11 @@ function do_resize() {
     echo '## Shrinking partition...'
     sleep 1
     debug 'INFO' 'Using parted to shrink partition'
+    debug 'BREAK'
     #debug 'DEBUG' "Running: parted -s -a none $LOOP unit B resizepart $IMG_ROOT_PARTN $TRUNCATE_TOTAL"
     debug 'DEBUG' "Running: printf 'Yes\\\n' | parted -a none $LOOP unit B resizepart $IMG_ROOT_PARTN $TRUNCATE_TOTAL ---pretend-input-tty"
-    #parted -s -a none "$LOOP" unit B resizepart "$IMG_ROOT_PARTN" "$TOTAL"
-    #if ! output=$(parted -s -a none "$LOOP" unit B resizepart "$IMG_ROOT_PARTN" "$TRUNCATE_TOTAL" 2>&1); then # does not work, still asking for user confirmation even though --script is used
+
+    #if ! output=$(parted -s -a none "$LOOP" unit B resizepart "$IMG_ROOT_PARTN" "$TRUNCATE_TOTAL" 2>&1); then # retry this after -f got removed, before = does not work, still asking for user confirmation even though --script and -f (automatically answer "fix" to exceptions in script mode) is used
     if ! output=$(printf 'Yes\n' | parted -a none "$LOOP" unit B resizepart "$IMG_ROOT_PARTN" "$TRUNCATE_TOTAL" ---pretend-input-tty 2>&1); then
       echo -e "$output\n## PARTED FAILED!!!"
       debug 'BREAK'
@@ -535,7 +630,7 @@ function do_resize() {
 
     echo '## Shrinking img file...'
     sleep 1
-    debug 'INFO' 'Using truncate to shrink img file'
+    debug 'INFO' "Using truncate to shrink img file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
     debug 'DEBUG' "Running: truncate --size=$TRUNCATE_TOTAL $IMG_FILE"
     if ! output=$(truncate --size="$TRUNCATE_TOTAL" "$IMG_FILE" 2>&1); then
       echo -e "$output\n## TRUNCATE FAILED!!!"
@@ -604,10 +699,10 @@ function do_rsync() {
 # Function to create a backup img file
 function make_img() {
 
-  debug 'DEBUG' 'Running function: get_dev_variables'
+  debug 'INFO' 'Running function: get_dev_variables'
   get_dev_variables
 
-  debug 'DEBUG' 'Running function: get_shared_variables'
+  debug 'INFO' 'Running function: get_shared_variables'
   get_shared_variables
 
   # Display information
@@ -615,26 +710,33 @@ function make_img() {
     echo ''
     echo '##############################################################################'
     echo "# A backup will be created at $IMG_FILE"
+    if [ "$FSTYPE" == 'ext4' ]; then
+      echo '# ext4 filesystem detected on root'
+    else
+      echo '# btrfs filesystem detected on root'
+      echo "# ${#LOCAL_SUBVOLUMES[@]} btrfs volumes will be included"
+      echo "# btrfs volumes: ${LOCAL_SUBVOLUMES[@]}"
+    fi
     echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
-    echo "# Resize2fs decide size: $RESIZE2FS_RUN"
+    echo "# Autresize img root partition: $RESIZE2FS_RUN"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
     echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MB"
-    echo "# Estemated root usage: $(( $(df / --output=used | tail -1) / 1024 ))MB"
+    echo "# Estemated root usage: $(( $(df / -k --sync --output=used | tail -1) / 1024 ))MB"
     if [ "$RESIZE2FS_RUN" == true ]; then
-      echo "# Resize2fs decide minimum (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
+      echo "# Auto calculated size (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
       echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
     else
       echo "# Manually added space: $(( ADDED_SPACE / 1024 / 1024 ))MB"
       echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB with $(( ADDED_SPACE / 1024 / 1024 ))MB extra space included."
       if [ "$WIGGLE_USE" == true ]; then
         echo '# ----------------------------------------------------------------------------'
-        echo "# WARNING!!! Manually added space is smaller than resize2fs recommended minimum"
+        echo "# WARNING!!! Manually added space is smaller than calculated recommended minimum"
         echo "# This does NOT mean the backup WILL fail, but CAN fail due to lack of space"
-        echo "# Concider using the -a option or adding more space"
+        echo "# Concider using the -a option or manually adding more space"
         echo "# Requested root size: $(( TOTAL / 1024 / 1024 ))MB"
-        echo "# Resize2fs recommended minimum: $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
+        echo "# Calculated recommended minimum: $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
       fi
     fi
     echo '##############################################################################'
@@ -643,13 +745,14 @@ function make_img() {
     read -p "Do you want to continue? [y/n] " -n 1 -r
     debug 'INFO' 'Do you want to continue? [y/n]'
     if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
-      debug 'USER_INPUT' 'Aborted by user, clean exit 2'
+      debug 'WARNING' 'Aborted by user, clean exit 2'
       echo ''
-      echo 'Aborting...'
+      echo '## Aborting...'
       exit 2
     fi
     echo ''
-    debug 'USER_INPUT' 'Y or y pressed to confirm'
+    debug 'INFO' 'Y or y pressed to confirm'
+    debug 'BREAK'
 
     if test -f "$IMG_FILE"; then
       debug 'WARNING' "$IMG_FILE ALREADY EXISTS!"
@@ -657,15 +760,15 @@ function make_img() {
       echo "$IMG_FILE"
       echo 'FILE ALREADY EXISTS!!!'
       read -p "Do you want to overwrite? [y/n] " -n 1 -r
-      debug 'INFO' 'Do you want to overwrite? [y/n]'
+      debug 'WARNING' 'Do you want to overwrite? [y/n]'
       if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
-        debug 'USER_INPUT' 'Aborted by user, clean exit 2'
+        debug 'WARNING' 'Aborted by user, clean exit 2'
         echo ''
-        echo 'Aborting...'
+        echo '## Aborting...'
         exit 2
       fi
       echo ''
-      debug 'USER_INPUT' 'Overwrite confirmed by user'
+      debug 'WARNING' 'Overwrite confirmed by user'
     fi
 
   else
@@ -674,37 +777,45 @@ function make_img() {
     echo '##############################################################################'
     echo '# DISABLE PROMPTS SELECTED (-y), NO WARNINGS ABOUT DELETION!!!'
     echo "# A backup will be created at $IMG_FILE"
+    if [ "$FSTYPE" == 'ext4' ]; then
+      echo '# ext4 filesystem detected on root'
+    else
+      echo '# btrfs filesystem detected on root'
+      echo "# ${#LOCAL_SUBVOLUMES[@]} btrfs volumes will be included"
+      echo "# btrfs volumes: ${LOCAL_SUBVOLUMES[@]}"
+    fi
     echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
-    echo "# Resize2fs decide size: $RESIZE2FS_RUN"
+    echo "# Autresize img root partition: $RESIZE2FS_RUN"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
     echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MB"
-    echo "# Estemated root usage: $(( $(df / --output=used | tail -1) / 1024 ))MB"
+    echo "# Estemated root usage: $(( $(df / -k --sync --output=used | tail -1) / 1024 ))MB"
     if [ "$RESIZE2FS_RUN" == true ]; then
-      echo "# Resize2fs decide minimum (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
+      echo "# Auto calculated size (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
       echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
     else
       echo "# Manually added space: $(( ADDED_SPACE / 1024 / 1024 ))MB"
       echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB with $(( ADDED_SPACE / 1024 / 1024 ))MB extra space included."
       if [ "$WIGGLE_USE" == true ]; then
         echo '# ----------------------------------------------------------------------------'
-        echo "# WARNING!!! Manually added space is smaller than resize2fs recommended minimum"
+        echo "# WARNING!!! Manually added space is smaller than calculated recommended minimum"
         echo "# This does NOT mean the backup WILL fail, but CAN fail due to lack of space"
-        echo "# Concider using the -a option or adding more space"
+        echo "# Concider using the -a option or manually adding more space"
         echo "# Requested root size: $(( TOTAL / 1024 / 1024 ))MB"
-        echo "# Resize2fs recommended minimum: $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
+        echo "# Calculated recommended minimum: $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
       fi
     fi
     echo '# PRESS CTRL+C WITHIN 5s TO CANCEL!'
     echo '##############################################################################'
     sleep 6
     debug 'INFO' '6 seconds passed, user did not stop operation'
+    debug 'BREAK'
   fi
 
   # Delete existing file if user validation above passed
   if [ -f "$IMG_FILE" ]; then
-    debug 'DEBUG' "Removing: $IMG_FILE"
+    debug 'WARNING' "Removing: $IMG_FILE"
     echo '## Removing old img file...'
     rm "$IMG_FILE"
     sleep 1
@@ -728,7 +839,7 @@ function make_img() {
   # Truncate file to correct size
   echo "## Resizing img file..."
   sleep 1
-  debug 'INFO' "Using truncate to resize img file' to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
+  debug 'INFO' "Using truncate to resize img file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
   debug 'DEBUG' "Running: truncate --size=$TRUNCATE_TOTAL $IMG_FILE"
   if ! output=$(truncate --size="$TRUNCATE_TOTAL" "$IMG_FILE" 2>&1); then
     echo -e "$output\n## TRUNCATE FAILED!!!"
@@ -739,26 +850,83 @@ function make_img() {
   sleep 1
 
   # Loop img file
-  debug 'INFO' 'Looping img file'
   debug 'DEBUG' 'Running function: do_loop'
   do_loop
 
   # Remove partition
   echo '## Removing root partition...'
   sleep 1
-  debug 'INFO' 'Using sfdisk to remove root partition'
-  debug 'DEBUG' "Running: sfdisk --delete -f $LOOP $LOCAL_ROOT_PARTN"
-  #parted -s "$LOOP" rm "$IMG_ROOT_PARTN" # does not work, still asking for user confirmation even though --script is used
-  #debug 'INFO' 'Using parted to remove root partition'
-  #debug 'DEBUG' "Running: printf 'Ignore\\\n'$LOCAL_ROOT_PARTN | parted $LOOP rm $LOCAL_ROOT_PARTN ---pretend-input-tty"
-  if ! output=$(sfdisk --delete -f "$LOOP" "$LOCAL_ROOT_PARTN" 2>&1); then # seems to fail if img size is very big
-  #if ! output=$(printf 'Ignore\n'$LOCAL_ROOT_PARTN | parted $LOOP rm $LOCAL_ROOT_PARTN ---pretend-input-tty 2>&1); then # fails on raspberry pi os
-    echo -e "$output\n## SFDISK FAILED!!!"
-    #echo -e "$output\n## PARTED FAILED!!!"
-    debug 'BREAK'
-    debug 'ERROR' "SFDISK FAILED:\n$output\n------------------------------------------------------------------------------"
-    #debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
-    exit 1
+
+  # GPT
+  if [ $PARTITION_TABLE == 'gpt' ]; then
+    echo '## GPT partition table detected, sgdisk is needed, checking if installed...'
+    sleep 1
+    if [[ ! -f $(which sgdisk 2>&1) ]]; then
+      echo '## sgdisk is NOT installed...'
+      read -p "Do you want to try to install? [y/n] " -n 1 -r
+      debug 'INFO' 'Do you want to try to install? [y/n]'
+      if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
+        debug 'WARNING' 'Aborted by user, clean exit 2'
+        echo ''
+        echo '## Aborting...'
+        exit 2
+      fi
+      echo ''
+      debug 'INFO' 'Y or y pressed to confirm'
+      if [[ -f $(which apt 2>&1) ]]; then
+        echo '## apt found, trying to install gdisk...'
+        debug 'DEBUG' 'Running: apt update -y && apt upgrade -y && apt install gdisk -y'
+        sleep 1
+        apt update -y && apt upgrade -y && apt install gdisk -y
+        sleep 1
+      elif [[ -f $(which pacman 2>&1) ]]; then
+        echo '## pacman found, trying to install gdisk...'
+        debug 'DEBUG' 'Running: pacman -Syu && pacman -S gptfdisk'
+        sleep 1
+        pacman -Syu && pacman -S gptfdisk
+        sleep 1
+      else
+        echo '## Did not manage to install sgdisk, please install gdisk and retry script...'
+        debug 'ERROR' 'Did not succeed in installing sgdisk, aborting exit 1'
+        echo '## Aborting...'
+        exit 1
+      fi
+
+    else
+
+      echo '## sgdisk is installed, resuming backup...'
+      sleep 1
+    fi
+
+    debug 'INFO' 'Using sgdisk to remove root partition'
+    debug 'DEBUG' "Running: sgdisk $LOOP -d $LOCAL_ROOT_PARTN"
+
+    if ! output=$(sgdisk "$LOOP" -d "$LOCAL_ROOT_PARTN" 2>&1); then
+      echo -e "$output\n## SGDISK FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "SGDISK FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+
+  else
+
+    # MBR
+    debug 'INFO' 'Using sfdisk to remove root partition'
+    #debug 'INFO' 'Using parted to remove root partition'
+    debug 'DEBUG' "Running: sfdisk --delete -f $LOOP $LOCAL_ROOT_PARTN"
+    #debug 'DEBUG' "Running: parted -s $LOOP rm $LOCAL_ROOT_PARTN"
+    #debug 'DEBUG' "Running: printf 'Ignore\\\n'$LOCAL_ROOT_PARTN | parted $LOOP rm $LOCAL_ROOT_PARTN ---pretend-input-tty"
+
+    if ! output=$(sfdisk --delete -f "$LOOP" "$LOCAL_ROOT_PARTN" 2>&1); then # might fail if img size is very big
+    #if ! output=$(parted -s "$LOOP" rm "$LOCAL_ROOT_PARTN" 2>&1); then # retry this after -f got removed, before = does not work, still asking for user confirmation even though --script and -f (automatically answer "fix" to exceptions in script mode) is used. faults with: "Error: Can't have a partition outside the disk!". for some reason this line works in the resizing function
+    #if ! output=$(printf 'Ignore\n'$LOCAL_ROOT_PARTN | parted $LOOP rm $LOCAL_ROOT_PARTN ---pretend-input-tty 2>&1); then # raspberry pi os does not like this method, keep for memory
+      echo -e "$output\n## SFDISK FAILED!!!"
+      #echo -e "$output\n## PARTED FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "SFDISK FAILED:\n$output\n------------------------------------------------------------------------------"
+      #debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
   fi
   sleep 1
 
@@ -766,51 +934,188 @@ function make_img() {
   echo '## Recreating root partition...'
   sleep 1
   debug 'INFO' 'Using parted to recreate root partition'
-  debug 'DEBUG' "Running: parted -s -a none $LOOP unit B mkpart primary ext4 $LOCAL_ROOT_START 100%"
-  if ! output=$(parted -s -a none "$LOOP" unit B mkpart primary ext4 "$LOCAL_ROOT_START" 100% 2>&1); then
-    echo -e "$output\n## PARTED FAILED!!!"
-    debug 'BREAK'
-    debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
-    exit 1
+
+  # ext4
+  if [ $FSTYPE == 'ext4' ]; then
+    debug 'DEBUG' "Running: parted -s -a none $LOOP unit B mkpart primary ext4 $LOCAL_ROOT_START 100%"
+    if ! output=$(parted -s -a none "$LOOP" unit B mkpart primary ext4 "$LOCAL_ROOT_START" 100% 2>&1); then
+      echo -e "$output\n## PARTED FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+
+  # btrfs
+  else
+    debug 'DEBUG' "Running: parted -s -a none $LOOP unit B mkpart primary btrfs $LOCAL_ROOT_START 100%"
+    if ! output=$(parted -s -a none "$LOOP" unit B mkpart primary btrfs "$LOCAL_ROOT_START" 100% 2>&1); then
+      echo -e "$output\n## PARTED FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
   fi
   sleep 1
 
   # Format filesystem
   echo '## Formatting filesystem...'
   sleep 1
-  debug 'INFO' 'Using mkfs.ext4 to format root filesystem'
-  LABEL=( $(lsblk -o label "$LOCAL_DEV_ROOT_PATH" | tail -1) )
-  UUID=( $(lsblk -o uuid "$LOCAL_DEV_ROOT_PATH" | tail -1) )
+  LABEL=$(lsblk -o label "$LOCAL_DEV_ROOT_PATH" | tail -1)
+  UUID=$(lsblk -o uuid "$LOCAL_DEV_ROOT_PATH" | tail -1)
+  debug 'DEBUG' "LABLEL=$LABEL | UUID=$UUID"
 
-  if ! output=$(mkfs.ext4 "$IMG_DEV_ROOT_PATH" -U "$UUID" -L "$LABEL" -v 2>&1 | tee /dev/tty ); then
-    echo -e "$output\n## MKFS.EXT4 FAILED!!!"
+  # ext4
+  if [ $FSTYPE = 'ext4' ]; then
+    debug 'INFO' 'Using mkfs.ext4 to format root filesystem'
+    if ! output=$(mkfs.ext4 "$IMG_DEV_ROOT_PATH" -U "$UUID" -L "$LABEL" -v 2>&1 | tee /dev/tty ); then
+      echo -e "$output\n## MKFS.EXT4 FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "MKFS.EXT4 FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
     debug 'BREAK'
-    debug 'ERROR' "MKFS.EXT4 FAILED:\n$output\n------------------------------------------------------------------------------"
-    exit 1
+    debug 'DEBUG' "Running: mkfs.ext4 $IMG_DEV_ROOT_PATH -U $UUID -L $LABEL -v\n$output\n------------------------------------------------------------------------------"
+    sleep 1
+
+    debug 'INFO' 'Running function: do_e2fsck'
+    do_e2fsck
+
+    debug 'INFO' 'Running function: do_mount'
+    do_mount
+
+  # btrfs
+  else
+    debug 'INFO' 'Using mkfs.btrfs to format root filesystem'
+    partprobe "$LOOP"
+    if ! output=$(mkfs.btrfs -m single -L "$LABEL" -f -v "$IMG_DEV_ROOT_PATH" 2>&1 | tee /dev/tty ); then # btrfs does NOT like having the same uuid on 2 filesystems at the same time
+      echo -e "$output\n## MKFS.BTRFS FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "MKFS.BTRFS FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+    debug 'BREAK'
+    debug 'DEBUG' "Running: mkfs.btrfs -m single -L $LABEL -f -v $IMG_DEV_ROOT_PATH\n$output\n------------------------------------------------------------------------------"
+    sleep 1
+
+    # Check for temp directory and create if needed
+    if ! [ -d "$TMP_DIR" ]; then
+      echo '## Creating temp directory...'
+      sleep 1
+      debug 'INFO' 'Creating temp directory'
+      debug 'DEBUG' "Running: mktemp -d -t backup-XXXXXXXXXX"
+      TMP_DIR=$(mktemp -d -t backup-XXXXXXXXXX)
+      debug 'DEBUG' "TMP_DIR=$TMP_DIR"
+    fi
+
+    echo '## Creating btrfs subvolumes...'
+    debug 'INFO' 'Creating btrfs subvolumes'
+    debug 'DEBUG' "Running: mount -o compress=zstd $IMG_DEV_ROOT_PATH $TMP_DIR"
+    if ! output=$(mount -o noatime,compress=zstd "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
+      echo -e "$output\n## ROOT MOUNT FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "ROOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+    sleep 1
+
+    # Create top subvolumes, ${#LOCAL_SUBVOLUMES[@]} gives count
+    for ((i = 0; i < ${#LOCAL_SUBVOLUMES[@]}; i++)); do
+      SUBVOL_PATH="${LOCAL_SUBVOLUMES[i]}"
+      if [[ "$SUBVOL_PATH" == '@'* ]]; then
+        echo "## Creating subvolume: $SUBVOL_PATH"
+        debug 'DEBUG' "Running: btrfs subvolume create ${TMP_DIR}/${SUBVOL_PATH}"
+        if ! output=$(btrfs subvolume create "$TMP_DIR"/"$SUBVOL_PATH" 2>&1); then
+          echo -e "$output\n## CREATE SUBVOLUME FAILED!!!"
+          debug 'BREAK'
+          debug 'ERROR' "CREATE SUBVOLUME FAILED:\n$output\n------------------------------------------------------------------------------"
+          exit 1
+        fi
+      fi
+      sleep 1
+    done
+
+    echo '## Mounting root...'
+    debug 'INFO' 'Unmounting btrfs filesystem & mounting root subvolume'
+    debug 'DEBUG' "Running: umount $TMP_DIR"
+    umount "$TMP_DIR"
+    sleep 1
+    partprobe "$LOOP"
+    #fstab=( $(cat /etc/fstab | grep "${LOCAL_SUBVOLUMES[0]}") )
+    fstab=( $(cat /etc/fstab | grep '/ ') )
+    debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH $TMP_DIR"
+    if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
+      echo -e "$output\n## ROOT SUBVOLUME MOUNT FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "ROOT SUBVOLUME MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+    sleep 1
+
+    # Create nested volumes/snapshots
+    debug 'INFO' 'Creating nested volumes/snapshots'
+    for ((i = 0; i < ${#LOCAL_SUBVOLUMES[@]}; i++)); do
+      SUBVOL_PATH="${LOCAL_SUBVOLUMES[i]}"
+      if [[ "$SUBVOL_PATH" != '@'* ]]; then
+        debug 'DEBUG' "Running: mkdir -p $TMP_DIR/$(dirname $SUBVOL_PATH)"
+        mkdir -p $TMP_DIR/$(dirname $SUBVOL_PATH)
+
+        echo "## Creating volume: $SUBVOL_PATH"
+        debug 'DEBUG' "Running: btrfs subvolume create ${TMP_DIR}/${SUBVOL_PATH}"
+        if ! output=$(btrfs subvolume create "$TMP_DIR"/"$SUBVOL_PATH" 2>&1); then
+          echo -e "$output\n## CREATE VOLUME FAILED!!!"
+          debug 'BREAK'
+          debug 'ERROR' "CREATE VOLUME FAILED:\n$output\n------------------------------------------------------------------------------"
+          exit 1
+        fi
+      fi
+      sleep 1
+    done
+
+    echo '## Mounting img btrfs volumes...'
+    debug 'INFO' 'Mounting volumes'
+    sleep 1
+    partprobe "$LOOP"
+
+    for ((i = 0; i < ${#LOCAL_SUBVOLUMES[@]}; i++)); do
+      SUBVOL_PATH="${LOCAL_SUBVOLUMES[i]}"
+      if $(cat /etc/fstab | grep -q "$SUBVOL_PATH") && [[ "$SUBVOL_PATH" != '@' ]]; then
+        fstab=( $(cat /etc/fstab | grep "$SUBVOL_PATH") )
+        debug 'DEBUG' "Running: mkdir -p ${TMP_DIR}${fstab[1]}"
+        mkdir -p ${TMP_DIR}${fstab[1]}
+        echo "## Mounting subvolume: $SUBVOL_PATH"
+        debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH ${TMP_DIR}${fstab[1]}"
+        if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" ${TMP_DIR}${fstab[1]} 2>&1); then
+          echo -e "$output\n## VOLUME MOUNT FAILED!!!"
+          debug 'BREAK'
+          debug 'ERROR' "VOLUME MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+          exit 1
+        fi
+      fi
+      sleep 1
+    done
+
+    echo '## Mounting boot...'
+    debug 'DEBUG' "Running: mount $IMG_DEV_BOOT_PATH ${TMP_DIR}${BOOT_PATH}"
+    mkdir -p ${TMP_DIR}${BOOT_PATH}
+    if ! output=$(mount "$IMG_DEV_BOOT_PATH" "${TMP_DIR}${BOOT_PATH}" 2>&1); then
+      echo -e "$output\n## BOOT MOUNT FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "BOOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+    sleep 1
   fi
-  debug 'BREAK'
-  debug 'DEBUG' "Running: mkfs.ext4 $IMG_DEV_ROOT_PATH -U $UUID -L $LABEL -F -v\n$output\n------------------------------------------------------------------------------"
-  sleep 1
-
-  # Check img filesystem
-  debug 'INFO' 'Scanning filesystem'
-  debug 'DEBUG' 'Running function: do_e2fsck'
-  do_e2fsck
-
-  # Mount img file
-  debug 'INFO' 'Mounting img file'
-  debug 'DEBUG' 'Running function: do_mount'
-  do_mount
 
   # Copy files
   debug 'INFO' 'Backing up files'
-  debug 'DEBUG' 'Running function: do_rsync'
+  debug 'INFO' 'Running function: do_rsync'
   do_rsync
 
-  # Final check of created img file
-  debug 'INFO' 'Finalizing filesystem'
-  debug 'DEBUG' "Running do_e2fsck 'final'"
-  do_e2fsck 'final'
+  if [ $FSTYPE == 'ext4' ]; then
+    # Final check of created img file
+    debug 'INFO' "Running do_e2fsck 'final'"
+    do_e2fsck 'final'
+  fi
 
   return 0
 }
@@ -827,21 +1132,23 @@ function do_backup() {
     exit 1
   fi
 
-  debug 'DEBUG' 'Running function: get_img_variables'
-  get_img_variables
-
-  debug 'DEBUG' 'Running function: get_shared_variables'
+  debug 'INFO' 'Running function: get_shared_variables'
   get_shared_variables
 
-  if [ "$RESIZE2FS_RUN" == true ] || [ "$ADDED_SPACE" -ne 0 ]; then
-    debug 'DEBUG' 'Running function: get_dev_variables'
-    get_dev_variables
-  fi
-
-  # Loop img file
-  debug 'INFO' 'Looping img file'
-  debug 'DEBUG' 'Running function: do_loop'
+  debug 'INFO' 'Running function: do_loop'
   do_loop
+
+  debug 'INFO' 'Running function: get_img_variables'
+  get_img_variables
+
+  if [ "$RESIZE2FS_RUN" == true ] || [ "$ADDED_SPACE" -ne 0 ]; then
+    debug 'INFO' 'Running function: get_dev_variables'
+    # get_btrfs_variables is run within get_dev_variables
+    get_dev_variables
+  elif [ "$FSTYPE" == 'btrfs' ] && [ "$RESIZE2FS_RUN" == false ] && [ "$ADDED_SPACE" -eq 0 ]; then
+    debug 'INFO' 'Running function: get_btrfs_variables'
+    get_btrfs_variables
+  fi
 
   # Checking if resizing should be performed
   if [ "$RESIZE2FS_RUN" == true ]; then
@@ -867,24 +1174,32 @@ function do_backup() {
   if [ "$PROMPTS" == true ]; then
     echo '##############################################################################'
     echo "# Updating $IMG_FILE"
+    if [ "$FSTYPE" == 'ext4' ]; then
+      echo '# ext4 filesystem detected on root'
+    else
+      echo '# btrfs filesystem detected on root'
+      echo "# ${#LOCAL_SUBVOLUMES[@]} btrfs volumes will be included"
+      echo "# btrfs volumes: ${LOCAL_SUBVOLUMES[@]}"
+    fi
     echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
-    echo "# Resize2fs decide size: $RESIZE2FS_RUN"
+    echo "# Autresize img root partition: $RESIZE2FS_RUN"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
     if [ "$RESIZE2FS_RUN" == true ]; then
       echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MB"
-      echo "# Resize2fs decide minimum (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
+      echo "# Auto calculated size (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
       echo "# Old img size: $(( IMG_SIZE / 1024 / 1024 ))MB"
       echo "# New img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
       echo "# Difference: $DIFFERENCE"
     elif [ "$ADDED_SPACE" -ne 0 ]; then
       echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MB"
+      echo "# Estemated root usage: $(( $(df / -k --sync --output=used | tail -1) / 1024 ))MB"
       echo "# Old img size: $(( IMG_SIZE / 1024 / 1024 ))MB"
       echo "# New img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
       echo "# Difference: $(( ADDED_SPACE / 1024 / 1024 ))MB"
     else
-      echo "# Used space on root: $(( $(df / --output=used | tail -1) / 1024 ))MB"
+      echo "# Estemated root usage: $(( $(df / -k --sync --output=used | tail -1) / 1024 ))MB"
       echo "# Total img size: $(( IMG_SIZE / 1024 / 1024 ))MB"
     fi
     echo '##############################################################################'
@@ -893,101 +1208,108 @@ function do_backup() {
     read -p "Do you want to continue? [y/n] " -n 1 -r
     debug 'INFO' 'Do you want to continue? [y/n]'
     if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
-      debug 'USER_INPUT' 'Aborted by user, cleanup exit 3'
+      debug 'WARNING' 'Aborted by user, cleanup exit 3'
       echo ''
       echo 'Aborting...'
       exit 3
     fi
     echo ''
-    debug 'USER_INPUT' 'Y or y pressed to confirm'
+    debug 'INFO' 'Y or y pressed to confirm'
+    debug 'BREAK'
 
   else
 
     echo '##############################################################################'
     echo '# DISABLE PROMPTS SELECTED'
     echo "# Updating $IMG_FILE"
+    if [ "$FSTYPE" == 'ext4' ]; then
+      echo '# ext4 filesystem detected on root'
+    else
+      echo '# btrfs filesystem detected on root'
+      echo "# ${#LOCAL_SUBVOLUMES[@]} btrfs volumes will be included"
+      echo "# btrfs volumes: ${LOCAL_SUBVOLUMES[@]}"
+    fi
     echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
-    echo "# Resize2fs decide size: $RESIZE2FS_RUN"
+    echo "# Autresize img root partition: $RESIZE2FS_RUN"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
     if [ "$RESIZE2FS_RUN" == true ]; then
       echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MB"
-      echo "# Resize2fs decide minimum (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
+      echo "# Auto calculated size (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
       echo "# Old img size: $(( IMG_SIZE / 1024 / 1024 ))MB"
       echo "# New img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
       echo "# Difference: $DIFFERENCE"
     elif [ "$ADDED_SPACE" -ne 0 ]; then
       echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MB"
+      echo "# Estemated root usage: $(( $(df / -k --sync --output=used | tail -1) / 1024 ))MB"
       echo "# Old img size: $(( IMG_SIZE / 1024 / 1024 ))MB"
       echo "# New img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
       echo "# Difference: $(( ADDED_SPACE / 1024 / 1024 ))MB"
     else
-
-      echo "# Used space on root: $(( $(df / --output=used | tail -1) / 1024 ))MB"
+      echo "# Estemated root usage: $(( $(df / -k --sync --output=used | tail -1) / 1024 ))MB"
       echo "# Total img size: $(( IMG_SIZE / 1024 / 1024 ))MB"
     fi
     echo '# PRESS CTRL+C WITHIN 5s TO CANCEL!'
     echo '##############################################################################'
     sleep 6
     debug 'INFO' '6 seconds passed, user did not stop operation'
+    debug 'BREAK'
   fi
 
   # Checking if resizing should be performed
   if [ "$RESIZE2FS_RUN" == true ]; then
     if [ "$IMG_ROOT_SIZE" -lt "$LOCAL_RESIZE2FS_MIN" ] && (( LOCAL_RESIZE2FS_MIN - IMG_ROOT_SIZE >= 268435456 )); then # 256MB in Bytes
-      debug 'INFO' 'Img root partition size is smaller than resize2fs recommended minimum'
+      debug 'INFO' 'Img root partition size is smaller than auto calculated size'
       debug 'DEBUG' "Difference=$diff MB"
-      debug 'DEBUG' "Running function: do_resize 'expand'"
+      debug 'INFO' "Running function: do_resize 'expand'"
       do_resize 'expand'
 
     elif [ "$IMG_ROOT_SIZE" -gt "$LOCAL_RESIZE2FS_MIN" ] && (( IMG_ROOT_SIZE - LOCAL_RESIZE2FS_MIN >= 536870912 )); then # 512MB in Bytes
-      debug 'INFO' 'Img root partition size is bigger than resize2fs recommended minimum'
+      debug 'INFO' 'Img root partition size is bigger than auto calculated size'
       debug 'DEBUG' "diff=$diff MB"
 
       # Mount img file
-      debug 'INFO' 'Mounting img file'
-      debug 'DEBUG' 'Running function: do_mount'
+      debug 'INFO' 'Running function: do_mount'
       do_mount
 
       # Copy files
       debug 'INFO' 'Backing up files'
-      debug 'DEBUG' 'Running function: do_rsync'
+      debug 'INFO' 'Running function: do_rsync'
       do_rsync
 
       # Shrink img file
       debug 'INFO' 'Shrinking img filesystem'
-      debug 'DEBUG' "Running function: do_resize 'shrink'"
+      debug 'INFO' "Running function: do_resize 'shrink'"
       do_resize 'shrink'
       return 0
 
     else
-      echo '## Difference too small, no resizing needed...'
-      debug 'INFO' 'Img root partition is >=64MB smaller or <=512MB bigger compared size to resize2fs recommended minimum, not resizing'
+      debug 'INFO' 'Img root partition is <=256MB smaller or <=512MB bigger compared to auto calculated size, not resizing'
       sleep 1
     fi
   fi
 
   # Expand img file if ADDED_SPACE not 0
   if [ "$ADDED_SPACE" -ne 0 ]; then
-    debug 'DEBUG' "Running function: do_resize 'expand'"
+    debug 'INFO' "Running function: do_resize 'expand'"
     do_resize 'expand'
   fi
 
   # Mount img file
-  debug 'INFO' 'Mounting img file'
-  debug 'DEBUG' 'Running function: do_mount'
+  debug 'INFO' 'Running function: do_mount'
   do_mount
 
   # Copy files
   debug 'INFO' 'Backing up files'
-  debug 'DEBUG' 'Running function: do_rsync'
+  debug 'INFO' 'Running function: do_rsync'
   do_rsync
 
-  # Final check of img filesystem
-  debug 'INFO' 'Finalizing filesystem'
-  debug 'DEBUG' "Running do_e2fsck 'final'"
-  do_e2fsck 'final'
+  if [ $FSTYPE == 'ext4' ]; then
+    # Final check of created img file
+    debug 'INFO' "Running do_e2fsck 'final'"
+    do_e2fsck 'final'
+  fi
 
   return 0
 }
@@ -1081,7 +1403,7 @@ LOCAL_DEV_ROOT_PATH=\$(lsblk -lpo mountpoint,path | grep '/ ' | awk '{print \$2}
 LOCAL_ROOT_START=\$(fdisk -lo start "\$LOCAL_DEV_PATH" | tail -1 | awk '{print \$1}') # blocks, 512B block size
 LOCAL_ROOT_START=\$(( LOCAL_ROOT_START * 512 )) # bytes
 
-sfdisk --delete "\$LOCAL_DEV_PATH" "\$LOCAL_ROOT_PARTN"
+sfdisk --delete -f "\$LOCAL_DEV_PATH" "\$LOCAL_ROOT_PARTN"
 parted -s -a none "\$LOCAL_DEV_PATH" unit B mkpart primary ext4 "\$LOCAL_ROOT_START" 100%
 resize2fs -f "\$LOCAL_DEV_ROOT_PATH"
 sync
@@ -1130,13 +1452,14 @@ EOF
   debug 'DEBUG' 'Creating expansion script ${TMP_DIR}/expand-fs.sh'
   cat << EOF2 > "${TMP_DIR}/expand-fs.sh"
 #!/usr/bin/bash
-LOCAL_DEV_MAJ=\$(lsblk -lpo mountpoint,maj:min,type,path | grep '/ ' | awk '{print \$2}' | cut -d : -f 1)
-LOCAL_ROOT_PARTN=\$(lsblk -lpo mountpoint,maj:min,type,path | grep '/ ' | awk '{print \$2}' | cut -d : -f 2)
-LOCAL_DEV_PATH=\$(lsblk -lpo maj:min,type,path | grep "\$LOCAL_DEV_MAJ" | grep 'disk' | awk '{print \$3}')
+LOCAL_DEV_PTUUID=\$(lsblk -lpo mountpoint,ptuuid | grep '/ ' | awk '{print \$2}')
+LOCAL_DEV_PATH=\$(lsblk -lpo ptuuid,type,path | grep "\$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print \$3}')
+LOCAL_ROOT_PARTN=\$(parted -sm "\$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
 LOCAL_DEV_ROOT_PATH=\$(lsblk -lpo mountpoint,path | grep '/ ' | awk '{print \$2}')
-LOCAL_ROOT_START=\$(fdisk --bytes -lo start "\$LOCAL_DEV_PATH" | tail -1)
+LOCAL_ROOT_START=\$(fdisk -lo start "\$LOCAL_DEV_PATH" | tail -1 | awk '{print \$1}') # blocks, 512B block size
+LOCAL_ROOT_START=\$(( LOCAL_ROOT_START * 512 )) # bytes
 
-sfdisk --delete "\$LOCAL_DEV_PATH" "\$LOCAL_ROOT_PARTN"
+sfdisk --delete -f "\$LOCAL_DEV_PATH" "\$LOCAL_ROOT_PARTN"
 parted -s -a none "\$LOCAL_DEV_PATH" unit B mkpart primary ext4 "\$LOCAL_ROOT_START" 100%
 resize2fs -f "\$LOCAL_DEV_ROOT_PATH"
 sync
@@ -1173,9 +1496,6 @@ function print_result() {
       echo "## $IMG_FILE is ${AFTER_SIZE}MB with $(( ADDED_SPACE / 1024 / 1024 ))MB extra space included."
       debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MB with $(( ADDED_SPACE / 1024 / 1024 ))MB extra space included"
     fi
-    if [ $AUTOEXPAND == true ]; then
-      echo "## Please wait for the system to reboot after restoring an image with autoexpansion."
-    fi
   else
     echo '## Backup done.'
     echo '##############################################################################'
@@ -1191,6 +1511,7 @@ function print_result() {
   fi
   echo '##############################################################################'
   debug 'INFO' 'Img file created and backup done'
+  debug 'BREAK'
   return 0
 }
 
@@ -1207,6 +1528,42 @@ do
     break
   fi
 done
+
+echo '## Scanning filesystem and calculating...'
+
+# Check if debugging is requested
+if [ "$DEBUG" == true ]; then
+  echo "## Debugging requested, writing to log file $LOG_FILE"
+  debug 'INFO' "Debugging requested, writing to log file $LOG_FILE"
+fi
+
+# Check what filesystem root is using
+if lsblk -lo mountpoint,fstype | grep '/ ' | grep -q 'ext4'; then
+  FSTYPE='ext4'
+  debug 'INFO' 'ext4 root filesystem detected'
+  debug 'DEBUG' "FSTYPE=$FSTYPE"
+else
+  FSTYPE='btrfs'
+  debug 'INFO' 'btrfs root filesystem detected'
+  debug 'DEBUG' "FSTYPE=$FSTYPE"
+fi
+
+# Check what partition table is in use and set LOCAL_DEV_PATH
+if [ "$FSTYPE" == 'ext4' ]; then
+  LOCAL_DEV_PTUUID=$(lsblk -lpo mountpoint,ptuuid | grep '/ ' | awk '{print $2}')
+else
+  LOCAL_DEV_PTUUID=$(lsblk -lpo fsroots,ptuuid | grep '/ ' | awk '{print $2}')
+fi
+LOCAL_DEV_PATH=$(lsblk -lpo ptuuid,type,path | grep "$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print $3}')
+debug 'DEBUG' "LOCAL_DEV_PTUUID=$LOCAL_DEV_PTUUID | LOCAL_DEV_PATH=$LOCAL_DEV_PATH"
+
+PARTITION_TABLE=$(parted "$LOCAL_DEV_PATH" print | grep 'Partition Table' | awk '{print $3}')
+debug 'DEBUG' "PARTITION_TABLE=$PARTITION_TABLE"
+
+debug 'DEBUG' "Update existing img file, UPDATE=$UPDATE"
+debug 'DEBUG' "Requesting size from resize2fs, RESIZE2FS_RUN=$RESIZE2FS_RUN"
+debug 'DEBUG' "Prompt for user confirmation, PROMPTS=$PROMPTS"
+debug 'DEBUG' "Auto expansion, AUTOEXPAND=$AUTOEXPAND"
 
 # Setting ADDED_SPACE to 0 if RESIZE2FS_RUN option is enabled
 if [ "$RESIZE2FS_RUN" == true ]; then
@@ -1256,40 +1613,31 @@ if [[ "$IMG_FILE" != *.img ]]; then
   exit 2
 fi
 
-# Check if debugging is requested
-if [ "$DEBUG" == true ]; then
-  echo '## Scanning filesystem and calculating...'
-  debug 'INFO' "Debugging requested, writing to log file $(basename "$LOG_FILE")..."
-  debug 'INFO' "Update existing img file, UPDATE=$UPDATE"
-  debug 'INFO' "Requesting size from resize2fs, RESIZE2FS_RUN=$RESIZE2FS_RUN"
-  debug 'INFO' "Prompt for user confirmation, PROMPTS=$PROMPTS"
-  debug 'INFO' "Auto expansion, AUTOEXPAND=$AUTOEXPAND"
-fi
-
 # Check if usage of exclude.txt is requested
 if [ "$EXCLUDE_FILE" == true ]; then
-  debug 'INFO' '-f selected by user, using exclude.txt'
-  debug 'DEBUG' 'Checking if EXCLUDE_FILE exists'
+  debug 'INFO' "-f selected by user, using $(dirname $0)/exclude.txt"
   if ! [ -f $(dirname "$0")/exclude.txt ]; then
     echo 'ERROR! exclude.txt is not present in script directory!'
     debug 'ERROR' 'exclude.txt does not exist in script directory, exit 2'
     exit 2
   fi
-  debug 'INFO' "$(dirname $0)/exclude.txt exists"
+  debug 'DEBUG' "$(dirname $0)/exclude.txt exists"
 fi
 
 if [ "$UPDATE" != true ]; then
-  debug 'DEBUG' 'Executing make_img function'
+  debug 'INFO' 'Executing make_img function'
+  debug 'BREAK'
   make_img
 else
-  debug 'DEBUG' 'User selected -U, executing do_backup function'
+  debug 'INFO' '-U sekected by user, executing do_backup function'
+  debug 'BREAK'
   do_backup
 fi
 
 # Check if autoexpansion is requested and run required function
 if [ "$AUTOEXPAND" == true ]; then
   echo '## Enabling fs-autoexpand...'
-  debug 'DEBUG' 'Executing expand_fs function'
+  debug 'INFO' 'Executing expand_fs function'
   sleep 1
   if cat /etc/os-release | grep -i 'manjaro' >/dev/null; then
     echo '## Manjaro os detected...'
