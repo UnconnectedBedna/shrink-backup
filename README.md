@@ -3,9 +3,10 @@
 _I made this script because I wanted a universal method of backing up my SBC:s into small img files as fast as possible (with rsync), indepentent of what os is in use._
 
 Autoexpansion tested on **Raspberry Pi** os (bookworm and older), **Armbian**, **Manjaro-arm** and **ArchLinuxARM** for rpi with **ext4** root partition.
+(Now also experimental btrfs functionality, please read further down)
 
 **Latest release:** [shrink-backup.v0.9.4](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v0.9.4/shrink-backup.v0.9.4.tar.gz)<br>
-[**Testing branch**](https://github.com/UnconnectedBedna/shrink-backup/tree/testing) if you want to have the absolute latest version. Resizing of existing img file to minimum size and btrfs cloning is next on the roadmap and is being developed here.
+[**Testing branch**](https://github.com/UnconnectedBedna/shrink-backup/tree/testing) if you want to have the absolute latest version, there might be bugs.
 
 **Very fast restore thanks to minimal size of img file.**
 
@@ -84,6 +85,7 @@ Use `-l` to write debug info into `shrink-backup.log` file located in the same d
 - truncate
 - mkfs.ext4
 - rsync
+- gidisk (sgdisk is needed if the partition table is GPT, the script will inform you)
 
 ## Info
 
@@ -145,6 +147,17 @@ This is to protect from unessesary resizing operations most likely not needed.
 
 If manually added space is used in combination with `-U`, the img file/root partition will be expanded by that amount. No checks are being performed to make sure the data you want to back up will actually fit.<br>
 Only expansion is possible with this method.
+
+## btrfs
+
+**ALL testing has been done on Manjaro-arm**<br>
+**THIS IS NOT A CLONE, IT IS A BACKUP OF REQUIRED FILES FOR A BOOTABLE BTRFS SYSTEM!**
+
+All options in script should work just as on `ext4`. The script will detect `btrfs` and act accordingly.<br>
+The script will treat snapshots as nested volumes, so make sure to exclude snapshots if you have any, or directories and nested volumes will be created on the img file. This can be done in `exclude.txt`, wildcards _should_ work.<br>
+When starting the script, the initial report window will tell you what volumes will be created. **Make sure these are correct before pressing Y**<br>
+As of now, top level subvolumes are checked for in `/etc/fstab` and mounted accordingly, mount options should be preseved (for exmaple if you change compression).<br>
+Autoresize function works on Manjaro-arm.
 
 **Thank you for using my software <3**
 
