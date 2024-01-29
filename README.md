@@ -2,11 +2,11 @@
 
 _I made this script because I wanted a universal method of backing up my SBC:s into small img files as fast as possible (with rsync), indepentent of what os is in use._
 
-Autoexpansion tested on **Raspberry Pi** os (bookworm and older), **Armbian**, **Manjaro-arm** and **ArchLinuxARM** for rpi with **ext4** root partition.
-(Now also experimental btrfs functionality, please read further down)
+Autoexpansion tested on **Raspberry Pi** os (bookworm and older), **Armbian**, **Manjaro-arm** and **ArchLinuxARM** for rpi with **ext4** root partition.<br>
+(Now also **experimental** btrfs functionality, please read further down)
 
 **Latest release:** [shrink-backup.v0.9.5](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v0.9.5/shrink-backup.v0.9.5.tar.gz)<br>
-[**Testing branch**](https://github.com/UnconnectedBedna/shrink-backup/tree/testing) if you want to have the absolute latest version, there might be bugs.
+[**Testing branch**](https://github.com/UnconnectedBedna/shrink-backup/tree/testing) if you want to have the absolute latest version. Separate home partition is being developed there. There might be bugs.
 
 **Very fast restore thanks to minimal size of img file.**
 
@@ -98,10 +98,10 @@ Even if you forget to disable autoexpansion on a non supported system, the backu
 2. Reads the block sizes of the partitions.
 3. Uses `dd` to create the boot part of the system + a few megabytes to include the filesystem on root. (this _can_ be a partition)
 4. Removes and recreates the `root` partition, the size depends on options used when starting the script.
-5. Creates the `root` filesystem with the same `UUID` and `LABEL` as the system you are backing up from. (_MUST_ be `ext4`)
+5. Creates the `root` filesystem with the same `UUID` and `LABEL` as the system you are backing up from. (_MUST_ be `ext4`, info about btrfs further below)
 6. Uses `rsync` to sync both partitions. (if more than one)
 
-Added space is added on top of `df` reported "used space", not the size of the partition. Added space is in MB, so if you want to add 1GB, add 1024.
+Added space is added on top of `df` reported "used space", not the size of the partition. Added space is in MiB, so if you want to add 1G, add 1024.
 
 The script can be instructed to set the img size by requesting recomended minimum size from `e2fsck` by using the `-a` option.<br>
 This is not the absolute smallest size you can achieve but is the "safest" way to create a "smallest possible" img file.<br>
@@ -114,7 +114,7 @@ To get the absolute smallest img file possible, do NOT use `-a` option and set "
 
 Example: `sudo shrink-backup /path/to/backup.img 0`
 
-This will instruct the script to get the used space from `df` and adding 128MB "*wiggle room*".<br>
+This will instruct the script to get the used space from `df` and adding 128MiB "*wiggle room*".<br>
 If you are like me, doing a lot of testing, rewriting the sd-card multiple times. The extra time it takes each time will add up pretty fast.
 
 Example:
@@ -128,7 +128,8 @@ Because of how filesystems work, `df` is never a true representation of what wil
 Each file, no matter the size, will take up one block of the filesystem, so if you have a LOT of very small files (running docker f.ex) the "0 added space method" might fail during rsync. Increase the 0 a little bit and retry.<br>
 This also means you have VERY little free space on the img file after creation.<br>
 If the filesystem you back up from increases in size, an update (`-U`) of the img file might fail.<br>
-By using `-a` in combination with `-U` the script will resize the img file if needed. Please see section about image update below for more information.
+By using `-a` in combination with `-U` the script will resize the img file if needed. Please see section about image update below for more information.<br>
+Using combination`-Ua` on an img that has become overfilled works, or at least I have not gotten it to fail, but use at own risk.
 
 ### Order of operations - Image update:
 1. Probes the img file for information about partitions.
@@ -155,9 +156,12 @@ Only expansion is possible with this method.
 
 All options in script should work just as on `ext4`. The script will detect `btrfs` and act accordingly.<br>
 The script will treat snapshots as nested volumes, so make sure to exclude snapshots if you have any, or directories and nested volumes will be created on the img file. This can be done in `exclude.txt`, wildcards _should_ work.<br>
-When starting the script, the initial report window will tell you what volumes will be created. **Make sure these are correct before pressing Y**<br>
+When starting the script, the initial report window will tell you what volumes will be created. **Make sure these are correct before pressing Y**
+
 As of now, top level subvolumes are checked for in `/etc/fstab` and mounted accordingly, mount options should be preseved (for exmaple if you change compression).<br>
 Autoresize function works on Manjaro-arm.
+
+<hr>
 
 **Thank you for using my software <3**
 
