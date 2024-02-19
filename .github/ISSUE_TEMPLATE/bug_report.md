@@ -17,7 +17,7 @@ Steps to reproduce the behavior:
 A clear and concise description of what you expected to happen.
 
 **Harware (please complete the following information):**
- - Hardware: [f.ex. raspberry pi OR orange pi5]
+ - Hardware: [f.ex. raspberrypi 4 OR orangepi 5]
  - OS: [f.ex. rpi bookworm OR armbian for opi5]
 
 **Additional context**
