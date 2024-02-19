@@ -17,8 +17,8 @@ Steps to reproduce the behavior:
 A clear and concise description of what you expected to happen.
 
 **Harware (please complete the following information):**
- - Hardware: [e.g. raspberry pi OR orangepi5]
- - OS: [e.g. rpi bookworm OR armbian for opi5]
+ - Hardware: [f.ex. raspberry pi OR orange pi5]
+ - OS: [f.ex. rpi bookworm OR armbian for opi5]
 
 **Additional context**
 Add any other context about the problem here.
