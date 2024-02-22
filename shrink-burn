@@ -1,0 +1,861 @@
+#!/usr/bin/env bash
+#
+# shrink-burn
+# version 0.9.6-beta
+# backup tool for backing up and updating .img files with autoexpansion on various operating systems
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    02/2024
+#    Marcus Johansson
+#    https://github.com/UnconnectedBedna/shrink-backup
+##############################################################################
+
+# Function to clean up resources on script exit or termination
+function cleanup() {
+  # exit 1 = later/normal error
+  # exit 2 = early/clean error
+  # exit 3 = stopped by user
+  local exit_code="$?"
+
+  if [ "$exit_code" -ne 2 ]; then
+
+    if [ "$exit_code" -eq 0 ]; then
+      debug 'DEBUG' 'Cleanup function called with exit 0'
+      echo '## Syncing files on burn device, this might take some time...'
+      echo '## Please stand by...'
+    elif [ "$exit_code" -eq 3 ]; then
+      echo -e '\n## Script stopped by user...'
+      debug 'WARNING' 'Script stopped by user, cleanup exit 3'
+      echo '## Exiting and cleaning up...'
+      echo '## Please stand by...'
+      sleep 2
+    elif [ "$exit_code" -ne 0 ]; then
+      echo '## Cleanup function called with non zero exit code, something went wrong!!!'
+      debug 'ERROR' "Cleanup function called with non zero exit code: exit $exit_code"
+      echo '## Exiting and cleaning up...'
+      echo '## Please stand by...'
+    fi
+
+    if [ -n "$BOOT_PATH" ] && [ -n "$TMP_BURN_DIR" ] && grep -qs "${TMP_BURN_DIR}${BOOT_PATH} " /proc/mounts; then
+      umount "${TMP_BURN_DIR}${BOOT_PATH}"
+      debug 'DEBUG' "Unmounting burn device boot partition in cleanup function: umount ${TMP_BURN_DIR}${BOOT_PATH}"
+    fi
+    if [ -n "$BOOT_PATH" ] && [ -n "$TMP_IMG_DIR" ] && grep -qs "${TMP_IMG_DIR}${BOOT_PATH} " /proc/mounts; then
+      umount "${TMP_IMG_DIR}${BOOT_PATH}"
+      debug 'DEBUG' "Unmounting img device boot partition in cleanup function: umount ${TMP_IMG_DIR}${BOOT_PATH}"
+    fi
+    if [ -n "$TMP_BURN_DIR" ] && grep -qs "${TMP_BURN_DIR}/home " /proc/mounts; then
+      umount "$TMP_BURN_DIR"/home
+      debug 'DEBUG' "Unmounting burn device home partition in cleanup function: umount ${TMP_BURN_DIR}/home"
+    fi
+    if [ -n "$TMP_IMG_DIR" ] && grep -qs "${TMP_IMG_DIR}/home " /proc/mounts; then
+      umount "$TMP_IMG_DIR"/home
+      debug 'DEBUG' "Unmounting img device home partition in cleanup function: umount ${TMP_IMG_DIR}/home"
+    fi
+    if [ -n "$TMP_BURN_DIR" ] && grep -qs "$TMP_BURN_DIR " /proc/mounts; then
+      umount "$TMP_BURN_DIR"
+      debug 'DEBUG' "Unmounting burn device root partition in cleanup function: umount $TMP_BURN_DIR"
+    fi
+    if [ -n "$TMP_IMG_DIR" ] && grep -qs "$TMP_IMG_DIR " /proc/mounts; then
+      umount "$TMP_IMG_DIR"
+      debug 'DEBUG' "Unmounting img device root partition in cleanup function: umount $TMP_IMG_DIR"
+    fi
+    if losetup "$LOOP" &>/dev/null; then
+      losetup -d "$LOOP"
+      debug 'DEBUG' "Removing loop in cleanup function: losetup -d $LOOP"
+    fi
+    if [ -d "$TMP_BURN_DIR" ]; then
+      rm -rf "$TMP_BURN_DIR"
+      debug 'DEBUG' "Removing burn device temp directory in cleanup function: rm -rf $TMP_BURN_DIR"
+    fi
+    if [ -d "$TMP_IMG_DIR" ]; then
+      rm -rf "$TMP_IMG_DIR"
+      debug 'DEBUG' "Removing img device temp directory in cleanup function: rm -rf $TMP_IMG_DIR"
+    fi
+    if [ -f "$tmp_file" ]; then
+      rm "$tmp_file"
+      debug 'DEBUG' "Removing temp file in cleanup function: rm $tmp_file"
+    fi
+
+    echo '## Done.'
+    echo "## Elapsed time: $(date -d@$SECONDS -u +%M.%S)"
+    debug 'INFO' "Elapsed time: $(date -d@$SECONDS -u +%M.%S)"
+    debug 'DEBUG' 'Exiting script'
+  fi
+  echo '##############################################################################' >> "$LOG_FILE"
+}
+trap cleanup EXIT SIGTERM
+trap "exit 3" SIGINT
+
+# Function to pause script execution and prompt for user input
+function pause() {
+  read -p "$*"
+}
+
+# Uncomment the following line to enable the pause function
+#pause 'Press [Enter] key to continue...'
+
+PROMPTS=true
+DEBUG=false
+LOG_FILE="$(dirname "$0")/shrink-burn.log"
+ZOOM=false
+
+# Function to display help information
+help() {
+  local help
+  read -r -d '' help << EOM
+Script for "burning" an img file to selected device
+########################################################################
+Usage: sudo $(basename "$0") [-Uatyelh] imagefile.img [extra space (MB)]
+  -U         Update the img file (rsync to existing img), [extra space] extends img size/root partition
+  -a         Autoresize root partition (extra space is ignored)
+                 When used in combination with -U:
+                 Expand if img is +256MB smaller resize2fs recommended minimum, shrink if +512MB bigger
+  -t         Use exclude.txt in same folder as script to set excluded directories
+                 One directory per line: "/dir" or "/dir/*" to only exclude contents
+  -y         Disable prompts in script
+  -e         DO NOT expand filesystem when image is booted
+  -l         Write debug messages in logfile shrink-backup.log located in same directory as script
+  -z         Make script zoom at light-speed, only question prompts will slow it down
+  -h --help  Show this help snippet
+########################################################################
+Examples:
+sudo $(basename "$0") -a /path/to/backup.img (create img, automatically set size)
+sudo $(basename "$0") -e -y /path/to/backup.img 1024 (create img, ignore prompts, do not autoexpand, add 1024MB extra space)
+sudo $(basename "$0") -Utl /path/to/backup.img (update img backup, use exclude.txt and write log to shrink-backup.log)
+sudo $(basename "$0") -Ua /path/to/backup.img (update img backup, automatically resizes img file if needed)
+sudo $(basename "$0") -U /path/to/backup.img 1024 (update img backup, expand img size/root partition with 1024MB)
+EOM
+  echo "$help"
+  exit 2
+}
+
+# Parse command-line options
+while getopts ":Uatyelzh" opt; do
+  case ${opt} in
+    U) UPDATE=true;;
+    a) RESIZE2FS_RUN=true;;
+    t) EXCLUDE_FILE=true;;
+    y) PROMPTS=false;;
+    e) AUTOEXPAND=false;;
+    l) DEBUG=true;;
+    z) ZOOM=true;;
+    h) help;;
+    *) help;;
+  esac
+done
+
+# Check if script is run as root
+if [ "$EUID" != 0 ]; then
+  echo 'THIS SCRIPT MUST BE RUN AS ROOT! (WITH SUDO)'
+  help
+fi
+
+function debug() {
+  local log_level="$1"
+  local log_message="$2"
+  if [ "$DEBUG" == true ]; then
+    if [ "$log_level" == 'BREAK' ]; then
+      echo '------------------------------------------------------------------------------' >> "$LOG_FILE"
+    else
+      if [ $log_level == 'INFO' ]; then
+        echo -e "$(date +"%Y-%m-%d %H:%M:%S") [$log_level]  - $log_message" >> "$LOG_FILE"
+      else
+        echo -e "$(date +"%Y-%m-%d %H:%M:%S") [$log_level] - $log_message" >> "$LOG_FILE"
+      fi
+    fi
+  fi
+return 0
+}
+
+# Function to loop img file
+function do_loop() {
+
+  echo '## Looping img file...'
+  $SLEEPING
+  LOOP=$(losetup -f)
+  debug 'DEBUG' "LOOP=$LOOP"
+  debug 'DEBUG' "Running: losetup -P $LOOP $IMG_FILE"
+  if ! output=$(losetup -P "$LOOP" "$IMG_FILE" 2>&1); then
+    echo -e "$output\n## LOSETUP FAILED!!!"
+    debug 'BREAK'
+    debug 'ERROR' "LOSETUP FAILED:\n$output\n------------------------------------------------------------------------------"
+    exit 1
+  fi
+return 0
+}
+
+# Function to gather image information
+function get_img_variables() {
+
+#   # Collecting data and making calculations
+#   debug 'INFO' 'Checking for boot partition'
+#   if $(fdisk -lo type,end "$LOOP" | grep -q 'FAT'); then
+#     BOOT_PARTITION=true
+#   else
+#     BOOT_PARTITION=false
+#   fi
+#   debug 'DEBUG' "BOOT_PARTITION=$BOOT_PARTITION"
+
+  debug 'INFO' 'Calculating size for dd to cover bootsector in blocks (512B block size) and adding 256 blocks to overlap into root'
+  debug 'DEBUG' "Running: fdisk -lo type,start $LOOP | grep 'Linux' | awk '{print \$2}' | head -1"
+  IMG_ROOT_START=$(fdisk -lo type,start "$LOOP" | grep 'Linux' | awk '{print $2}' | head -1) # blocks, 512B block size
+  IMG_BOOTSECTOR=$(( IMG_ROOT_START - 1 )) # blocks, to set the actual bootsector
+  IMG_DDBOOTSECTOR=$(( IMG_BOOTSECTOR + 256 )) # blocks, adding 256 extra to cover root filesystem
+  debug 'DEBUG' "IMG_ROOT_START=$IMG_ROOT_START Blocks | IMG_BOOTSECTOR=$IMG_BOOTSECTOR Blocks | IMG_DDBOOTSECTOR=$IMG_DDBOOTSECTOR Blocks (512)"
+  IMG_ROOT_START=$(( IMG_ROOT_START * 512 )) # bytes
+  IMG_BOOTSECTOR=$(( IMG_BOOTSECTOR * 512 )) # bytes
+  debug 'DEBUG' "LOCAL_ROOT_START=$IMG_ROOT_START Bytes | IMG_BOOTSECTOR=$IMG_BOOTSECTOR Bytes"
+return 0
+}
+
+# Function to use dd to copy bootsector
+function do_dd() {
+
+  # Create and dd bootsector
+  echo '## Creating bootsector...'
+  echo "## Size to dd: $(( IMG_DDBOOTSECTOR / 2048 ))MiB"
+  $SLEEPING
+  debug 'INFO' 'Using dd to create bootsector'
+  if ! output=$(dd bs=512 count=$IMG_DDBOOTSECTOR if="$IMG_FILE" of="$BURN_DEV" conv=noerror,sync status=progress 2>&1 | tee /dev/tty); then
+    echo -e "$output\n## DD TO $BURN_DEV FAILED!!!"
+    debug 'BREAK'
+    debug 'ERROR' "DD TO $BURN_DEV FAILED:\n$output\n------------------------------------------------------------------------------"
+    exit 1
+  fi
+  output=$(echo "$output" | tail -3 )
+  debug 'BREAK'
+  debug 'DEBUG' "Running: dd bs=512 count=$IMG_DDBOOTSECTOR if=$IMG_FILE of=$BURN_DEV conv=noerror,sync status=progress\n$output\n------------------------------------------------------------------------------"
+  $SLEEPING
+return 0
+}
+
+# Function to find partitions
+function do_fstabcheck() {
+
+  PARTITIONS=( $(lsblk -o path,fstype "$LOOP" | grep 'ext4' | awk '{print $1}') )
+#  debug 'DEBUG' "Partitions: ${PARTITIONS[@]}"
+
+  # Create temp directory for img file mount and gather data
+  echo '## Creating temp directory for img file...'
+  $SLEEPING
+  debug 'INFO' 'Creating temp directory for img file'
+  debug 'DEBUG' 'Running: mktemp -d -t img-XXXXXXXXXX'
+  TMP_IMG_DIR=$(mktemp -d -t img-XXXXXXXXXX)
+  debug 'DEBUG' "TMP_IMG_DIR=$TMP_IMG_DIR"
+  $SLEEPING
+
+  # Mount root (where fstab exists)
+  debug 'INFO' 'Mounting img file to gather data'
+  for partition in "${PARTITIONS[@]}"; do
+    if ! output=$(mount "$partition" "$TMP_IMG_DIR" 2>&1); then
+      echo -e "$output\n## IMG ROOT MOUNT FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "IMG ROOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+    if [ -f "${TMP_IMG_DIR}"/etc/fstab ]; then
+      debug 'INFO' "/etc/fstab found on $partition"
+      IMG_DEV_ROOT_PATH="$partition"
+      ROOT_LABEL=$(lsblk -o label "$IMG_DEV_ROOT_PATH" | tail -1)
+      ROOT_UUID=$(lsblk -o uuid "$IMG_DEV_ROOT_PATH" | tail -1)
+      debug 'DEBUG' "IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH | ROOT_LABEL=$ROOT_LABEL | ROOT_UUID=$ROOT_UUID"
+      break
+    else
+      umount "$TMP_IMG_DIR"
+    fi
+  done
+
+  # Mount boot if it exists in fstab
+  if grep -q '/boot' "${TMP_IMG_DIR}/etc/fstab"; then
+    debug 'INFO' 'Boot partition found in /etc/fstab'
+    IMG_DEV_BOOT_PATH="${LOOP}p1"
+    BOOT_PATH=$(cat "${TMP_IMG_DIR}"/etc/fstab | grep '/boot' | awk '{print $2}')
+    debug 'DEBUG' "IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | BOOT_PATH=$BOOT_PATH"
+    debug 'INFO' 'Creating directory for boot and mounting'
+    debug 'DEBUG' "Running: mkdir -p ${TMP_IMG_DIR}${BOOT_PATH}"
+    mkdir -p "${TMP_IMG_DIR}${BOOT_PATH}"
+    debug 'DEBUG' "Running: mount $IMG_DEV_BOOT_PATH ${TMP_IMG_DIR}${BOOT_PATH}"
+    if ! output=$(mount "$IMG_DEV_BOOT_PATH" "${TMP_IMG_DIR}${BOOT_PATH}" 2>&1); then
+      echo -e "$output\n## IMG BOOT MOUNT FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "IMG BOOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+    BURN_DEV_BOOT_PATH="${BURN_DEV}1"
+    BURN_DEV_ROOT_PATH="${BURN_DEV}2"
+    debug 'DEBUG' "BURN_DEV_BOOT_PATH=$BURN_DEV_BOOT_PATH | BURN_DEV_ROOT_PATH=$BURN_DEV_ROOT_PATH"
+  else
+    debug 'INFO' 'No boot partition found in /etc/fstab'
+    BURN_DEV_ROOT_PATH="${BURN_DEV}1"
+    debug 'DEBUG' "BURN_DEV_ROOT_PATH=$BURN_DEV_ROOT_PATH"
+  fi
+return 0
+}
+
+
+
+# Function to format filesystem
+function do_filesystem() {
+
+  # Truncate file to correct size
+#   echo "## Resizing img file..."
+#   $SLEEPING
+#   debug 'INFO' "Using truncate to resize img file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
+#   debug 'DEBUG' "Running: truncate --size=$TRUNCATE_TOTAL $IMG_FILE"
+#   if ! output=$(truncate --size="$TRUNCATE_TOTAL" "$IMG_FILE" 2>&1); then
+#     echo -e "$output\n## TRUNCATE FAILED!!!"
+#     debug 'BREAK'
+#     debug 'ERROR' "TRUNCATE FAILED:\n$output\n------------------------------------------------------------------------------"
+#     exit 1
+#   fi
+#   $SLEEPING
+
+  # Remove partition
+#   echo '## Removing root partition...'
+#   $SLEEPING
+
+  # GPT
+#   if [ $PARTITION_TABLE == 'gpt' ]; then
+#     echo '## GPT partition table detected, sgdisk is needed, checking if installed...'
+#     $SLEEPING
+#     if [[ ! -f $(which sgdisk 2>&1) ]]; then
+#       echo '## sgdisk is NOT installed...'
+#       read -p "Do you want to try to install? [y/n] " -n 1 -r
+#       debug 'INFO' 'Do you want to try to install? [y/n]'
+#       if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
+#         debug 'WARNING' 'Aborted by user, clean exit 2'
+#         echo ''
+#         echo '## Aborting...'
+#         exit 2
+#       fi
+#       echo ''
+#       debug 'INFO' 'Y or y pressed to confirm'
+#       if [[ -f $(which apt 2>&1) ]]; then
+#         echo '## apt found, trying to install gdisk...'
+#         debug 'DEBUG' 'Running: apt update -y && apt upgrade -y && apt install gdisk -y'
+#         $SLEEPING
+#         apt update -y && apt upgrade -y && apt install gdisk -y
+#         $SLEEPING
+#       elif [[ -f $(which pacman 2>&1) ]]; then
+#         echo '## pacman found, trying to install gdisk...'
+#         debug 'DEBUG' 'Running: pacman -Syu && pacman -S gptfdisk'
+#         $SLEEPING
+#         pacman -Syu && pacman -S gptfdisk
+#         $SLEEPING
+#       else
+#         echo '## Did not manage to install sgdisk, please install gdisk and retry script...'
+#         debug 'ERROR' 'Did not succeed in installing sgdisk, aborting exit 1'
+#         echo '## Aborting...'
+#         exit 1
+#       fi
+#
+#     else
+#
+#       echo '## sgdisk is installed, resuming backup...'
+#       $SLEEPING
+#     fi
+#
+#     debug 'INFO' 'Using sgdisk to remove root partition'
+#     debug 'DEBUG' "Running: sgdisk $LOOP -d $LOCAL_ROOT_PARTN"
+#
+#     if ! output=$(sgdisk "$LOOP" -d "$LOCAL_ROOT_PARTN" 2>&1); then
+#       echo -e "$output\n## SGDISK FAILED!!!"
+#       debug 'BREAK'
+#       debug 'ERROR' "SGDISK FAILED:\n$output\n------------------------------------------------------------------------------"
+#       exit 1
+#     fi
+#
+#   else
+#
+#     # MBR
+#     debug 'INFO' 'Using sfdisk to remove root partition'
+#     #debug 'INFO' 'Using parted to remove root partition'
+#     debug 'DEBUG' "Running: sfdisk --delete -f $LOOP $LOCAL_ROOT_PARTN"
+#     #debug 'DEBUG' "Running: parted -s $LOOP rm $LOCAL_ROOT_PARTN"
+#     #debug 'DEBUG' "Running: printf 'Ignore\\\n'$LOCAL_ROOT_PARTN | parted $LOOP rm $LOCAL_ROOT_PARTN ---pretend-input-tty"
+#
+#     if ! output=$(sfdisk --delete -f "$LOOP" "$LOCAL_ROOT_PARTN" 2>&1); then # might fail if img size is very big
+#     #if ! output=$(parted -s "$LOOP" rm "$LOCAL_ROOT_PARTN" 2>&1); then # retry this after -f got removed, before = does not work, still asking for user confirmation even though --script and -f (automatically answer "fix" to exceptions in script mode) is used. faults with: "Error: Can't have a partition outside the disk!". for some reason this line works in the resizing function
+#     #if ! output=$(printf 'Ignore\n'$LOCAL_ROOT_PARTN | parted $LOOP rm $LOCAL_ROOT_PARTN ---pretend-input-tty 2>&1); then # raspberry pi os does not like this method, keep for memory
+#       echo -e "$output\n## SFDISK FAILED!!!"
+#       #echo -e "$output\n## PARTED FAILED!!!"
+#       debug 'BREAK'
+#       debug 'ERROR' "SFDISK FAILED:\n$output\n------------------------------------------------------------------------------"
+#       #debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
+#       exit 1
+#     fi
+#   fi
+#   $SLEEPING
+
+  # Recreate partition
+#   echo '## Recreating root partition...'
+#   $SLEEPING
+#   debug 'INFO' 'Using parted to recreate root partition'
+
+  # ext4
+#   if [ $FSTYPE == 'ext4' ]; then
+#     debug 'DEBUG' "Running: parted -s -a none $LOOP unit B mkpart primary ext4 $LOCAL_ROOT_START 100%"
+#     if ! output=$(parted -s -a none "$LOOP" unit B mkpart primary ext4 "$LOCAL_ROOT_START" 100% 2>&1); then
+#       echo -e "$output\n## PARTED FAILED!!!"
+#       debug 'BREAK'
+#       debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
+#       exit 1
+#     fi
+
+  # btrfs
+#   else
+#     debug 'DEBUG' "Running: parted -s -a none $LOOP unit B mkpart primary btrfs $LOCAL_ROOT_START 100%"
+#     if ! output=$(parted -s -a none "$LOOP" unit B mkpart primary btrfs "$LOCAL_ROOT_START" 100% 2>&1); then
+#       echo -e "$output\n## PARTED FAILED!!!"
+#       debug 'BREAK'
+#       debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
+#       exit 1
+#     fi
+#   fi
+#   $SLEEPING
+
+  # Format filesystem
+  echo '## Formatting filesystem...'
+  $SLEEPING
+
+  # ext4
+#   if [ $FSTYPE = 'ext4' ]; then
+    debug 'INFO' 'Using mkfs.ext4 to format root filesystem'
+    if ! output=$(mkfs.ext4 "$BURN_DEV_ROOT_PATH" -U "$ROOT_UUID" -L "$ROOT_LABEL" -v 2>&1 | tee /dev/tty ); then
+      echo -e "$output\n## MKFS.EXT4 FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "MKFS.EXT4 FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+    debug 'BREAK'
+    debug 'DEBUG' "Running: mkfs.ext4 $BURN_DEV_ROOT_PATH -U $ROOT_UUID -L $ROOT_LABEL -v\n$output\n------------------------------------------------------------------------------"
+    $SLEEPING
+
+#     debug 'INFO' 'Running function: do_e2fsck'
+#     do_e2fsck
+#
+#     debug 'INFO' 'Running function: do_mount'
+#     do_mount
+
+  # btrfs
+#   else
+#     debug 'INFO' 'Using mkfs.btrfs to format root filesystem'
+#     partprobe "$LOOP"
+#     if ! output=$(mkfs.btrfs -m single -L "$LABEL" -f -v "$IMG_DEV_ROOT_PATH" 2>&1 | tee /dev/tty ); then # btrfs does NOT like having the same uuid on 2 filesystems at the same time
+#       echo -e "$output\n## MKFS.BTRFS FAILED!!!"
+#       debug 'BREAK'
+#       debug 'ERROR' "MKFS.BTRFS FAILED:\n$output\n------------------------------------------------------------------------------"
+#       exit 1
+#     fi
+#     debug 'BREAK'
+#     debug 'DEBUG' "Running: mkfs.btrfs -m single -L $LABEL -f -v $IMG_DEV_ROOT_PATH\n$output\n------------------------------------------------------------------------------"
+#     $SLEEPING
+#
+#     # Check for temp directory and create if needed
+#     if ! [ -d "$TMP_DIR" ]; then
+#       echo '## Creating temp directory...'
+#       $SLEEPING
+#       debug 'INFO' 'Creating temp directory'
+#       debug 'DEBUG' "Running: mktemp -d -t backup-XXXXXXXXXX"
+#       TMP_DIR=$(mktemp -d -t backup-XXXXXXXXXX)
+#       debug 'DEBUG' "TMP_DIR=$TMP_DIR"
+#     fi
+#
+#     echo '## Creating btrfs subvolumes...'
+#     debug 'INFO' 'Creating btrfs subvolumes'
+#     debug 'DEBUG' "Running: mount -o compress=zstd $IMG_DEV_ROOT_PATH $TMP_DIR"
+#     if ! output=$(mount -o noatime,compress=zstd "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
+#       echo -e "$output\n## ROOT MOUNT FAILED!!!"
+#       debug 'BREAK'
+#       debug 'ERROR' "ROOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+#       exit 1
+#     fi
+#     $SLEEPING
+#
+#     # Create top subvolumes, ${#LOCAL_SUBVOLUMES[@]} gives count
+#     for ((i = 0; i < ${#LOCAL_SUBVOLUMES[@]}; i++)); do
+#       SUBVOL_PATH="${LOCAL_SUBVOLUMES[i]}"
+#       if [[ "$SUBVOL_PATH" == '@'* ]]; then
+#         echo "## Creating subvolume: $SUBVOL_PATH"
+#         debug 'DEBUG' "Running: btrfs subvolume create ${TMP_DIR}/${SUBVOL_PATH}"
+#         if ! output=$(btrfs subvolume create "$TMP_DIR"/"$SUBVOL_PATH" 2>&1); then
+#           echo -e "$output\n## CREATE SUBVOLUME FAILED!!!"
+#           debug 'BREAK'
+#           debug 'ERROR' "CREATE SUBVOLUME FAILED:\n$output\n------------------------------------------------------------------------------"
+#           exit 1
+#         fi
+#       fi
+#       $SLEEPING
+#     done
+#
+#     echo '## Mounting root...'
+#     debug 'INFO' 'Unmounting btrfs filesystem & mounting root subvolume'
+#     debug 'DEBUG' "Running: umount $TMP_DIR"
+#     umount "$TMP_DIR"
+#     $SLEEPING
+#     partprobe "$LOOP"
+#     #fstab=( $(cat /etc/fstab | grep "${LOCAL_SUBVOLUMES[0]}") )
+#     fstab=( $(cat /etc/fstab | grep '/ ') )
+#     debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH $TMP_DIR"
+#     if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
+#       echo -e "$output\n## ROOT SUBVOLUME MOUNT FAILED!!!"
+#       debug 'BREAK'
+#       debug 'ERROR' "ROOT SUBVOLUME MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+#       exit 1
+#     fi
+#     $SLEEPING
+#
+#     # Create nested volumes/snapshots
+#     debug 'INFO' 'Creating nested volumes/snapshots'
+#     for ((i = 0; i < ${#LOCAL_SUBVOLUMES[@]}; i++)); do
+#       SUBVOL_PATH="${LOCAL_SUBVOLUMES[i]}"
+#       if [[ "$SUBVOL_PATH" != '@'* ]]; then
+#         debug 'DEBUG' "Running: mkdir -p $TMP_DIR/$(dirname $SUBVOL_PATH)"
+#         mkdir -p $TMP_DIR/$(dirname $SUBVOL_PATH)
+#
+#         echo "## Creating volume: $SUBVOL_PATH"
+#         debug 'DEBUG' "Running: btrfs subvolume create ${TMP_DIR}/${SUBVOL_PATH}"
+#         if ! output=$(btrfs subvolume create "$TMP_DIR"/"$SUBVOL_PATH" 2>&1); then
+#           echo -e "$output\n## CREATE VOLUME FAILED!!!"
+#           debug 'BREAK'
+#           debug 'ERROR' "CREATE VOLUME FAILED:\n$output\n------------------------------------------------------------------------------"
+#           exit 1
+#         fi
+#       fi
+#       $SLEEPING
+#     done
+#
+#     echo '## Mounting img btrfs volumes...'
+#     debug 'INFO' 'Mounting volumes'
+#     $SLEEPING
+#     partprobe "$LOOP"
+#
+#     for ((i = 0; i < ${#LOCAL_SUBVOLUMES[@]}; i++)); do
+#       SUBVOL_PATH="${LOCAL_SUBVOLUMES[i]}"
+#       if $(cat /etc/fstab | grep -q "$SUBVOL_PATH") && [[ "$SUBVOL_PATH" != '@' ]]; then
+#         fstab=( $(cat /etc/fstab | grep "$SUBVOL_PATH") )
+#         debug 'DEBUG' "Running: mkdir -p ${TMP_DIR}${fstab[1]}"
+#         mkdir -p ${TMP_DIR}${fstab[1]}
+#         echo "## Mounting subvolume: $SUBVOL_PATH"
+#         debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH ${TMP_DIR}${fstab[1]}"
+#         if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" ${TMP_DIR}${fstab[1]} 2>&1); then
+#           echo -e "$output\n## VOLUME MOUNT FAILED!!!"
+#           debug 'BREAK'
+#           debug 'ERROR' "VOLUME MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+#           exit 1
+#         fi
+#       fi
+#       $SLEEPING
+#     done
+#
+#     echo '## Mounting boot...'
+#     debug 'DEBUG' "Running: mount $IMG_DEV_BOOT_PATH ${TMP_DIR}${BOOT_PATH}"
+#     mkdir -p ${TMP_DIR}${BOOT_PATH}
+#     if ! output=$(mount "$IMG_DEV_BOOT_PATH" "${TMP_DIR}${BOOT_PATH}" 2>&1); then
+#       echo -e "$output\n## BOOT MOUNT FAILED!!!"
+#       debug 'BREAK'
+#       debug 'ERROR' "BOOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+#       exit 1
+#     fi
+#     $SLEEPING
+#   fi
+
+return 0
+}
+
+
+
+# Function to mount burn device
+function do_mount() {
+
+  # Check for temp directory and create if needed
+  echo '## Creating temp directory for burn device...'
+  $SLEEPING
+  debug 'INFO' 'Creating temp directory for burn device'
+  debug 'DEBUG' "Running: mktemp -d -t dev-XXXXXXXXXX"
+  TMP_BURN_DIR=$(mktemp -d -t dev-XXXXXXXXXX)
+  debug 'DEBUG' "TMP_BURN_DIR=$TMP_BURN_DIR"
+  $SLEEPING
+  partprobe "$LOOP"
+
+  echo '## Mounting burn device root partition...'
+  $SLEEPING
+  debug 'INFO' "Mounting root partition from $BURN_DEV"
+  debug 'DEBUG' "Running: mount $BURN_DEV_ROOT_PATH $TMP_BURN_DIR"
+  if ! output=$(mount "$BURN_DEV_ROOT_PATH" "$TMP_BURN_DIR" 2>&1); then
+    echo -e "$output\n## ROOT MOUNT FAILED!!!"
+    debug 'BREAK'
+    debug 'ERROR' "ROOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+    exit 1
+  fi
+
+  # Checking if boot partition exists and if true, mount boot
+  if [ -n "$BURN_DEV_BOOT_PATH" ]; then
+    echo '## Mounting burn device boot partition...'
+    $SLEEPING
+    debug 'INFO' 'Separate boot partition detected, mounting boot inside root'
+    debug 'DEBUG' "Running: mkdir -p ${TMP_BURN_DIR}${BOOT_PATH}"
+    mkdir -p ${TMP_BURN_DIR}${BOOT_PATH}
+    debug 'DEBUG' "Running: mount $BURN_DEV_BOOT_PATH ${TMP_BURN_DIR}${BOOT_PATH}"
+    if ! output=$(mount "$BURN_DEV_BOOT_PATH" "${TMP_BURN_DIR}${BOOT_PATH}" 2>&1); then
+      echo -e "$output\n## BOOT MOUNT FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "BOOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
+      exit 1
+    fi
+  fi
+return 0
+}
+
+# Function to rsync to device
+function do_rsync() {
+
+  echo '## Writing files to device...'
+  $SLEEPING
+  debug 'INFO' 'Creating temporary file to store rsync output'
+  debug 'DEBUG' 'Running: mktemp -t rsync-XXXXXXXXXX'
+  tmp_file=$(mktemp -t rsync-XXXXXXXXXX)
+  debug 'DEBUG' "tmp_file=$tmp_file"
+
+  debug 'INFO' "Writing img file to $BURN_DEV"
+  debug 'DEBUG' "Running: rsync -ahvHAX --info=progress2 --stats --force $TMP_IMG_DIR $TMP_BURN_DIR"
+  rsync -ahvHAX --info=progress2 --stats --force "$TMP_IMG_DIR"/ "$TMP_BURN_DIR" 2>&1 | tee /dev/tty > "$tmp_file"
+  # Get the exit status of rsync from PIPESTATUS
+  if [ "${PIPESTATUS[0]}" -ne 0 ]; then #code 23
+    output=$(tail -16 "$tmp_file")
+    echo -e "$output\n## RSYNC FAILED!!!"
+    debug 'BREAK'
+    debug 'ERROR' "RSYNC FAILED:\n$output\n------------------------------------------------------------------------------"
+    exit 1
+  fi
+
+  echo '## Rsync done...'
+  echo '## Please stand by...'
+  output=$(tail -16 "$tmp_file")
+  debug 'BREAK'
+  debug 'DEBUG' "Rsync report:\n$output\n------------------------------------------------------------------------------"
+  debug 'INFO' 'Rsync done'
+  sleep 4
+return 0
+}
+
+# Function to print result
+function print_result() {
+
+  echo '## Burn done.'
+  echo '##############################################################################'
+  echo "## Write to logfile: $DEBUG"
+  echo "## Autoexpand filesystem at boot: $AUTOEXPAND"
+  echo "## Use exclude.txt: $EXCLUDE_FILE"
+#   echo "## $IMG_FILE is ${AFTER_SIZE}MB"
+#   debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MB"
+  echo "## Please wait for the system to reboot after restoring an image with autoexpansion."
+  echo '##############################################################################'
+return 0
+}
+
+
+
+# Process the non-option arguments, checks/fixes if the imagefile comes before the options
+while [ "$#" -gt 0 ];
+do
+  if [[ "$1" =~ ^- ]]; then
+    shift
+  else
+    IMG_FILE="$1"
+#     ADDED_SPACE="$2"
+    BURN_DEV="$2"
+    break
+  fi
+done
+
+echo '## Scanning filesystem and calculating...'
+
+# Check if debugging is requested
+if [ "$DEBUG" == true ]; then
+  echo "## Debugging requested, writing to log file $LOG_FILE"
+  debug 'INFO' "Debugging requested, writing to log file $LOG_FILE"
+fi
+
+# Set zoom type
+if [ "$ZOOM" == false ]; then
+  SLEEPING='sleep 1'
+  echo '## Zoom speed NOT requested...'
+  debug 'INFO' "Zoom speed NOT requested, setting SLEEPING=$SLEEPING | ZOOM=$ZOOM"
+else
+  SLEEPING=''
+  echo '## Zoom speed requested...'
+  debug 'INFO' "Zoom speed requested, setting SLEEPING to empty variable | ZOOM=$ZOOM"
+fi
+
+do_loop
+
+# Check what filesystem root is using
+# if lsblk -o mountpoint,fstype | grep '/ ' | grep -q 'ext4'; then
+if lsblk -o fstype $LOOP | grep -q 'btrfs'; then
+  FSTYPE='btrfs'
+  debug 'INFO' 'btrfs root filesystem detected'
+  debug 'DEBUG' "FSTYPE=$FSTYPE"
+else
+  FSTYPE='ext4'
+  debug 'INFO' 'ext4 root filesystem detected'
+  debug 'DEBUG' "FSTYPE=$FSTYPE"
+fi
+
+# Check what partition table is in use
+# if [ "$FSTYPE" == 'ext4' ]; then
+#   LOCAL_DEV_PTUUID=$(lsblk -lpo mountpoint,ptuuid | grep '/ ' | awk '{print $2}')
+# else
+#   LOCAL_DEV_PTUUID=$(lsblk -lpo fsroots,ptuuid | grep '/ ' | awk '{print $2}')
+# fi
+# LOCAL_DEV_PATH=$(lsblk -lpo ptuuid,type,path | grep "$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print $3}')
+# debug 'DEBUG' "LOCAL_DEV_PTUUID=$LOCAL_DEV_PTUUID | LOCAL_DEV_PATH=$LOCAL_DEV_PATH"
+
+PARTITION_TABLE=$(parted "$LOOP" print | grep 'Partition Table' | awk '{print $3}')
+#PARTITION_TABLE=$(blkid "$LOCAL_DEV_PATH" | sed -n 's|^.*PTTYPE="\(\S\+\)".*|\1|p')
+debug 'DEBUG' "PARTITION_TABLE=$PARTITION_TABLE"
+
+# debug 'DEBUG' "Update existing img file, UPDATE=$UPDATE"
+# debug 'DEBUG' "Requesting size from resize2fs, RESIZE2FS_RUN=$RESIZE2FS_RUN"
+debug 'DEBUG' "Prompt for user confirmation, PROMPTS=$PROMPTS"
+# debug 'DEBUG' "Auto expansion, AUTOEXPAND=$AUTOEXPAND"
+
+# Setting ADDED_SPACE to 0 if RESIZE2FS_RUN option is enabled
+# if [ "$RESIZE2FS_RUN" == true ]; then
+#   ADDED_SPACE=0
+#   debug 'INFO' '-a selected by user'
+#   debug 'DEBUG' "ADDED_SPACE=$ADDED_SPACE"
+# fi
+
+# Setting adding ADDED_SPACE to 0 if update is requested and variable ADDED_SPACE is a zero value
+# if [ $UPDATE == true ] && [ -z "$ADDED_SPACE" ]; then
+#   ADDED_SPACE=0
+#   debug 'INFO' '-U selected, -a not selected or extra space not provided by user, setting to ADDED_SPACE to 0 (non-zero value)'
+#   debug 'DEBUG' "ADDED_SPACE=$ADDED_SPACE"
+# fi
+
+# Regular expression for whole numbers
+RE='^[0-9]+$'
+
+# Validate the added space argument as a whole number
+# -z = zero value, -n = non-zero value, || = or, && = and
+# if ! [[ "$ADDED_SPACE" =~ $RE ]]; then
+#   debug 'WARNING' 'User defined ADDED_SPACE is not a regualar expression (whole number)'
+#   COUNTER=0
+#   while ! [[ "$ADDED_SPACE" =~ $RE ]]
+#   do
+#     #if [ "$COUNTER" -gt 0 ] || [ -n "$ADDED_SPACE" ]; then
+#     if [ "$COUNTER" -gt 0 ]; then
+#       echo 'ERROR!'
+#       debug 'INFO' 'ERROR'
+#     fi
+#     echo 'Added space must be a whole number'
+#     echo 'How much space in MB should be added?'
+#     debug 'INFO' 'Added space must be a whole number'
+#     debug 'INFO' 'How much space in MB should be added?'
+#     read ADDED_SPACE
+#     (( COUNTER++ ))
+#     #(( COUNTER += 1 ))
+#     debug 'USER_INPUT' "User requested ${ADDED_SPACE}MB as ADDED_SPACE"
+#   done
+# fi
+
+# Check if the image file has the correct extension
+# if [[ "$IMG_FILE" != *.img ]]; then
+#   echo 'ERROR! File must have .img extension'
+#   debug 'ERROR' 'File must have .img extension, exit 2'
+#   exit 2
+# fi
+
+# Check if usage of exclude.txt is requested
+# if [ "$EXCLUDE_FILE" == true ]; then
+#   debug 'INFO' "-f selected by user, using $(dirname $0)/exclude.txt"
+#   if ! [ -f $(dirname "$0")/exclude.txt ]; then
+#     echo 'ERROR! exclude.txt is not present in script directory!'
+#     debug 'ERROR' 'exclude.txt does not exist in script directory, exit 2'
+#     exit 2
+#   fi
+#   debug 'DEBUG' "$(dirname $0)/exclude.txt exists"
+# fi
+
+# if [ "$UPDATE" != true ]; then
+#   debug 'INFO' 'Executing make_img function'
+#   debug 'BREAK'
+#   make_img
+# else
+#   debug 'INFO' '-U sekected by user, executing do_backup function'
+#   debug 'BREAK'
+#   do_backup
+# fi
+
+get_img_variables
+
+# Confirm with user input
+echo "## ${IMG_FILE} will be written to ${BURN_DEV}..."
+read -p "Do you want to continue? [y/n] " -n 1 -r
+debug 'INFO' "${IMG_FILE} will be written to ${BURN_DEV}"
+debug 'INFO' 'Do you want to continue? [y/n]'
+if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
+  debug 'WARNING' 'Aborted by user, clean exit 2'
+  echo ''
+  echo '## Aborting...'
+  exit 2
+fi
+echo ''
+debug 'INFO' 'Y or y pressed to confirm'
+debug 'BREAK'
+
+do_dd
+do_fstabcheck
+do_filesystem
+do_mount
+do_rsync
+
+# Check if autoexpansion is requested and run required function
+# if [ "$AUTOEXPAND" == true ]; then
+#   echo '## Enabling fs-autoexpand...'
+#   debug 'INFO' 'Executing expand_fs function'
+#   $SLEEPING
+#   if cat /etc/os-release | grep -i 'manjaro' >/dev/null; then
+#     echo '## Manjaro os detected...'
+#     debug 'INFO' 'Manjaro os detected'
+#     $SLEEPING
+#     autoexpansion_manjaro
+#   elif [ -e /etc/armbian-release ]; then
+#     debug 'INFO' 'Armbian os detected'
+#     echo '## Armbian os detected...'
+#     $SLEEPING
+#     autoexpansion_armbian
+#   elif uname -a | grep -q 'raspberry' || [ -e /etc/apt/sources.list.d/raspi.list ]; then
+#     debug 'INFO' 'Raspberry pi detected'
+#     echo '## Raspberry pi detected...'
+#     $SLEEPING
+#     autoexpansion_rpi
+#   elif grep -q 'archlinuxarm' /etc/os-release; then
+#     echo '## ArchLinuxArm os detected...'
+#     debug 'INFO' 'ArchLinuxArm os detected'
+#     $SLEEPING
+#     autoexpansion_arch
+#   else
+#     echo '## No autoexpand option available for this os...'
+#     debug 'WARNING' 'No autoexpand option available for this os'
+#     AUTOEXPAND='failed'
+#     $SLEEPING
+#   fi
+# fi
+#
+# print_result
+
+#print_result
+
+exit 0
