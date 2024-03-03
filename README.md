@@ -88,7 +88,7 @@ Use `-l` to write debug info into `shrink-backup.log` file located in the same d
 - truncate
 - mkfs.ext4
 - rsync
-- gidisk (sgdisk is needed if the partition table is GPT, the script will inform you)
+- gdisk (sgdisk is needed if the partition table is GPT, the script will inform you)
 
 ## Info
 
