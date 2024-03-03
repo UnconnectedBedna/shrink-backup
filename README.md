@@ -109,7 +109,7 @@ Even if you forget to disable autoexpansion on a non supported system, the backu
 10. Checks if `boot` partition exists, if true, checks `fstab` and creates directory on `root` and mounts accordingly from loop.
 11. Uses `rsync` to sync filesystems.
 12. Tries to create autoresize scripts if not disabled with `-e`.
-13. Unounts and removes temp directory and file (file created for rsync log output).
+13. Unmounts and removes temp directory and file (file created for rsync log output).
 
 Added space is added on top of `df` reported "used space", not the size of the partition. Added space is in MiB, so if you want to add 1G, add 1024.
 
@@ -151,7 +151,7 @@ Using combination`-Ua` on an img that has become overfilled works, or at least I
 7. Uses `rsync` to sync filesystems.
 8. Shrinks filesystem on img file if `-a` was used and conditions were met in point 3.
 9. Tries to create autoresize scripts if not disabled with `-e`.
-10. Unounts and removes temp directory and file (file created for rsync log output).
+10. Unmounts and removes temp directory and file (file created for rsync log output).
 
 To update an existing img file simply use the `-U` option and the path to the img file.<br>
 Example: `sudo shrink-backup -U /path/to/backup.img`
