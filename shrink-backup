@@ -14,7 +14,7 @@
 #    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #    GNU General Public License for more details.
 #
-#    02/2024
+#    03/2024
 #    Marcus Johansson
 #    https://github.com/UnconnectedBedna/shrink-backup
 ##############################################################################
@@ -92,35 +92,36 @@ AUTOEXPAND=true
 RESIZE2FS_RUN=false
 UPDATE=false
 LOG_FILE="$(dirname "$0")/shrink-backup.log"
-WIGGLE_USE=false
+RESIZE2FS_WARNING=false
 ZOOM=false
 
-# Function to display help information, debug is not configured/working
+# Function to display help information
 help() {
   local help
   read -r -d '' help << EOM
 Script for creating an .img file and subsequently keeing it updated (-U), autoexpansion is enabled by default
 Directory where .img file is created is automatically excluded in backup
 ########################################################################
-Usage: sudo $(basename "$0") [-Uatyelh] imagefile.img [extra space (MB)]
+Usage: sudo $(basename "$0") [-Uatyelh] imagefile.img [extra space (MiB)]
   -U         Update the img file (rsync to existing img), [extra space] extends img size/root partition
   -a         Autoresize root partition (extra space is ignored)
                  When used in combination with -U:
-                 Expand if img is +256MB smaller resize2fs recommended minimum, shrink if +512MB bigger
+                 Expand if img is +256MiB smaller resize2fs recommended minimum, shrink if +512MiB bigger
   -t         Use exclude.txt in same folder as script to set excluded directories
                  One directory per line: "/dir" or "/dir/*" to only exclude contents
   -y         Disable prompts in script
   -e         DO NOT expand filesystem when image is booted
   -l         Write debug messages in logfile shrink-backup.log located in same directory as script
-  -z         Make script zoom at light-speed, only question prompts will slow it down
+  -z         Make script zoom at light-speed, only question prompts might slow it down
+                 Can be combined with -y for unsafe ultra mega superduper speed
   -h --help  Show this help snippet
 ########################################################################
 Examples:
 sudo $(basename "$0") -a /path/to/backup.img (create img, automatically set size)
-sudo $(basename "$0") -e -y /path/to/backup.img 1024 (create img, ignore prompts, do not autoexpand, add 1024MB extra space)
+sudo $(basename "$0") -e -y /path/to/backup.img 1024 (create img, ignore prompts, do not autoexpand, add 1024MiB extra space)
 sudo $(basename "$0") -Utl /path/to/backup.img (update img backup, use exclude.txt and write log to shrink-backup.log)
 sudo $(basename "$0") -Ua /path/to/backup.img (update img backup, automatically resizes img file if needed)
-sudo $(basename "$0") -U /path/to/backup.img 1024 (update img backup, expand img size/root partition with 1024MB)
+sudo $(basename "$0") -U /path/to/backup.img 1024 (update img backup, expand img size/root partition with 1024MiB)
 EOM
   echo "$help"
   exit 2
@@ -144,7 +145,7 @@ done
 
 # Check if script is run as root
 if [ "$EUID" != 0 ]; then
-  echo 'THIS SCRIPT MUST BE RUN WITH SUDO!'
+  echo 'THIS SCRIPT MUST BE RUN AS ROOT! (WITH SUDO)'
   help
 fi
 
@@ -212,7 +213,7 @@ function get_dev_variables() {
   #LOCAL_DF_OUTPUT=( $(df / -k --sync --output=used | tail -1) ) # 1k blocks
   #LOCAL_USED_SPACE=$(( LOCAL_DF_OUTPUT * 1024 )) # bytes, df is in 1k blocks
   ADDED_SPACE=$(( ADDED_SPACE * 1024 * 1024 )) # bytes
-  WIGGLEROOM=134217728 # 128MB = 134217728B, 192MB = 201326592B
+  WIGGLEROOM=134217728 # 128MiB = 134217728B, 192MiB = 201326592B
 
   # Use resize2fs to set size if option is selected
   if [ "$RESIZE2FS_RUN" == true ]; then
@@ -229,12 +230,12 @@ function get_dev_variables() {
   debug 'INFO' 'Calculating .img file size by adding LOCAL_BOOTSECTOR to TOTAL (only used in img creation)'
   debug 'DEBUG' "TRUNCATE_TOTAL=${TRUNCATE_TOTAL} Bytes"
 
-  # Add 128MB extra space if resize2fs reports bigger minimum than created
+  # Add 128MiB extra space if resize2fs reports bigger minimum than created
   if [ "$UPDATE" == false ] && [ "$TOTAL" -lt "$LOCAL_RESIZE2FS_MIN" ]; then
-    debug 'WARNING' 'Adding WIGGLEROOM (128MB) because manually requested ADDED_SPACE is less than resize2fs caluclated size'
-    WIGGLE_USE=true
+    debug 'WARNING' 'Adding WIGGLEROOM (128MiB) because manually requested ADDED_SPACE is less than resize2fs caluclated size'
+    RESIZE2FS_WARNING=true
     TRUNCATE_TOTAL=$(( TRUNCATE_TOTAL + WIGGLEROOM ))
-    debug 'DEBUG' "WIGGLE_USE=true | WIGGLEROOM=${WIGGLEROOM} Bytes | TRUNCATE_TOTAL=${TRUNCATE_TOTAL} Bytes"
+    debug 'DEBUG' "RESIZE2FS_WARNING=true | WIGGLEROOM=${WIGGLEROOM} Bytes | TRUNCATE_TOTAL=${TRUNCATE_TOTAL} Bytes"
   fi
 
   return 0
@@ -246,10 +247,10 @@ function get_dev_variables() {
 function get_btrfs_variables() {
 
   if [ $RESIZE2FS_RUN == true ]; then
-    debug 'INFO' 'Using btrfs fi du to calculate recommended size and adding 192MB'
+    debug 'INFO' 'Using btrfs fi du to calculate recommended size and adding 192MiB'
     LOCAL_RESIZE2FS_MIN=$(btrfs filesystem du -s --raw / 2>/dev/null) # bytes
     LOCAL_RESIZE2FS_MIN=$(echo "$LOCAL_RESIZE2FS_MIN" | tail -1 | awk '{print $1}')
-    LOCAL_RESIZE2FS_MIN=$(( LOCAL_RESIZE2FS_MIN + 201326592 )) # 192MB = 201326592B
+    LOCAL_RESIZE2FS_MIN=$(( LOCAL_RESIZE2FS_MIN + 201326592 )) # 192MiB = 201326592B
     debug 'DEBUG' "LOCAL_RESIZE2FS_MIN=$LOCAL_RESIZE2FS_MIN bytes"
   fi
   debug 'DEBUG' "Running: btrfs subvolume list / | awk '{print \$9}'"
@@ -286,8 +287,8 @@ function get_img_variables() {
       echo '## Creating temp directory...'
       $SLEEPING
       debug 'INFO' 'Creating temp directory'
-      debug 'DEBUG' "Running: mktemp -d -t backup-XXXXXXXXXX"
-      TMP_DIR=$(mktemp -d -t backup-XXXXXXXXXX)
+      debug 'DEBUG' "Running: mktemp -d -t backup-XXX"
+      TMP_DIR=$(mktemp -d -t backup-XXX)
       debug 'DEBUG' "TMP_DIR=$TMP_DIR"
     fi
     $SLEEPING
@@ -363,8 +364,8 @@ function do_mount() {
     echo '## Creating temp directory...'
     $SLEEPING
     debug 'INFO' 'Creating temp directory'
-    debug 'DEBUG' "Running: mktemp -d -t backup-XXXXXXXXXX"
-    TMP_DIR=$(mktemp -d -t backup-XXXXXXXXXX)
+    debug 'DEBUG' "Running: mktemp -d -t backup-XXX"
+    TMP_DIR=$(mktemp -d -t backup-XXX)
     debug 'DEBUG' "TMP_DIR=$TMP_DIR"
   fi
   $SLEEPING
@@ -425,7 +426,7 @@ function do_mount() {
     fi
   fi
 
-  # Checking if boot partition exists and if true mount boot
+  # Checking if boot partition exists and if true, mount boot
   if [ $(lsblk | grep -c 'boot') -ne 0 ]; then
     echo '## Mounting img boot partition...'
     $SLEEPING
@@ -539,7 +540,7 @@ function do_resize() {
 
     echo "## Resizing image file..."
     $SLEEPING
-    debug 'INFO' "Using truncate to resize img file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
+    debug 'INFO' "Using truncate to resize img file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
     debug 'DEBUG' "Running: truncate --size=$TRUNCATE_TOTAL $IMG_FILE"
     if ! output=$(truncate --size="$TRUNCATE_TOTAL" "$IMG_FILE" 2>&1); then
       echo -e "$output\n## TRUNCATE FAILED!!!"
@@ -633,7 +634,7 @@ function do_resize() {
 
     echo '## Shrinking img file...'
     $SLEEPING
-    debug 'INFO' "Using truncate to shrink img file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
+    debug 'INFO' "Using truncate to shrink img file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
     debug 'DEBUG' "Running: truncate --size=$TRUNCATE_TOTAL $IMG_FILE"
     if ! output=$(truncate --size="$TRUNCATE_TOTAL" "$IMG_FILE" 2>&1); then
       echo -e "$output\n## TRUNCATE FAILED!!!"
@@ -661,8 +662,8 @@ function do_rsync() {
   IMG_PATH=$(dirname "$IMG_FILE")
   debug 'INFO' 'Creating temporary file to store rsync output'
   debug 'DEBUG' "Backing up to ${IMG_PATH}${IMG_FILE}"
-  debug 'DEBUG' 'Running: mktemp -t rsync-XXXXXXXXXX'
-  tmp_file=$(mktemp -t rsync-XXXXXXXXXX)
+  debug 'DEBUG' 'Running: mktemp -t rsync-XXX'
+  tmp_file=$(mktemp -t rsync-XXX)
   debug 'DEBUG' "tmp_file=$tmp_file"
 
   if [ "$EXCLUDE_FILE" == true ]; then
@@ -726,21 +727,21 @@ function make_img() {
     echo "# Autresize img root partition: $RESIZE2FS_RUN"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
-    echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MB"
-    echo "# Estemated root usage: $(( $(df / -k --sync --output=used | tail -1) / 1024 ))MB"
+    echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MiB"
+    echo "# Estemated root usage: $(( $(df / -k --sync --output=used | tail -1) / 1024 ))MiB"
     if [ "$RESIZE2FS_RUN" == true ]; then
-      echo "# Auto calculated size (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
-      echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
+      echo "# Auto calculated size (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MiB"
+      echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
     else
-      echo "# Manually added space: $(( ADDED_SPACE / 1024 / 1024 ))MB"
-      echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB with $(( ADDED_SPACE / 1024 / 1024 ))MB extra space included."
-      if [ "$WIGGLE_USE" == true ]; then
+      echo "# Manually added space: $(( ADDED_SPACE / 1024 / 1024 ))MiB"
+      echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB with $(( ADDED_SPACE / 1024 / 1024 ))MiB extra space included."
+      if [ "$RESIZE2FS_WARNING" == true ]; then
         echo '# ----------------------------------------------------------------------------'
         echo "# WARNING!!! Manually added space is smaller than calculated recommended minimum"
         echo "# This does NOT mean the backup WILL fail, but CAN fail due to lack of space"
-        echo "# Concider using the -a option or manually adding more space"
-        echo "# Requested root size: $(( TOTAL / 1024 / 1024 ))MB"
-        echo "# Calculated recommended minimum: $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
+        echo "# Consider using the -a option or manually adding more space"
+        echo "# Requested root size: $(( TOTAL / 1024 / 1024 ))MiB"
+        echo "# Calculated recommended minimum: $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MiB"
       fi
     fi
     echo '##############################################################################'
@@ -794,28 +795,30 @@ function make_img() {
     echo "# Autresize img root partition: $RESIZE2FS_RUN"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
-    echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MB"
-    echo "# Estemated root usage: $(( $(df / -k --sync --output=used | tail -1) / 1024 ))MB"
+    echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MiB"
+    echo "# Estemated root usage: $(( $(df / -k --sync --output=used | tail -1) / 1024 ))MiB"
     if [ "$RESIZE2FS_RUN" == true ]; then
-      echo "# Auto calculated size (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
-      echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
+      echo "# Auto calculated size (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MiB"
+      echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
     else
-      echo "# Manually added space: $(( ADDED_SPACE / 1024 / 1024 ))MB"
-      echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB with $(( ADDED_SPACE / 1024 / 1024 ))MB extra space included."
-      if [ "$WIGGLE_USE" == true ]; then
+      echo "# Manually added space: $(( ADDED_SPACE / 1024 / 1024 ))MiB"
+      echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB with $(( ADDED_SPACE / 1024 / 1024 ))MiB extra space included."
+      if [ "$RESIZE2FS_WARNING" == true ]; then
         echo '# ----------------------------------------------------------------------------'
         echo "# WARNING!!! Manually added space is smaller than calculated recommended minimum"
         echo "# This does NOT mean the backup WILL fail, but CAN fail due to lack of space"
-        echo "# Concider using the -a option or manually adding more space"
-        echo "# Requested root size: $(( TOTAL / 1024 / 1024 ))MB"
-        echo "# Calculated recommended minimum: $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
+        echo "# Consider using the -a option or manually adding more space"
+        echo "# Requested root size: $(( TOTAL / 1024 / 1024 ))MiB"
+        echo "# Calculated recommended minimum: $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MiB"
       fi
     fi
-    echo '# PRESS CTRL+C WITHIN 5s TO CANCEL!'
-    echo '##############################################################################'
-    sleep 6
-    debug 'INFO' '6 seconds passed, user did not stop operation'
-    debug 'BREAK'
+    if [ "$ZOOM" == false ]; then
+      echo '# PRESS CTRL+C WITHIN 5s TO CANCEL!'
+      echo '##############################################################################'
+      sleep 6
+      debug 'INFO' '6 seconds passed, user did not stop operation'
+      debug 'BREAK'
+    fi
   fi
 
   # Delete existing file if user validation above passed
@@ -844,7 +847,7 @@ function make_img() {
   # Truncate file to correct size
   echo "## Resizing img file..."
   $SLEEPING
-  debug 'INFO' "Using truncate to resize img file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
+  debug 'INFO' "Using truncate to resize img file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
   debug 'DEBUG' "Running: truncate --size=$TRUNCATE_TOTAL $IMG_FILE"
   if ! output=$(truncate --size="$TRUNCATE_TOTAL" "$IMG_FILE" 2>&1); then
     echo -e "$output\n## TRUNCATE FAILED!!!"
@@ -967,7 +970,7 @@ function make_img() {
   $SLEEPING
   LABEL=$(lsblk -o label "$LOCAL_DEV_ROOT_PATH" | tail -1)
   UUID=$(lsblk -o uuid "$LOCAL_DEV_ROOT_PATH" | tail -1)
-  debug 'DEBUG' "LABLEL=$LABEL | UUID=$UUID"
+  debug 'DEBUG' "LABEL=$LABEL | UUID=$UUID"
 
   # ext4
   if [ $FSTYPE = 'ext4' ]; then
@@ -1007,8 +1010,8 @@ function make_img() {
       echo '## Creating temp directory...'
       $SLEEPING
       debug 'INFO' 'Creating temp directory'
-      debug 'DEBUG' "Running: mktemp -d -t backup-XXXXXXXXXX"
-      TMP_DIR=$(mktemp -d -t backup-XXXXXXXXXX)
+      debug 'DEBUG' "Running: mktemp -d -t backup-XXX"
+      TMP_DIR=$(mktemp -d -t backup-XXX)
       debug 'DEBUG' "TMP_DIR=$TMP_DIR"
     fi
 
@@ -1160,14 +1163,14 @@ function do_backup() {
     debug 'DEBUG' "Running: fdisk --bytes -lo size $LOOP | tail -1"
     IMG_ROOT_SIZE=$(fdisk --bytes -lo size "$LOOP" | tail -1)
     diff=$(( ( LOCAL_RESIZE2FS_MIN - IMG_ROOT_SIZE ) / 1024 / 1024 ))
-    debug 'DEBUG' "IMG_ROOT_SIZE=$IMG_ROOT_SIZE Bytes | LOCAL_RESIZE2FS_MIN=$LOCAL_RESIZE2FS_MIN Bytes | diff=$diff MB"
+    debug 'DEBUG' "IMG_ROOT_SIZE=$IMG_ROOT_SIZE Bytes | LOCAL_RESIZE2FS_MIN=$LOCAL_RESIZE2FS_MIN Bytes | diff=${diff}MiB"
 
-    if [ "$IMG_ROOT_SIZE" -lt "$LOCAL_RESIZE2FS_MIN" ] && (( LOCAL_RESIZE2FS_MIN - IMG_ROOT_SIZE >= 268435456 )); then # 256MB in Bytes
-      DIFFERENCE="$diff MB, Expanding img filesystem"
-    elif [ "$IMG_ROOT_SIZE" -gt "$LOCAL_RESIZE2FS_MIN" ] && (( IMG_ROOT_SIZE - LOCAL_RESIZE2FS_MIN >= 536870912 )); then # 512MB in Bytes
-      DIFFERENCE="$diff MB, Shrinking img filesystem"
+    if [ "$IMG_ROOT_SIZE" -lt "$LOCAL_RESIZE2FS_MIN" ] && (( LOCAL_RESIZE2FS_MIN - IMG_ROOT_SIZE >= 268435456 )); then # 256MiB in Bytes
+      DIFFERENCE="$diff MiB, Expanding img filesystem"
+    elif [ "$IMG_ROOT_SIZE" -gt "$LOCAL_RESIZE2FS_MIN" ] && (( IMG_ROOT_SIZE - LOCAL_RESIZE2FS_MIN >= 536870912 )); then # 512MiB in Bytes
+      DIFFERENCE="$diff MiB, Shrinking img filesystem"
     else
-      DIFFERENCE="Too small ($diff MB), not resizing filesystem"
+      DIFFERENCE="Too small ($diff MiB), not resizing filesystem"
     fi
   elif [ "$ADDED_SPACE" -ne 0 ]; then
     debug 'INFO' 'Manually added space provided by user, calculating img size (TRUNCATE_TOTAL) by adding ADDED_SPACE to IMG_SIZE'
@@ -1193,20 +1196,20 @@ function do_backup() {
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
     if [ "$RESIZE2FS_RUN" == true ]; then
-      echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MB"
-      echo "# Auto calculated size (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
-      echo "# Old img size: $(( IMG_SIZE / 1024 / 1024 ))MB"
-      echo "# New img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
+      echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MiB"
+      echo "# Auto calculated size (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MiB"
+      echo "# Old img size: $(( IMG_SIZE / 1024 / 1024 ))MiB"
+      echo "# New img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
       echo "# Difference: $DIFFERENCE"
     elif [ "$ADDED_SPACE" -ne 0 ]; then
-      echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MB"
-      echo "# Estemated root usage: $(( $(df / -k --sync --output=used | tail -1) / 1024 ))MB"
-      echo "# Old img size: $(( IMG_SIZE / 1024 / 1024 ))MB"
-      echo "# New img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
-      echo "# Difference: $(( ADDED_SPACE / 1024 / 1024 ))MB"
+      echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MiB"
+      echo "# Estemated root usage: $(( $(df / -k --sync --output=used | tail -1) / 1024 ))MiB"
+      echo "# Old img size: $(( IMG_SIZE / 1024 / 1024 ))MiB"
+      echo "# New img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
+      echo "# Difference: $(( ADDED_SPACE / 1024 / 1024 ))MiB"
     else
-      echo "# Estemated root usage: $(( $(df / -k --sync --output=used | tail -1) / 1024 ))MB"
-      echo "# Total img size: $(( IMG_SIZE / 1024 / 1024 ))MB"
+      echo "# Estemated root usage: $(( $(df / -k --sync --output=used | tail -1) / 1024 ))MiB"
+      echo "# Total img size: $(( IMG_SIZE / 1024 / 1024 ))MiB"
     fi
     echo '##############################################################################'
 
@@ -1242,39 +1245,41 @@ function do_backup() {
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
     if [ "$RESIZE2FS_RUN" == true ]; then
-      echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MB"
-      echo "# Auto calculated size (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
-      echo "# Old img size: $(( IMG_SIZE / 1024 / 1024 ))MB"
-      echo "# New img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
+      echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MiB"
+      echo "# Auto calculated size (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MiB"
+      echo "# Old img size: $(( IMG_SIZE / 1024 / 1024 ))MiB"
+      echo "# New img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
       echo "# Difference: $DIFFERENCE"
     elif [ "$ADDED_SPACE" -ne 0 ]; then
-      echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MB"
-      echo "# Estemated root usage: $(( $(df / -k --sync --output=used | tail -1) / 1024 ))MB"
-      echo "# Old img size: $(( IMG_SIZE / 1024 / 1024 ))MB"
-      echo "# New img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MB"
-      echo "# Difference: $(( ADDED_SPACE / 1024 / 1024 ))MB"
+      echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MiB"
+      echo "# Estemated root usage: $(( $(df / -k --sync --output=used | tail -1) / 1024 ))MiB"
+      echo "# Old img size: $(( IMG_SIZE / 1024 / 1024 ))MiB"
+      echo "# New img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
+      echo "# Difference: $(( ADDED_SPACE / 1024 / 1024 ))MiB"
     else
-      echo "# Estemated root usage: $(( $(df / -k --sync --output=used | tail -1) / 1024 ))MB"
-      echo "# Total img size: $(( IMG_SIZE / 1024 / 1024 ))MB"
+      echo "# Estemated root usage: $(( $(df / -k --sync --output=used | tail -1) / 1024 ))MiB"
+      echo "# Total img size: $(( IMG_SIZE / 1024 / 1024 ))MiB"
     fi
-    echo '# PRESS CTRL+C WITHIN 5s TO CANCEL!'
-    echo '##############################################################################'
-    sleep 6
-    debug 'INFO' '6 seconds passed, user did not stop operation'
-    debug 'BREAK'
+    if [ "$ZOOM" == false ]; then
+      echo '# PRESS CTRL+C WITHIN 5s TO CANCEL!'
+      echo '##############################################################################'
+      sleep 6
+      debug 'INFO' '6 seconds passed, user did not stop operation'
+      debug 'BREAK'
+    fi
   fi
 
   # Checking if resizing should be performed
   if [ "$RESIZE2FS_RUN" == true ]; then
-    if [ "$IMG_ROOT_SIZE" -lt "$LOCAL_RESIZE2FS_MIN" ] && (( LOCAL_RESIZE2FS_MIN - IMG_ROOT_SIZE >= 268435456 )); then # 256MB in Bytes
+    if [ "$IMG_ROOT_SIZE" -lt "$LOCAL_RESIZE2FS_MIN" ] && (( LOCAL_RESIZE2FS_MIN - IMG_ROOT_SIZE >= 268435456 )); then # 256MiB in Bytes
       debug 'INFO' 'Img root partition size is smaller than auto calculated size'
-      debug 'DEBUG' "Difference=$diff MB"
+      debug 'DEBUG' "Difference=$diff MiB"
       debug 'INFO' "Running function: do_resize 'expand'"
       do_resize 'expand'
 
-    elif [ "$IMG_ROOT_SIZE" -gt "$LOCAL_RESIZE2FS_MIN" ] && (( IMG_ROOT_SIZE - LOCAL_RESIZE2FS_MIN >= 536870912 )); then # 512MB in Bytes
+    elif [ "$IMG_ROOT_SIZE" -gt "$LOCAL_RESIZE2FS_MIN" ] && (( IMG_ROOT_SIZE - LOCAL_RESIZE2FS_MIN >= 536870912 )); then # 512MiB in Bytes
       debug 'INFO' 'Img root partition size is bigger than auto calculated size'
-      debug 'DEBUG' "diff=$diff MB"
+      debug 'DEBUG' "diff=${diff}MiB"
 
       # Mount img file
       debug 'INFO' 'Running function: do_mount'
@@ -1292,7 +1297,7 @@ function do_backup() {
       return 0
 
     else
-      debug 'INFO' 'Img root partition is <=256MB smaller or <=512MB bigger compared to auto calculated size, not resizing'
+      debug 'INFO' 'Img root partition is <=256MiB smaller or <=512MiB bigger compared to auto calculated size, not resizing'
       $SLEEPING
     fi
   fi
@@ -1497,11 +1502,11 @@ function print_result() {
     echo "## Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "## Use exclude.txt: $EXCLUDE_FILE"
     if [ "$RESIZE2FS_RUN" = true ]; then
-      echo "## $IMG_FILE is ${AFTER_SIZE}MB with a root partition of $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB."
-      debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MB with a root partition of $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MB"
+      echo "## $IMG_FILE is ${AFTER_SIZE}MiB with a root partition of $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MiB."
+      debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MiB with a root partition of $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MiB"
     else
-      echo "## $IMG_FILE is ${AFTER_SIZE}MB with $(( ADDED_SPACE / 1024 / 1024 ))MB extra space included."
-      debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MB with $(( ADDED_SPACE / 1024 / 1024 ))MB extra space included"
+      echo "## $IMG_FILE is ${AFTER_SIZE}MiB with $(( ADDED_SPACE / 1024 / 1024 ))MiB extra space included."
+      debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MiB with $(( ADDED_SPACE / 1024 / 1024 ))MiB extra space included"
     fi
   else
     echo '## Backup done.'
@@ -1509,8 +1514,8 @@ function print_result() {
     echo "## Write to logfile: $DEBUG"
     echo "## Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "## Use exclude.txt: $EXCLUDE_FILE"
-    echo "## $IMG_FILE is ${AFTER_SIZE}MB"
-    debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MB"
+    echo "## $IMG_FILE is ${AFTER_SIZE}MiB"
+    debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MiB"
     debug 'INFO' 'Img file updated'
   fi
   if [ "$AUTOEXPAND" == true ]; then
@@ -1519,7 +1524,7 @@ function print_result() {
   echo '##############################################################################'
   debug 'INFO' 'Img file created and backup done'
   debug 'BREAK'
-  return 0
+return 0
 }
 
 
@@ -1536,51 +1541,31 @@ do
   fi
 done
 
-echo '## Scanning filesystem and calculating...'
-
 # Check if debugging is requested
 if [ "$DEBUG" == true ]; then
   echo "## Debugging requested, writing to log file $LOG_FILE"
   debug 'INFO' "Debugging requested, writing to log file $LOG_FILE"
 fi
 
+echo '## Scanning filesystem and calculating...'
+
 # Set zoom type
 if [ "$ZOOM" == false ]; then
   SLEEPING='sleep 1'
-  debug 'INFO' "## Zoom speed NOT requested, setting SLEEPING=$SLEEPING | ZOOM=$ZOOM"
+  echo '## Zoom speed NOT requested...'
+  debug 'INFO' "Zoom speed NOT requested, setting SLEEPING=$SLEEPING | ZOOM=$ZOOM"
 else
   SLEEPING=''
-  debug 'INFO' "## Zoom speed requested, setting SLEEPING to empty variable | ZOOM=$ZOOM"
+  echo '## Zoom speed requested...'
+  debug 'INFO' "Zoom speed requested, setting SLEEPING to empty variable | ZOOM=$ZOOM"
 fi
 
-# Check what filesystem root is using
-if lsblk -lo mountpoint,fstype | grep '/ ' | grep -q 'ext4'; then
-  FSTYPE='ext4'
-  debug 'INFO' 'ext4 root filesystem detected'
-  debug 'DEBUG' "FSTYPE=$FSTYPE"
-else
-  FSTYPE='btrfs'
-  debug 'INFO' 'btrfs root filesystem detected'
-  debug 'DEBUG' "FSTYPE=$FSTYPE"
+# Check if the image file has the correct extension
+if [[ "$IMG_FILE" != *.img ]]; then
+  echo 'ERROR! File must have .img extension'
+  debug 'ERROR' 'File must have .img extension, exit 2'
+  exit 2
 fi
-
-# Check what partition table is in use and set LOCAL_DEV_PATH
-if [ "$FSTYPE" == 'ext4' ]; then
-  LOCAL_DEV_PTUUID=$(lsblk -lpo mountpoint,ptuuid | grep '/ ' | awk '{print $2}')
-else
-  LOCAL_DEV_PTUUID=$(lsblk -lpo fsroots,ptuuid | grep '/ ' | awk '{print $2}')
-fi
-LOCAL_DEV_PATH=$(lsblk -lpo ptuuid,type,path | grep "$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print $3}')
-debug 'DEBUG' "LOCAL_DEV_PTUUID=$LOCAL_DEV_PTUUID | LOCAL_DEV_PATH=$LOCAL_DEV_PATH"
-
-PARTITION_TABLE=$(parted "$LOCAL_DEV_PATH" print | grep 'Partition Table' | awk '{print $3}')
-#PARTITION_TABLE=$(blkid "$LOCAL_DEV_PATH" | sed -n 's|^.*PTTYPE="\(\S\+\)".*|\1|p')
-debug 'DEBUG' "PARTITION_TABLE=$PARTITION_TABLE"
-
-debug 'DEBUG' "Update existing img file, UPDATE=$UPDATE"
-debug 'DEBUG' "Requesting size from resize2fs, RESIZE2FS_RUN=$RESIZE2FS_RUN"
-debug 'DEBUG' "Prompt for user confirmation, PROMPTS=$PROMPTS"
-debug 'DEBUG' "Auto expansion, AUTOEXPAND=$AUTOEXPAND"
 
 # Setting ADDED_SPACE to 0 if RESIZE2FS_RUN option is enabled
 if [ "$RESIZE2FS_RUN" == true ]; then
@@ -1612,23 +1597,44 @@ if ! [[ "$ADDED_SPACE" =~ $RE ]]; then
       debug 'INFO' 'ERROR'
     fi
     echo 'Added space must be a whole number'
-    echo 'How much space in MB should be added?'
+    echo 'How much space in MiB should be added?'
     debug 'INFO' 'Added space must be a whole number'
-    debug 'INFO' 'How much space in MB should be added?'
+    debug 'INFO' 'How much space in MiB should be added?'
     read ADDED_SPACE
     (( COUNTER++ ))
     #(( COUNTER += 1 ))
-    debug 'USER_INPUT' "User requested ${ADDED_SPACE}MB as ADDED_SPACE"
+    debug 'USER_INPUT' "User requested ${ADDED_SPACE}MiB as ADDED_SPACE"
   done
-  #debug 'USER_INPUT' "User requested ${ADDED_SPACE}MB as ADDED_SPACE"
 fi
 
-# Check if the image file has the correct extension
-if [[ "$IMG_FILE" != *.img ]]; then
-  echo 'ERROR! File must have .img extension'
-  debug 'ERROR' 'File must have .img extension, exit 2'
-  exit 2
+# Check what filesystem root is using
+if lsblk -lo mountpoint,fstype | grep '/ ' | grep -q 'ext4'; then
+  FSTYPE='ext4'
+  debug 'INFO' 'ext4 root filesystem detected'
+  debug 'DEBUG' "FSTYPE=$FSTYPE"
+else
+  FSTYPE='btrfs'
+  debug 'INFO' 'btrfs root filesystem detected'
+  debug 'DEBUG' "FSTYPE=$FSTYPE"
 fi
+
+# Check what partition table is in use and set LOCAL_DEV_PATH
+if [ "$FSTYPE" == 'ext4' ]; then
+  LOCAL_DEV_PTUUID=$(lsblk -lpo mountpoint,ptuuid | grep '/ ' | awk '{print $2}')
+else
+  LOCAL_DEV_PTUUID=$(lsblk -lpo fsroots,ptuuid | grep '/ ' | awk '{print $2}')
+fi
+LOCAL_DEV_PATH=$(lsblk -lpo ptuuid,type,path | grep "$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print $3}')
+debug 'DEBUG' "LOCAL_DEV_PTUUID=$LOCAL_DEV_PTUUID | LOCAL_DEV_PATH=$LOCAL_DEV_PATH"
+
+PARTITION_TABLE=$(parted "$LOCAL_DEV_PATH" print | grep 'Partition Table' | awk '{print $3}')
+#PARTITION_TABLE=$(blkid "$LOCAL_DEV_PATH" | sed -n 's|^.*PTTYPE="\(\S\+\)".*|\1|p')
+debug 'DEBUG' "PARTITION_TABLE=$PARTITION_TABLE"
+
+debug 'DEBUG' "Update existing img file, UPDATE=$UPDATE"
+debug 'DEBUG' "Requesting size from resize2fs, RESIZE2FS_RUN=$RESIZE2FS_RUN"
+debug 'DEBUG' "Prompt for user confirmation, PROMPTS=$PROMPTS"
+debug 'DEBUG' "Auto expansion, AUTOEXPAND=$AUTOEXPAND"
 
 # Check if usage of exclude.txt is requested
 if [ "$EXCLUDE_FILE" == true ]; then
@@ -1646,7 +1652,7 @@ if [ "$UPDATE" != true ]; then
   debug 'BREAK'
   make_img
 else
-  debug 'INFO' '-U sekected by user, executing do_backup function'
+  debug 'INFO' '-U selected by user, executing do_backup function'
   debug 'BREAK'
   do_backup
 fi
