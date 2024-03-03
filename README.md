@@ -75,7 +75,7 @@ If `-t` is **NOT** selected the following folders will be excluded:
 
 **Rsync WILL cross filesystem boundries, so make sure you exclude external drives unless you want them included in the backup.**<br>
 Not excluding other partitions will copy the data to the img root partition, not create more partitions so make sure to **manually add extra space** if you do this.<br>
-The script will **ONLY** look at your `root` when comparing sizes.
+The script will **ONLY** look at your `root` when calculating sizes.
 
 Use `-l` to write debug info into `shrink-backup.log` file located in the same directory as the script.
 
@@ -96,13 +96,20 @@ Theoretically the script should work on any device as long as root filesystem is
 Since the script uses `lsblk` to figure out where the root resides it does not matter what device it is on.<br>
 Even if you forget to disable autoexpansion on a non supported system, the backup will not fail. :)
 
-### Order of operations - Image creation:
+### Order of operations - Image creation
 1. Uses `lsblk` to figure out the correct disk device to back up.
-2. Reads the block sizes of the partitions.
+2. Reads the block sizes of the system's `root` (and `boot` if it exists) partition.
 3. Uses `dd` to create the boot part of the system + a few megabytes to include the filesystem on root. (this _can_ be a partition)
-4. Removes and recreates the `root` partition, the size depends on options used when starting the script.
-5. Creates the `root` filesystem with the same `UUID` and `LABEL` as the system you are backing up from. (_MUST_ be `ext4`, info about btrfs further below)
-6. Uses `rsync` to sync both partitions. (if more than one)
+4. Uses `df` & `resize2fs` to calculate sizes by analyzing the system's `root` partition. (For btrfs `btrfs filesystem du` + 192MiB is used instead of `resize2fs`)
+5. Uses `truncate` to resize img file.
+6. Loops the img file.
+7. Removes and recreates the `root` partition on the loop of the img file.
+8. Creates the `root` filesystem on loop of the img file with the same `UUID` and `LABEL` as the system you are backing up from.
+9. Creates a temp directory and mounts img file `root` partition from loop.
+10. Checks if `boot` partition exists, if true, checks `fstab` and creates directory on `root` and mounts accordingly from loop.
+11. Uses `rsync` to sync filesystems.
+12. Tries to create autoresize scripts if not disabled with `-e`.
+13. Unounts and removes temp directory and file (file created for rsync log output).
 
 Added space is added on top of `df` reported "used space", not the size of the partition. Added space is in MiB, so if you want to add 1G, add 1024.
 
@@ -126,7 +133,7 @@ Example:
 -rw-r--r-- 1 root root 3.3G Jul 22 22:37 test0.img # file created with 0
 ```
 
-**Disclaimer:**<br>
+**Disclaimer!**<br>
 Because of how filesystems work, `df` is never a true representation of what will actually fit in a created img file.<br>
 Each file, no matter the size, will take up one block of the filesystem, so if you have a LOT of very small files (running docker f.ex) the "0 added space method" might fail during rsync. Increase the 0 a little bit and retry.<br>
 This also means you have VERY little free space on the img file after creation.<br>
@@ -134,22 +141,28 @@ If the filesystem you back up from increases in size, an update (`-U`) of the im
 By using `-a` in combination with `-U` the script will resize the img file if needed. Please see section about image update below for more information.<br>
 Using combination`-Ua` on an img that has become overfilled works, or at least I have not gotten it to fail, but use at own risk.
 
-### Order of operations - Image update:
-1. Probes the img file for information about partitions.
-2. Mounts `root` partition with an offset for the loop.
-3. Checks if multiple partitions exists. If true, reads `fstab` on img file and mounts boot partition accordingly with an offset.
-4. Uses `rsync` to sync both partitions. (if more than one)
+### Order of operations - Image update
+1. Loops the img file.
+2. Probes the loop of the img file for information about partitions.
+3. If `-a` is selected, calculates sizes by comparing `root` sizes on system and img file by using `fdisk` & `resize2fs`.
+4. Expands filesystem on img file if needed or if _manualy added_ `[extra space]` is used.
+5. Creates temp directory and mounts `root` partition from loop.
+6. Checks if `boot` partition exists, if true, checks `fstab` and creates directory on `root` and mounts accordingly from loop.
+7. Uses `rsync` to sync filesystems.
+8. Shrinks filesystem on img file if `-a` was used and conditions were met in point 3.
+9. Tries to create autoresize scripts if not disabled with `-e`.
+10. Unounts and removes temp directory and file (file created for rsync log output).
 
 To update an existing img file simply use the `-U` option and the path to the img file.<br>
 Example: `sudo shrink-backup -U /path/to/backup.img`
 
-#### Resizing img file when updating:
+#### Resizing img file when updating
 If `-a` is used in combination with `-U`, the script will compare the root partition on the img file to the size `resize2fs` recommends as minimum.<br>
 The img file needs to be **+256MB** smaller than `resize2fs` recommended minimum to be expanded.<br>
 The img file needs to be **+512MB** bigger than `resize2fs` recommended minimum to be shrunk.<br>
 This is to protect from unessesary resizing operations most likely not needed.
 
-If *manually added space* is used in combination with `-U`, the img file's root partition will be expanded by that amount. No checks are being performed to make sure the data you want to back up will actually fit.<br>
+If _manually added_ `[extra space]` is used in combination with `-U`, the img file's root partition will be expanded by that amount. No checks are being performed to make sure the data you want to back up will actually fit.<br>
 Only expansion is possible with this method.
 
 ## btrfs
