@@ -666,6 +666,20 @@ return 0
 
 
 
+# Confirm with user input
+echo 'shrink-burn is HIGHLY EXPERIMENTAL, PLEASE use at own risk!!!'
+read -p "Do you want to continue? [y/n] " -n 1 -r
+debug 'INFO' 'Do you want to continue? [y/n]'
+if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
+  debug 'WARNING' 'Aborted by user, clean exit 2'
+  echo ''
+  echo '## Aborting...'
+  exit 2
+fi
+echo ''
+debug 'INFO' 'Y or y pressed to confirm'
+debug 'BREAK'
+
 # Process the non-option arguments, checks/fixes if the imagefile comes before the options
 while [ "$#" -gt 0 ];
 do
