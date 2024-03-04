@@ -53,6 +53,10 @@ sudo shrink-backup -Ua /path/to/backup.img (update img backup, resize2fs calcula
 sudo shrink-backup -U /path/to/backup.img 1024 (update img backup, expand img size/root partition with 1024MiB)
 ```
 
+The `-z` "zoom" option simply removes the one second sleep at each prompt to let the user time to read.<br>
+By using the option, you save 20-30s when running the script.<br>
+When used in combination with `-y` **warnings will also be "bypassed"! PLEASE use with care!**
+
 The folder where the img file is created will ALWAYS be excluded in the backup.<br>
 If `-t` option is selected, `exclude.txt` **MUST exist** (but can be empty) within the **directory where the script is located** or the script will exit with an error.
 
