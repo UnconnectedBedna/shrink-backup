@@ -6,7 +6,7 @@ Autoexpansion tested on **Raspberry Pi** os (bookworm and older), **Armbian**, *
 (Now also **experimental** btrfs functionality, please read further down)
 
 **Latest release:** [shrink-backup.v0.9.5](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v0.9.5/shrink-backup.v0.9.5.tar.gz)<br>
-[**Testing branch**](https://github.com/UnconnectedBedna/shrink-backup/tree/testing) if you want to have the absolute latest version. Separate home partition is being developed there. There might be bugs.
+[**Testing branch:**](https://github.com/UnconnectedBedna/shrink-backup/tree/testing) If you want to have the absolute latest version. There might be bugs.
 
 **Very fast restore thanks to minimal size of img file.**
 
