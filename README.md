@@ -42,7 +42,7 @@ Usage: sudo shrink-backup [-Uatyelh] imagefile.img [extra space (MiB)]
   -e         DO NOT expand filesystem when image is booted
   -l         Write debug messages in logfile shrink-backup.log in same directory as script
   -z         Make script zoom at light-speed, only question prompts might slow it down
-                 Can be combined with -y for unsafe ultra mega superduper speed
+                 Can be combined with -y for UNSAFE ultra mega superduper speed
   -h --help  Show this help snippet
 ########################################################################
 Examples:
