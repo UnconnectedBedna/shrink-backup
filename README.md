@@ -32,10 +32,10 @@ Script for creating an .img file and subsequently keeing it updated (-U), autoex
 Directory where .img file is created is automatically excluded in backup
 ########################################################################
 Usage: sudo shrink-backup [-Uatyelh] imagefile.img [extra space (MiB)]
-  -U         Update the img file (rsync to existing img), [extra space] extends img size/root partition
+  -U         Update existing img file, [extra space] extends img size/root partition
   -a         Let resize2fs decide minimum space (extra space is ignored)
                  When used in combination with -U:
-                 Expand if img is +256MiB smaller resize2fs recommended minimum, shrink if +512MiB bigger
+                 Expand if img is +256MiB smaller than resize2fs recommended minimum, shrink if +512MiB bigger
   -t         Use exclude.txt in same folder as script to set excluded directories
                  One directory per line: "/dir" or "/dir/*" to only exclude contents
   -y         Disable prompts in script
