@@ -873,8 +873,8 @@ function make_img() {
     $SLEEPING
     if [[ ! -f $(which sgdisk 2>&1) ]]; then
       echo '## sgdisk is NOT installed...'
-      read -p "Do you want to try to install? [y/n] " -n 1 -r
-      debug 'INFO' 'Do you want to try to install? [y/n]'
+      read -p "Do you want to try to install gdisk? [y/n] " -n 1 -r
+      debug 'INFO' 'Do you want to try to install gdisk? [y/n]'
       if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
         debug 'WARNING' 'Aborted by user, clean exit 2'
         echo ''
@@ -885,26 +885,44 @@ function make_img() {
       debug 'INFO' 'Y or y pressed to confirm'
       if [[ -f $(which apt 2>&1) ]]; then
         echo '## apt found, trying to install gdisk...'
+        read -p "Do you want to use apt to install gdisk? [y/n] " -n 1 -r
+        debug 'INFO' 'Do you want to use apt to install gdisk? [y/n]'
+        if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
+          debug 'WARNING' 'Aborted by user, clean exit 2'
+          echo ''
+          echo '## Aborting...'
+          exit 2
+        fi
+        echo ''
+        debug 'INFO' 'Y or y pressed to confirm'
         debug 'DEBUG' 'Running: apt update -y && apt upgrade -y && apt install gdisk -y'
         $SLEEPING
         apt update -y && apt upgrade -y && apt install gdisk -y
         $SLEEPING
       elif [[ -f $(which pacman 2>&1) ]]; then
         echo '## pacman found, trying to install gdisk...'
+        read -p "Do you want to use pacman to install gptfdisk? (will do -Syu first) [y/n] " -n 1 -r
+        debug 'INFO' 'Do you want to use apt to install gptfdisk? (will do -Syu first) [y/n]'
+        if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
+          debug 'WARNING' 'Aborted by user, clean exit 2'
+          echo ''
+          echo '## Aborting...'
+          exit 2
+        fi
+        echo ''
+        debug 'INFO' 'Y or y pressed to confirm'
         debug 'DEBUG' 'Running: pacman -Syu && pacman -S gptfdisk'
         $SLEEPING
         pacman -Syu && pacman -S gptfdisk
         $SLEEPING
       else
-        echo '## Did not manage to install sgdisk, please install gdisk and retry script...'
-        debug 'ERROR' 'Did not succeed in installing sgdisk, aborting exit 1'
+        echo '## Did not manage to install gdisk, please install gdisk and retry script...'
+        debug 'ERROR' 'Did not succeed in installing gdisk, aborting exit 1'
         echo '## Aborting...'
         exit 1
       fi
 
-    else
-
-      echo '## sgdisk is installed, resuming backup...'
+      echo '## gdisk installed successfully, resuming backup...'
       $SLEEPING
     fi
 
@@ -1333,7 +1351,7 @@ function do_backup() {
 # Enabling autoexpansion for Manjaro
 function autoexpansion_manjaro() {
   if ! [ -d "${TMP_DIR}/etc/systemd/system/basic.target.wants" ]; then
-    debug 'DEBUG' "Systemd basic.arget.wants directory does not exist, running: mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants"
+    debug 'DEBUG' "Systemd basic.target.wants directory does not exist, running: mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants"
     mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants
   fi
 
@@ -1382,7 +1400,7 @@ function autoexpansion_armbian() {
 # Enabling autoexpansion for Raspberry pi
 function autoexpansion_rpi() {
   if ! [ -d "${TMP_DIR}/etc/systemd/system/basic.target.wants" ]; then
-    debug 'DEBUG' "Systemd basic.arget.wants directory does not exist, running: mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants"
+    debug 'DEBUG' "Systemd basic.target.wants directory does not exist, running: mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants"
     mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants
   fi
 
@@ -1438,7 +1456,7 @@ EOF2
 # Enabling autoexpansion for ArchLinuxArm
 function autoexpansion_arch() {
   if ! [ -d "${TMP_DIR}/etc/systemd/system/basic.target.wants" ]; then
-    debug 'DEBUG' "Systemd basic.arget.wants directory does not exist, running: mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants"
+    debug 'DEBUG' "Systemd basic.target.wants directory does not exist, running: mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants"
     mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants
   fi
 
@@ -1510,6 +1528,7 @@ function print_result() {
       echo "## $IMG_FILE is ${AFTER_SIZE}MiB with $(( ADDED_SPACE / 1024 / 1024 ))MiB extra space included."
       debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MiB with $(( ADDED_SPACE / 1024 / 1024 ))MiB extra space included"
     fi
+    debug 'INFO' 'Img file created'
   else
     echo '## Backup done.'
     echo '##############################################################################'
@@ -1524,7 +1543,7 @@ function print_result() {
     echo "## Please wait for the system to reboot after restoring an image with autoexpansion."
   fi
   echo '##############################################################################'
-  debug 'INFO' 'Img file created and backup done'
+  debug 'INFO' 'Backup done'
   debug 'BREAK'
 return 0
 }
