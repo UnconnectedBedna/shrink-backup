@@ -21,9 +21,12 @@
 
 # Function to clean up resources on script exit or termination
 function cleanup() {
+  # exit 0 = cleanup after script
   # exit 1 = later/normal error
-  # exit 2 = early/clean error
-  # exit 3 = stopped by user
+  # exit 2 = help & looprun
+  # exit 3 = abort early, early/clean error & looprun
+  # exit 4 = abort later
+  # exit 5 = stopped by user mid script
   local exit_code="$?"
 
   if [ "$exit_code" -ne 2 ]; then
@@ -31,8 +34,12 @@ function cleanup() {
     if [ "$exit_code" -eq 0 ]; then
       debug 'DEBUG' 'Cleanup function called with exit 0'
     elif [ "$exit_code" -eq 3 ]; then
+      debug 'WARNING' 'Script aborted by user early, cleanup exit 3'
+    elif [ "$exit_code" -eq 4 ]; then
+      debug 'WARNING' 'Script aborted by user later, cleanup exit 4'
+    elif [ "$exit_code" -eq 5 ]; then
       echo -e '\n## Script stopped by user...'
-      debug 'WARNING' 'Script stopped by user, cleanup exit 3'
+      debug 'WARNING' 'Script stopped by user with ctrl+c, cleanup exit 5'
     elif [ "$exit_code" -ne 0 ]; then
       echo '## Cleanup function called with non zero exit code, something went wrong!!!'
       debug 'ERROR' "Cleanup function called with non zero exit code: exit $exit_code"
@@ -70,11 +77,13 @@ function cleanup() {
     echo "## Elapsed time: $(date -d@$SECONDS -u +%M.%S)"
     debug 'INFO' "Elapsed time: $(date -d@$SECONDS -u +%M.%S)"
     debug 'DEBUG' 'Exiting script'
-    echo '##############################################################################' >> "$LOG_FILE"
+    if [ "$DEBUG" == true ]; then
+      echo '##############################################################################' >> "$LOG_FILE"
+    fi
   fi
 }
 trap cleanup EXIT SIGTERM
-trap "exit 3" SIGINT
+trap "exit 5" SIGINT
 
 # Function to pause script execution and prompt for user input
 function pause() {
@@ -94,6 +103,7 @@ UPDATE=false
 LOG_FILE="$(dirname "$0")/shrink-backup.log"
 RESIZE2FS_WARNING=false
 ZOOM=false
+LOOPRUN=false
 
 # Function to display help information
 help() {
@@ -102,7 +112,7 @@ help() {
 Script for creating an .img file and subsequently keeing it updated (-U), autoexpansion is enabled by default
 Directory where .img file is created is automatically excluded in backup
 ########################################################################
-Usage: sudo $(basename "$0") [-Uatyelh] imagefile.img [extra space (MiB)]
+Usage: sudo $(basename "$0") [-Uatyelzh] imagefile.img [extra space (MiB)]
   -U         Update existing img file (rsync to existing img), [extra space] extends img size/root partition
   -a         Autoresize root partition (extra space is ignored)
                  When used in combination with -U:
@@ -114,6 +124,7 @@ Usage: sudo $(basename "$0") [-Uatyelh] imagefile.img [extra space (MiB)]
   -l         Write debug messages in logfile shrink-backup.log located in same directory as script
   -z         Make script zoom at light-speed, only question prompts might slow it down
                  Can be combined with -y for UNSAFE ultra mega superduper speed
+  --loop     Loop img file and exit, all other options are ignored
   -h --help  Show this help snippet
 ########################################################################
 Examples:
@@ -128,20 +139,29 @@ EOM
 }
 
 # Parse command-line options
-while getopts ":Uatyelzh" opt; do
-  case ${opt} in
-    U) UPDATE=true;;
-    a) RESIZE2FS_RUN=true;;
-    t) EXCLUDE_FILE=true;;
-    y) PROMPTS=false;;
-    e) AUTOEXPAND=false;;
-    l) DEBUG=true;;
-    z) ZOOM=true;;
-    h) help;;
-    *) help;;
+# Call getopt to validate the provided input.
+options=$(getopt -o Uatyelzh --long help,loop: -- "$@")
+[ $? -eq 0 ] || {
+    echo "Incorrect options provided"
+    help
+}
+eval set -- "$options"
+while true; do
+  case "$1" in
+    -U) UPDATE=true;;
+    -a) RESIZE2FS_RUN=true;;
+    -t) EXCLUDE_FILE=true;;
+    -y) PROMPTS=false;;
+    -e) AUTOEXPAND=false;;
+    -l) DEBUG=true;;
+    -z) ZOOM=true;;
+    -h | --help) help; break;;
+    --loop) LOOPRUN=true; break;;
+    --) break;;
+    *) shift;;
   esac
+  shift
 done
-#shift $((OPTIND-1))
 
 # Check if script is run as root
 if [ "$EUID" != 0 ]; then
@@ -164,6 +184,28 @@ function debug() {
     fi
   fi
   return 0
+}
+
+
+
+# Function to loop the img file and exit
+function looprun() {
+
+  debug 'INFO' 'Running function do_loop'
+  do_loop
+
+  echo "## $IMG_FILE looped to $LOOP"
+  echo '##############################################################################'
+  echo "$(lsblk $LOOP)"
+  echo '##############################################################################'
+  echo '## Done.'
+
+  debug 'DEBUG' 'Exiting script'
+  if [ "$DEBUG" == true ]; then
+    echo '##############################################################################' >> "$LOG_FILE"
+  fi
+
+exit 2
 }
 
 
@@ -193,15 +235,16 @@ function get_dev_variables() {
   LOCAL_ROOT_START=$(fdisk -lo start "$LOCAL_DEV_PATH" | tail -1 | awk '{print $1}') # blocks, 512B block size
   LOCAL_BOOTSECTOR=$(( LOCAL_ROOT_START - 1 )) # blocks, to set the actual bootsector
   LOCAL_DDBOOTSECTOR=$(( LOCAL_BOOTSECTOR + 256 )) # blocks, adding 256 extra to cover root filesystem
-  debug 'DEBUG' "LOCAL_ROOT_START=$LOCAL_ROOT_START Blocks | LOCAL_BOOTSECTOR=$LOCAL_BOOTSECTOR Blocks | LOCAL_DDBOOTSECTOR=$LOCAL_DDBOOTSECTOR Blocks"
+  debug 'DEBUG' "LOCAL_ROOT_START=$LOCAL_ROOT_START blocks | LOCAL_BOOTSECTOR=$LOCAL_BOOTSECTOR blocks | LOCAL_DDBOOTSECTOR=$LOCAL_DDBOOTSECTOR blocks"
   LOCAL_ROOT_START=$(( LOCAL_ROOT_START * 512 )) # bytes
   LOCAL_BOOTSECTOR=$(( LOCAL_BOOTSECTOR * 512 )) # bytes
-  debug 'DEBUG' "LOCAL_ROOT_START=$LOCAL_ROOT_START Bytes | LOCAL_BOOTSECTOR=$LOCAL_BOOTSECTOR Bytes"
+  debug 'DEBUG' "LOCAL_ROOT_START=$LOCAL_ROOT_START bytes | LOCAL_BOOTSECTOR=$LOCAL_BOOTSECTOR bytes"
   if [ $FSTYPE == 'ext4' ]; then
-    BLOCKSIZE=$(dumpe2fs -h "$LOCAL_DEV_ROOT_PATH" | grep "Block size" | awk '{print $3}') # bytes
+    BLOCKSIZE=$(dumpe2fs -h "$LOCAL_DEV_ROOT_PATH" | grep "block size" | awk '{print $3}') # bytes
+    debug 'DEBUG' "BLOCKSIZE=$BLOCKSIZE"
     LOCAL_RESIZE2FS_MIN=$(resize2fs -P "$LOCAL_DEV_ROOT_PATH" | awk '{print $7}') # blocks
     LOCAL_RESIZE2FS_MIN=$(( LOCAL_RESIZE2FS_MIN * BLOCKSIZE )) # bytes
-    debug 'DEBUG' "LOCAL_RESIZE2FS_MIN=${LOCAL_RESIZE2FS_MIN} Bytes"
+    debug 'DEBUG' "LOCAL_RESIZE2FS_MIN=${LOCAL_RESIZE2FS_MIN} bytes"
   else
     debug 'INFO' 'Running function: get_btrfs_variables'
     get_btrfs_variables
@@ -223,21 +266,21 @@ function get_dev_variables() {
     TOTAL=$LOCAL_RESIZE2FS_MIN # bytes
   else
     debug 'INFO' 'Calculating TOTAL (space needed for files on root) by adding LOCAL_USED_SPACE and ADDED_SPACE'
-    debug 'DEBUG' "LOCAL_USED_SPACE=${LOCAL_USED_SPACE} Bytes | ADDED_SPACE=${ADDED_SPACE} Bytes"
+    debug 'DEBUG' "LOCAL_USED_SPACE=${LOCAL_USED_SPACE} bytes | ADDED_SPACE=${ADDED_SPACE} bytes"
     TOTAL=$(( LOCAL_USED_SPACE + ADDED_SPACE )) # bytes
   fi
-  debug 'DEBUG' "TOTAL=${TOTAL} Bytes"
+  debug 'DEBUG' "TOTAL=${TOTAL} bytes"
 
   TRUNCATE_TOTAL=$(( LOCAL_BOOTSECTOR + TOTAL )) # bytes
   debug 'INFO' 'Calculating .img file size by adding LOCAL_BOOTSECTOR to TOTAL (only used in img creation)'
-  debug 'DEBUG' "TRUNCATE_TOTAL=${TRUNCATE_TOTAL} Bytes"
+  debug 'DEBUG' "TRUNCATE_TOTAL=${TRUNCATE_TOTAL} bytes"
 
   # Add 128MiB extra space if resize2fs reports bigger minimum than created
   if [ "$UPDATE" == false ] && [ "$TOTAL" -lt "$LOCAL_RESIZE2FS_MIN" ]; then
     debug 'WARNING' 'Adding WIGGLEROOM (128MiB) because manually requested ADDED_SPACE is less than resize2fs caluclated size'
     RESIZE2FS_WARNING=true
     TRUNCATE_TOTAL=$(( TRUNCATE_TOTAL + WIGGLEROOM ))
-    debug 'DEBUG' "RESIZE2FS_WARNING=true | WIGGLEROOM=${WIGGLEROOM} Bytes | TRUNCATE_TOTAL=${TRUNCATE_TOTAL} Bytes"
+    debug 'DEBUG' "RESIZE2FS_WARNING=true | WIGGLEROOM=${WIGGLEROOM} bytes | TRUNCATE_TOTAL=${TRUNCATE_TOTAL} bytes"
   fi
 
   return 0
@@ -281,7 +324,7 @@ function get_img_variables() {
 
   debug 'DEBUG' "Running: ls -l $IMG_FILE | awk '{print \$5}'"
   IMG_SIZE=$(ls -l "$IMG_FILE" | awk '{print $5}')
-  debug 'DEBUG' "IMG_SIZE=$IMG_SIZE Bytes"
+  debug 'DEBUG' "IMG_SIZE=$IMG_SIZE bytes"
 
   if [ "$FSTYPE" == 'btrfs' ]; then
     # Check for temp directory and create if needed
@@ -320,7 +363,6 @@ function get_img_variables() {
 # Function for shared variables
 function get_shared_variables() {
 
-  #LOOP='/dev/loop0'
   LOOP=$(losetup -f)
   debug 'DEBUG' "LOOP=$LOOP"
 
@@ -343,6 +385,11 @@ function get_shared_variables() {
 
 # Function to loop img file
 function do_loop() {
+
+  if [ -z "$LOOP" ]; then
+    LOOP=$(losetup -f)
+    debug 'DEBUG' "LOOP=$LOOP"
+  fi
 
   echo '## Looping img file...'
   $SLEEPING
@@ -492,7 +539,6 @@ function do_e2fsck() {
 
     output=$(e2fsck -p -f "$IMG_DEV_ROOT_PATH" 2>&1)
     echo "$output"
-    debug 'BREAK'
     debug 'DEBUG' "Running: e2fsck -p -f $IMG_DEV_ROOT_PATH\n$output\n------------------------------------------------------------------------------"
     $SLEEPING
   fi
@@ -509,14 +555,14 @@ function do_resize() {
   debug 'INFO' 'Using fdisk to find img root partition offset'
   debug 'DEBUG' "Running: fdisk -lo start $IMG_FILE | tail -1"
   IMG_ROOT_START=$(fdisk -lo start "$IMG_FILE" | tail -1 | awk '{print $1}') # blocks, 521B block size
-  debug 'DEBUG' "IMG_ROOT_START=$IMG_ROOT_START Blocks"
+  debug 'DEBUG' "IMG_ROOT_START=$IMG_ROOT_START blocks"
   IMG_ROOT_START=$(( IMG_ROOT_START * 512 )) # bytes
-  debug 'DEBUG' "IMG_ROOT_START=$IMG_ROOT_START Bytes"
+  debug 'DEBUG' "IMG_ROOT_START=$IMG_ROOT_START bytes"
 
-  # Converting TOTAL > TOTALK (bytes > kilobytes)
-  debug 'INFO' 'Converting TOTAL > TOTALK (bytes > kilobytes)'
-  TOTALK=$(( TOTAL / 1024 )) # kilobytes
-  debug 'DEBUG' "TOTAL=$TOTAL Bytes | TOTALK=$TOTALK Kilobytes"
+  # Converting TOTAL > TOTALK (bytes > kibibytes)
+  debug 'INFO' 'Converting TOTAL > TOTALK (bytes > kibibytes)'
+  TOTALK=$(( TOTAL / 1024 )) # kibibytes
+  debug 'DEBUG' "TOTAL=$TOTAL bytes | TOTALK=$TOTALK kibibytes"
 
   # Gather information
   debug 'INFO' 'Using parted to fetch root partition number'
@@ -726,7 +772,7 @@ function make_img() {
     echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
     echo "# Zoom speed requested: $ZOOM"
-    echo "# Autresize img root partition: $RESIZE2FS_RUN"
+    echo "# Autsize img root partition: $RESIZE2FS_RUN"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
     echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MiB"
@@ -752,10 +798,10 @@ function make_img() {
     read -p "Do you want to continue? [y/n] " -n 1 -r
     debug 'INFO' 'Do you want to continue? [y/n]'
     if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
-      debug 'WARNING' 'Aborted by user, clean exit 2'
+      debug 'WARNING' 'Aborted by user, clean exit 3'
       echo ''
       echo '## Aborting...'
-      exit 2
+      exit 3
     fi
     echo ''
     debug 'INFO' 'Y or y pressed to confirm'
@@ -769,10 +815,10 @@ function make_img() {
       read -p "Do you want to overwrite? [y/n] " -n 1 -r
       debug 'WARNING' 'Do you want to overwrite? [y/n]'
       if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
-        debug 'WARNING' 'Aborted by user, clean exit 2'
+        debug 'WARNING' 'Aborted by user, clean exit 3'
         echo ''
         echo '## Aborting...'
-        exit 2
+        exit 3
       fi
       echo ''
       debug 'WARNING' 'Overwrite confirmed by user'
@@ -794,7 +840,7 @@ function make_img() {
     echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
     echo "# Zoom speed requested: $ZOOM"
-    echo "# Autresize img root partition: $RESIZE2FS_RUN"
+    echo "# Autosize img root partition: $RESIZE2FS_RUN"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
     echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MiB"
@@ -873,13 +919,14 @@ function make_img() {
     $SLEEPING
     if [[ ! -f $(which sgdisk 2>&1) ]]; then
       echo '## sgdisk is NOT installed...'
+      debug 'INFO' 'sgdisk not available on system'
       read -p "Do you want to try to install gdisk? [y/n] " -n 1 -r
       debug 'INFO' 'Do you want to try to install gdisk? [y/n]'
       if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
-        debug 'WARNING' 'Aborted by user, clean exit 2'
+        debug 'WARNING' 'Aborted by user, later exit 4'
         echo ''
         echo '## Aborting...'
-        exit 2
+        exit 4
       fi
       echo ''
       debug 'INFO' 'Y or y pressed to confirm'
@@ -888,10 +935,10 @@ function make_img() {
         read -p "Do you want to use apt to install gdisk? [y/n] " -n 1 -r
         debug 'INFO' 'Do you want to use apt to install gdisk? [y/n]'
         if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
-          debug 'WARNING' 'Aborted by user, clean exit 2'
+          debug 'WARNING' 'Aborted by user, later exit 4'
           echo ''
           echo '## Aborting...'
-          exit 2
+          exit 4
         fi
         echo ''
         debug 'INFO' 'Y or y pressed to confirm'
@@ -904,10 +951,10 @@ function make_img() {
         read -p "Do you want to use pacman to install gptfdisk? (will do -Syu first) [y/n] " -n 1 -r
         debug 'INFO' 'Do you want to use apt to install gptfdisk? (will do -Syu first) [y/n]'
         if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
-          debug 'WARNING' 'Aborted by user, clean exit 2'
+          debug 'WARNING' 'Aborted by user, clean exit 4'
           echo ''
           echo '## Aborting...'
-          exit 2
+          exit 4
         fi
         echo ''
         debug 'INFO' 'Y or y pressed to confirm'
@@ -921,14 +968,18 @@ function make_img() {
         echo '## Aborting...'
         exit 1
       fi
-
       echo '## gdisk installed successfully, resuming backup...'
+      debug 'INFO' 'gdisk installed successfully'
+      $SLEEPING
+
+    else
+      echo '## sgdisk is available, resuming backup...'
+      debug 'INFO' 'sgdisk is available on system'
       $SLEEPING
     fi
 
     debug 'INFO' 'Using sgdisk to remove root partition'
     debug 'DEBUG' "Running: sgdisk $LOOP -d $LOCAL_ROOT_PARTN"
-
     if ! output=$(sgdisk "$LOOP" -d "$LOCAL_ROOT_PARTN" 2>&1); then
       echo -e "$output\n## SGDISK FAILED!!!"
       debug 'BREAK'
@@ -1183,11 +1234,11 @@ function do_backup() {
     debug 'DEBUG' "Running: fdisk --bytes -lo size $LOOP | tail -1"
     IMG_ROOT_SIZE=$(fdisk --bytes -lo size "$LOOP" | tail -1)
     diff=$(( ( LOCAL_RESIZE2FS_MIN - IMG_ROOT_SIZE ) / 1024 / 1024 ))
-    debug 'DEBUG' "IMG_ROOT_SIZE=$IMG_ROOT_SIZE Bytes | LOCAL_RESIZE2FS_MIN=$LOCAL_RESIZE2FS_MIN Bytes | diff=${diff}MiB"
+    debug 'DEBUG' "IMG_ROOT_SIZE=$IMG_ROOT_SIZE bytes | LOCAL_RESIZE2FS_MIN=$LOCAL_RESIZE2FS_MIN bytes | diff=${diff}MiB"
 
-    if [ "$IMG_ROOT_SIZE" -lt "$LOCAL_RESIZE2FS_MIN" ] && (( LOCAL_RESIZE2FS_MIN - IMG_ROOT_SIZE >= 268435456 )); then # 256MiB in Bytes
+    if [ "$IMG_ROOT_SIZE" -lt "$LOCAL_RESIZE2FS_MIN" ] && (( LOCAL_RESIZE2FS_MIN - IMG_ROOT_SIZE >= 268435456 )); then # 256MiB in bytes
       DIFFERENCE="$diff MiB, Expanding img filesystem"
-    elif [ "$IMG_ROOT_SIZE" -gt "$LOCAL_RESIZE2FS_MIN" ] && (( IMG_ROOT_SIZE - LOCAL_RESIZE2FS_MIN >= 536870912 )); then # 512MiB in Bytes
+    elif [ "$IMG_ROOT_SIZE" -gt "$LOCAL_RESIZE2FS_MIN" ] && (( IMG_ROOT_SIZE - LOCAL_RESIZE2FS_MIN >= 536870912 )); then # 512MiB in bytes
       DIFFERENCE="$diff MiB, Shrinking img filesystem"
     else
       DIFFERENCE="Too small ($diff MiB), not resizing filesystem"
@@ -1212,7 +1263,7 @@ function do_backup() {
     echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
     echo "# Zoom speed requested: $ZOOM"
-    echo "# Autresize img root partition: $RESIZE2FS_RUN"
+    echo "# Autoresize img root partition: $RESIZE2FS_RUN"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
     if [ "$RESIZE2FS_RUN" == true ]; then
@@ -1261,7 +1312,7 @@ function do_backup() {
     echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
     echo "# Zoom speed requested: $ZOOM"
-    echo "# Autresize img root partition: $RESIZE2FS_RUN"
+    echo "# Autoresize img root partition: $RESIZE2FS_RUN"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
     if [ "$RESIZE2FS_RUN" == true ]; then
@@ -1291,13 +1342,13 @@ function do_backup() {
 
   # Checking if resizing should be performed
   if [ "$RESIZE2FS_RUN" == true ]; then
-    if [ "$IMG_ROOT_SIZE" -lt "$LOCAL_RESIZE2FS_MIN" ] && (( LOCAL_RESIZE2FS_MIN - IMG_ROOT_SIZE >= 268435456 )); then # 256MiB in Bytes
+    if [ "$IMG_ROOT_SIZE" -lt "$LOCAL_RESIZE2FS_MIN" ] && (( LOCAL_RESIZE2FS_MIN - IMG_ROOT_SIZE >= 268435456 )); then # 256MiB in bytes
       debug 'INFO' 'Img root partition size is smaller than auto calculated size'
       debug 'DEBUG' "Difference=$diff MiB"
       debug 'INFO' "Running function: do_resize 'expand'"
       do_resize 'expand'
 
-    elif [ "$IMG_ROOT_SIZE" -gt "$LOCAL_RESIZE2FS_MIN" ] && (( IMG_ROOT_SIZE - LOCAL_RESIZE2FS_MIN >= 536870912 )); then # 512MiB in Bytes
+    elif [ "$IMG_ROOT_SIZE" -gt "$LOCAL_RESIZE2FS_MIN" ] && (( IMG_ROOT_SIZE - LOCAL_RESIZE2FS_MIN >= 536870912 )); then # 512MiB in bytes
       debug 'INFO' 'Img root partition size is bigger than auto calculated size'
       debug 'DEBUG' "diff=${diff}MiB"
 
@@ -1568,24 +1619,30 @@ if [ "$DEBUG" == true ]; then
   debug 'INFO' "Debugging requested, writing to log file $LOG_FILE"
 fi
 
-echo '## Scanning filesystem and calculating...'
-
 # Set zoom type
 if [ "$ZOOM" == false ]; then
   SLEEPING='sleep 1'
   echo '## Zoom speed NOT requested...'
   debug 'INFO' "Zoom speed NOT requested, setting SLEEPING=$SLEEPING | ZOOM=$ZOOM"
+  $SLEEPING
 else
   SLEEPING=''
   echo '## Zoom speed requested...'
   debug 'INFO' "Zoom speed requested, setting SLEEPING to empty variable | ZOOM=$ZOOM"
 fi
 
+if [ "$LOOPRUN" == true ]; then
+  debug 'INFO' '--loop selected by user, executing looprun function'
+  looprun
+fi
+
+echo '## Scanning filesystem and calculating...'
+
 # Check if the image file has the correct extension
 if [[ "$IMG_FILE" != *.img ]]; then
   echo 'ERROR! File must have .img extension'
-  debug 'ERROR' 'File must have .img extension, exit 2'
-  exit 2
+  debug 'ERROR' 'File must have .img extension, exit 3'
+  exit 3
 fi
 
 # Setting ADDED_SPACE to 0 if RESIZE2FS_RUN option is enabled
@@ -1662,8 +1719,8 @@ if [ "$EXCLUDE_FILE" == true ]; then
   debug 'INFO' "-f selected by user, using $(dirname $0)/exclude.txt"
   if ! [ -f $(dirname "$0")/exclude.txt ]; then
     echo 'ERROR! exclude.txt is not present in script directory!'
-    debug 'ERROR' 'exclude.txt does not exist in script directory, exit 2'
-    exit 2
+    debug 'ERROR' 'exclude.txt does not exist in script directory, exit 3'
+    exit 3
   fi
   debug 'DEBUG' "$(dirname $0)/exclude.txt exists"
 else
