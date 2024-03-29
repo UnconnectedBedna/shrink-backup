@@ -24,9 +24,10 @@ function cleanup() {
   # exit 0 = cleanup after script
   # exit 1 = later/normal error
   # exit 2 = help & looprun
-  # exit 3 = abort early, early/clean error & looprun
-  # exit 4 = abort later
-  # exit 5 = stopped by user mid script
+  # exit 3 = early/clean error
+  # exit 4 = abort early
+  # exit 5 = abort later
+  # exit 10 = stopped by user mid script
   local exit_code="$?"
 
   if [ "$exit_code" -ne 2 ]; then
@@ -34,12 +35,14 @@ function cleanup() {
     if [ "$exit_code" -eq 0 ]; then
       debug 'DEBUG' 'Cleanup function called with exit 0'
     elif [ "$exit_code" -eq 3 ]; then
-      debug 'WARNING' 'Script aborted by user early, cleanup exit 3'
+      debug 'WARNING' 'Early error, cleanup exit 3'
     elif [ "$exit_code" -eq 4 ]; then
-      debug 'WARNING' 'Script aborted by user later, cleanup exit 4'
+      debug 'WARNING' 'Script aborted by user early, cleanup exit 4'
     elif [ "$exit_code" -eq 5 ]; then
+      debug 'WARNING' 'Script aborted by user later, cleanup exit 5'
+    elif [ "$exit_code" -eq 10 ]; then
       echo -e '\n## Script stopped by user...'
-      debug 'WARNING' 'Script stopped by user with ctrl+c, cleanup exit 5'
+      debug 'WARNING' 'Script stopped by user with ctrl+c, cleanup exit 10'
     elif [ "$exit_code" -ne 0 ]; then
       echo '## Cleanup function called with non zero exit code, something went wrong!!!'
       debug 'ERROR' "Cleanup function called with non zero exit code: exit $exit_code"
@@ -83,7 +86,7 @@ function cleanup() {
   fi
 }
 trap cleanup EXIT SIGTERM
-trap "exit 5" SIGINT
+trap "exit 10" SIGINT
 
 # Function to pause script execution and prompt for user input
 function pause() {
@@ -112,20 +115,24 @@ help() {
 Script for creating an .img file and subsequently keeing it updated (-U), autoexpansion is enabled by default
 Directory where .img file is created is automatically excluded in backup
 ########################################################################
-Usage: sudo $(basename "$0") [-Uatyelzh] imagefile.img [extra space (MiB)]
-  -U         Update existing img file (rsync to existing img), [extra space] extends img size/root partition
-  -a         Autoresize root partition (extra space is ignored)
-                 When used in combination with -U:
-                 Expand if img is +256MiB smaller than resize2fs recommended minimum, shrink if +512MiB bigger
-  -t         Use exclude.txt in same folder as script to set excluded directories
-                 One directory per line: "/dir" or "/dir/*" to only exclude contents
-  -y         Disable prompts in script
-  -e         DO NOT expand filesystem when image is booted
-  -l         Write debug messages in logfile shrink-backup.log located in same directory as script
-  -z         Make script zoom at light-speed, only question prompts might slow it down
-                 Can be combined with -y for UNSAFE ultra mega superduper speed
-  --loop     Loop img file and exit, all other options are ignored
-  -h --help  Show this help snippet
+Usage: sudo $(basename "$0") [-Uatyelzh] [--loop] imagefile.img [extra space (MiB)]
+  -U            Update existing img file (rsync to existing img)
+                  [extra space] extends img size/root partition
+  -a            Autoresize root partition (extra space is ignored)
+                  When used in combination with -U:
+                  Expand if img is +256MiB smaller than resize2fs recommended minimum, shrink if +512MiB bigger
+  -t            Use exclude.txt in same folder as script to set excluded directories
+                  One directory per line: "/dir" or "/dir/*" to only exclude contents
+  -y            Disable prompts in script
+  -e            DO NOT expand filesystem when image is booted
+  -l            Write debug messages in logfile shrink-backup.log located in same directory as script
+  -z            Make script zoom at light-speed, only question prompts might slow it down
+                  Can be combined with -y for UNSAFE ultra mega superduper speed
+  --loop [img]  Loop [img file] and exit, works in combination with -l & -z
+                  If [extra space] is defined, the img file will be extended with the amount
+                  NOTE that only the file gets truncated, no partitions
+                  Useful for example if you want to manually manage the partitions
+  -h --help     Show this help snippet
 ########################################################################
 Examples:
 sudo $(basename "$0") -a /path/to/backup.img (create img, automatically set size)
@@ -133,6 +140,7 @@ sudo $(basename "$0") -e -y /path/to/backup.img 1024 (create img, ignore prompts
 sudo $(basename "$0") -Utl /path/to/backup.img (update img backup, use exclude.txt and write log to shrink-backup.log)
 sudo $(basename "$0") -Ua /path/to/backup.img (update img backup, automatically resizes img file if needed)
 sudo $(basename "$0") -U /path/to/backup.img 1024 (update img backup, expand img size/root partition with 1024MiB)
+sudo $(basename "$0") -l --loop /path/to/backup.img 1024 (write to log file, expand img file by 1024MiB and loop)
 EOM
   echo "$help"
   exit 2
@@ -148,19 +156,19 @@ options=$(getopt -o Uatyelzh --long help,loop: -- "$@")
 eval set -- "$options"
 while true; do
   case "$1" in
-    -U) UPDATE=true;;
-    -a) RESIZE2FS_RUN=true;;
-    -t) EXCLUDE_FILE=true;;
-    -y) PROMPTS=false;;
-    -e) AUTOEXPAND=false;;
-    -l) DEBUG=true;;
-    -z) ZOOM=true;;
+    -U) UPDATE=true; shift;;
+    -a) RESIZE2FS_RUN=true; shift;;
+    -t) EXCLUDE_FILE=true; shift;;
+    -y) PROMPTS=false; shift;;
+    -e) AUTOEXPAND=false; shift;;
+    -l) DEBUG=true; shift;;
+    -z) ZOOM=true; shift;;
     -h | --help) help; break;;
-    --loop) LOOPRUN=true; break;;
+    --loop) LOOPRUN=true; IMG_FILE="$2"; shift;;
     --) break;;
     *) shift;;
   esac
-  shift
+#  shift
 done
 
 # Check if script is run as root
@@ -191,16 +199,23 @@ function debug() {
 # Function to loop the img file and exit
 function looprun() {
 
-  debug 'INFO' 'Running function do_loop'
+  if [ -n "$ADDED_SPACE" ]; then
+    echo "## Extra space detected, truncating file by adding ${ADDED_SPACE}MiB"
+    $SLEEPING
+    truncate -s +$(( ADDED_SPACE * 1024 * 1024 )) "$IMG_FILE"
+  fi
+
+  debug 'INFO' 'Running function: do_loop'
+  $SLEEPING
   do_loop
 
-  echo "## $IMG_FILE looped to $LOOP"
+  echo "## $IMG_FILE is looped to $LOOP"
   echo '##############################################################################'
   echo "$(lsblk $LOOP)"
   echo '##############################################################################'
   echo '## Done.'
 
-  debug 'DEBUG' 'Exiting script'
+  debug 'DEBUG' 'Exiting script, exit 2'
   if [ "$DEBUG" == true ]; then
     echo '##############################################################################' >> "$LOG_FILE"
   fi
@@ -240,7 +255,7 @@ function get_dev_variables() {
   LOCAL_BOOTSECTOR=$(( LOCAL_BOOTSECTOR * 512 )) # bytes
   debug 'DEBUG' "LOCAL_ROOT_START=$LOCAL_ROOT_START bytes | LOCAL_BOOTSECTOR=$LOCAL_BOOTSECTOR bytes"
   if [ $FSTYPE == 'ext4' ]; then
-    BLOCKSIZE=$(dumpe2fs -h "$LOCAL_DEV_ROOT_PATH" | grep "block size" | awk '{print $3}') # bytes
+    BLOCKSIZE=$(dumpe2fs -h "$LOCAL_DEV_ROOT_PATH" | grep -i "block size" | awk '{print $3}') # bytes
     debug 'DEBUG' "BLOCKSIZE=$BLOCKSIZE"
     LOCAL_RESIZE2FS_MIN=$(resize2fs -P "$LOCAL_DEV_ROOT_PATH" | awk '{print $7}') # blocks
     LOCAL_RESIZE2FS_MIN=$(( LOCAL_RESIZE2FS_MIN * BLOCKSIZE )) # bytes
@@ -798,10 +813,10 @@ function make_img() {
     read -p "Do you want to continue? [y/n] " -n 1 -r
     debug 'INFO' 'Do you want to continue? [y/n]'
     if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
-      debug 'WARNING' 'Aborted by user, clean exit 3'
+      debug 'WARNING' 'Aborted by user, exit 4'
       echo ''
       echo '## Aborting...'
-      exit 3
+      exit 4
     fi
     echo ''
     debug 'INFO' 'Y or y pressed to confirm'
@@ -815,10 +830,10 @@ function make_img() {
       read -p "Do you want to overwrite? [y/n] " -n 1 -r
       debug 'WARNING' 'Do you want to overwrite? [y/n]'
       if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
-        debug 'WARNING' 'Aborted by user, clean exit 3'
+        debug 'WARNING' 'Aborted by user, exit 4'
         echo ''
         echo '## Aborting...'
-        exit 3
+        exit 4
       fi
       echo ''
       debug 'WARNING' 'Overwrite confirmed by user'
@@ -923,10 +938,10 @@ function make_img() {
       read -p "Do you want to try to install gdisk? [y/n] " -n 1 -r
       debug 'INFO' 'Do you want to try to install gdisk? [y/n]'
       if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
-        debug 'WARNING' 'Aborted by user, later exit 4'
+        debug 'WARNING' 'Aborted by user, exit 5'
         echo ''
         echo '## Aborting...'
-        exit 4
+        exit 5
       fi
       echo ''
       debug 'INFO' 'Y or y pressed to confirm'
@@ -935,10 +950,10 @@ function make_img() {
         read -p "Do you want to use apt to install gdisk? [y/n] " -n 1 -r
         debug 'INFO' 'Do you want to use apt to install gdisk? [y/n]'
         if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
-          debug 'WARNING' 'Aborted by user, later exit 4'
+          debug 'WARNING' 'Aborted by user, exit 5'
           echo ''
           echo '## Aborting...'
-          exit 4
+          exit 5
         fi
         echo ''
         debug 'INFO' 'Y or y pressed to confirm'
@@ -951,10 +966,10 @@ function make_img() {
         read -p "Do you want to use pacman to install gptfdisk? (will do -Syu first) [y/n] " -n 1 -r
         debug 'INFO' 'Do you want to use apt to install gptfdisk? (will do -Syu first) [y/n]'
         if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
-          debug 'WARNING' 'Aborted by user, clean exit 4'
+          debug 'WARNING' 'Aborted by user, exit 5'
           echo ''
           echo '## Aborting...'
-          exit 4
+          exit 5
         fi
         echo ''
         debug 'INFO' 'Y or y pressed to confirm'
@@ -1288,10 +1303,10 @@ function do_backup() {
     read -p "Do you want to continue? [y/n] " -n 1 -r
     debug 'INFO' 'Do you want to continue? [y/n]'
     if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
-      debug 'WARNING' 'Aborted by user, cleanup exit 3'
+      debug 'WARNING' 'Aborted by user, exit 4'
       echo ''
       echo 'Aborting...'
-      exit 3
+      exit 4
     fi
     echo ''
     debug 'INFO' 'Y or y pressed to confirm'
@@ -1472,8 +1487,10 @@ ExecStop=/bin/bash -c "/usr/bin/rm /etc/systemd/system/basic.target.wants/expand
 WantedBy=basic.target
 EOF
 
-  debug 'DEBUG' "Enabling systemd service by creating symlink: ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service"
-  ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service
+  if ! [ -L "${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service" ]; then
+    debug 'DEBUG' "Enabling systemd service by creating symlink: ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service"
+    ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service
+  fi
 
   # Creating script for autoexpansion
   debug 'DEBUG' "Creating expansion script ${TMP_DIR}/expand-fs.sh"
@@ -1606,6 +1623,9 @@ while [ "$#" -gt 0 ];
 do
   if [[ "$1" =~ ^- ]]; then
     shift
+  elif [ -n "$IMG_FILE" ]; then
+    ADDED_SPACE="$1"
+    break
   else
     IMG_FILE="$1"
     ADDED_SPACE="$2"
@@ -1631,13 +1651,6 @@ else
   debug 'INFO' "Zoom speed requested, setting SLEEPING to empty variable | ZOOM=$ZOOM"
 fi
 
-if [ "$LOOPRUN" == true ]; then
-  debug 'INFO' '--loop selected by user, executing looprun function'
-  looprun
-fi
-
-echo '## Scanning filesystem and calculating...'
-
 # Check if the image file has the correct extension
 if [[ "$IMG_FILE" != *.img ]]; then
   echo 'ERROR! File must have .img extension'
@@ -1646,14 +1659,14 @@ if [[ "$IMG_FILE" != *.img ]]; then
 fi
 
 # Setting ADDED_SPACE to 0 if RESIZE2FS_RUN option is enabled
-if [ "$RESIZE2FS_RUN" == true ]; then
+if [ "$RESIZE2FS_RUN" == true ] && [ "$LOOPRUN" == false ]; then
   ADDED_SPACE=0
   debug 'INFO' '-a selected by user'
   debug 'DEBUG' "ADDED_SPACE=$ADDED_SPACE"
 fi
 
 # Setting adding ADDED_SPACE to 0 if update is requested and variable ADDED_SPACE is a zero value
-if [ $UPDATE == true ] && [ -z "$ADDED_SPACE" ]; then
+if [ $UPDATE == true ] && [ -z "$ADDED_SPACE" ] && [ "$LOOPRUN" == false ]; then
   ADDED_SPACE=0
   debug 'INFO' '-U selected, -a not selected or extra space not provided by user, setting to ADDED_SPACE to 0 (non-zero value)'
   debug 'DEBUG' "ADDED_SPACE=$ADDED_SPACE"
@@ -1664,7 +1677,7 @@ RE='^[0-9]+$'
 
 # Validate the added space argument as a whole number
 # -z = zero value, -n = non-zero value, || = or, && = and
-if ! [[ "$ADDED_SPACE" =~ $RE ]]; then
+if ! [[ "$ADDED_SPACE" =~ $RE ]] && [ -n "$ADDED_SPACE" ]; then
   debug 'WARNING' 'User defined ADDED_SPACE is not a regualar expression (whole number)'
   COUNTER=0
   while ! [[ "$ADDED_SPACE" =~ $RE ]]
@@ -1684,6 +1697,13 @@ if ! [[ "$ADDED_SPACE" =~ $RE ]]; then
     debug 'USER_INPUT' "User requested ${ADDED_SPACE}MiB as ADDED_SPACE"
   done
 fi
+
+if [ "$LOOPRUN" == true ]; then
+  debug 'INFO' '--loop selected by user, running function: looprun'
+  looprun
+fi
+
+echo '## Scanning filesystem and calculating...'
 
 # Check what filesystem root is using
 if lsblk -lo mountpoint,fstype | grep '/ ' | grep -q 'ext4'; then
@@ -1728,11 +1748,11 @@ else
 fi
 
 if [ "$UPDATE" != true ]; then
-  debug 'INFO' 'Executing make_img function'
+  debug 'INFO' 'Running function: make_img'
   debug 'BREAK'
   make_img
 else
-  debug 'INFO' '-U selected by user, executing do_backup function'
+  debug 'INFO' '-U selected by user, running function: do_backup'
   debug 'BREAK'
   do_backup
 fi
@@ -1740,31 +1760,35 @@ fi
 # Check if autoexpansion is requested and run required function
 if [ "$AUTOEXPAND" == true ]; then
   echo '## Enabling fs-autoexpand...'
-  debug 'INFO' 'Executing expand_fs function'
+  debug 'INFO' 'Checking OS for autoexpand function'
   $SLEEPING
   if cat /etc/os-release | grep -i 'manjaro' >/dev/null; then
     echo '## Manjaro os detected...'
     debug 'INFO' 'Manjaro os detected'
+    debug 'INFO' 'Running function: autoexpansion_manjaro'
     $SLEEPING
     autoexpansion_manjaro
   elif [ -e /etc/armbian-release ]; then
     debug 'INFO' 'Armbian os detected'
+    debug 'INFO' 'Running function: autoexpansion_armbian'
     echo '## Armbian os detected...'
     $SLEEPING
     autoexpansion_armbian
   elif uname -a | grep -q 'raspberry' || [ -e /etc/apt/sources.list.d/raspi.list ]; then
     debug 'INFO' 'Raspberry pi detected'
+    debug 'INFO' 'Running function: autoexpansion_rpi'
     echo '## Raspberry pi detected...'
     $SLEEPING
     autoexpansion_rpi
   elif grep -q 'archlinuxarm' /etc/os-release; then
     echo '## ArchLinuxArm os detected...'
     debug 'INFO' 'ArchLinuxArm os detected'
+    debug 'INFO' 'Running function: autoexpansion_arch'
     $SLEEPING
     autoexpansion_arch
   else
-    echo '## No autoexpand option available for this os...'
-    debug 'WARNING' 'No autoexpand option available for this os'
+    echo '## No autoexpand option available for this OS...'
+    debug 'WARNING' 'No autoexpand option available for this OS'
     AUTOEXPAND='failed'
     $SLEEPING
   fi
