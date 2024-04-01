@@ -25,25 +25,33 @@ See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit mor
 **To restore a backup, simply "burn" the img file to a device using your favorite method.**<br>
 When booting up a restored image with autoresize active, wait until the the reboot sequence has occured. The login prompt may very well become visible before the autoresize function has rebooted.
 
+<hr>
+
 ## Usage
 ```
 shrink-backup -h
 Script for creating an .img file and subsequently keeing it updated (-U), autoexpansion is enabled by default
 Directory where .img file is created is automatically excluded in backup
 ########################################################################
-Usage: sudo shrink-backup [-Uatyelh] imagefile.img [extra space (MiB)]
-  -U         Update existing img file, [extra space] extends img size/root partition
-  -a         Let resize2fs decide minimum space (extra space is ignored)
-                 When used in combination with -U:
-                 Expand if img is +256MiB smaller than resize2fs recommended minimum, shrink if +512MiB bigger
-  -t         Use exclude.txt in same folder as script to set excluded directories
-                 One directory per line: "/dir" or "/dir/*" to only exclude contents
-  -y         Disable prompts in script
-  -e         DO NOT expand filesystem when image is booted
-  -l         Write debug messages in logfile shrink-backup.log in same directory as script
-  -z         Make script zoom at light-speed, only question prompts might slow it down
-                 Can be combined with -y for UNSAFE ultra mega superduper speed
-  -h --help  Show this help snippet
+Usage: sudo shrink-backup [-Uatyelhz] [--loop] imagefile.img [extra space (MiB)]
+  -U            Update existing img file (rsync to existing img)
+                  [extra space] extends img size/root partition
+  -a            Autoresize root partition (extra space is ignored)
+                  When used in combination with -U:
+                  Expand if partition is >=256MiB smaller than resize2fs recommended minimum
+                  Shrink if partition is >=512MiB bigger than resize2fs recommended minimum
+  -t            Use exclude.txt in same folder as script to set excluded directories
+                  One directory per line: "/dir" or "/dir/*" to only exclude contents
+  -y            Disable prompts in script (please use this option with care!)
+  -e            DO NOT (disable) expand filesystem when image is booted
+  -l            Write debug messages in logfile shrink-backup.log located in same directory as script
+  -z            Make script zoom at light-speed, only question prompts might slow it down
+                  Can be combined with -y for UNSAFE ultra mega superduper speed
+  --loop [img]  Loop img file and exit, works in combination with -l & -z
+                  If [extra space] is also defined, the img file will be extended with the amount before looping
+                  NOTE that only the file gets truncated, no partitions
+                  Useful for example if you want to manually manage the partitions
+  -h --help     Show this help snippet
 ########################################################################
 Examples:
 sudo shrink-backup -a /path/to/backup.img (create img, resize2fs calcualtes size)
@@ -51,9 +59,10 @@ sudo shrink-backup -e -y /path/to/backup.img 1024 (create img, ignore prompts, d
 sudo shrink-backup -Utl /path/to/backup.img (update img backup, use exclude.txt and write log to shrink-backup.log)
 sudo shrink-backup -Ua /path/to/backup.img (update img backup, resize2fs calculates and resizes img file if needed)
 sudo shrink-backup -U /path/to/backup.img 1024 (update img backup, expand img size/root partition with 1024MiB)
+sudo shrink-backup -l --loop /path/to/backup.img 1024 (write to log file, expand IMG FILE (not partition) by 1024MiB and loop)
 ```
 
-The `-z` "zoom" option simply removes the one second sleep at each prompt to let the user time to read.<br>
+The `-z` "zoom" option simply removes the one second sleep at each prompt to give the user time to read.<br>
 By using the option, you save 20-30s when running the script.<br>
 When used in combination with `-y` **warnings will also be "bypassed"! PLEASE use with care!**
 
@@ -79,7 +88,7 @@ If `-t` is **NOT** selected the following folders will be excluded:
 
 **Rsync WILL cross filesystem boundries, so make sure you exclude external drives unless you want them included in the backup.**<br>
 Not excluding other partitions will copy the data to the img root partition, not create more partitions so make sure to **manually add extra space** if you do this.<br>
-The script will **ONLY** look at your `root` when calculating sizes.
+The script will **ONLY** look at your `root` partition when calculating sizes.
 
 Use `-l` to write debug info into `shrink-backup.log` file located in the same directory as the script.
 
@@ -94,7 +103,9 @@ Use `-l` to write debug info into `shrink-backup.log` file located in the same d
 - rsync
 - gdisk (sgdisk is needed if the partition table is GPT, the script will inform you)
 
-## Info
+<hr>
+
+## Image creation
 
 Theoretically the script should work on any device as long as root filesystem is `ext4`. But IMHO is best applied on ARM hardware.<br>
 Since the script uses `lsblk` to figure out where the root resides it does not matter what device it is on.<br>
@@ -145,6 +156,13 @@ If the filesystem you back up from increases in size, an update (`-U`) of the im
 By using `-a` in combination with `-U` the script will resize the img file if needed. Please see section about image update below for more information.<br>
 Using combination`-Ua` on an img that has become overfilled works, or at least I have not gotten it to fail, but use at own risk.
 
+<hr>
+
+## Image update
+
+To update an existing img file simply use the `-U` option and the path to the img file.<br>
+Example: `sudo shrink-backup -U /path/to/backup.img`
+
 ### Order of operations - Image update
 1. Loops the img file.
 2. Probes the loop of the img file for information about partitions.
@@ -157,17 +175,16 @@ Using combination`-Ua` on an img that has become overfilled works, or at least I
 9. Tries to create autoresize scripts if not disabled with `-e`.
 10. Unmounts and removes temp directory and file (file created for rsync log output).
 
-To update an existing img file simply use the `-U` option and the path to the img file.<br>
-Example: `sudo shrink-backup -U /path/to/backup.img`
-
 #### Resizing img file when updating
 If `-a` is used in combination with `-U`, the script will compare the root partition on the img file to the size `resize2fs` recommends as minimum.<br>
-The img file needs to be **+256MB** smaller than `resize2fs` recommended minimum to be expanded.<br>
-The img file needs to be **+512MB** bigger than `resize2fs` recommended minimum to be shrunk.<br>
+The img file `root` **partition** needs to be **>=256MB smaller** than `resize2fs` recommended minimum to be expanded.<br>
+The img file `root` **partition** needs to be **>=512MB bigger** than `resize2fs` recommended minimum to be shrunk.<br>
 This is to protect from unessesary resizing operations most likely not needed.
 
 If _manually added_ `[extra space]` is used in combination with `-U`, the img file's root partition will be expanded by that amount. No checks are being performed to make sure the data you want to back up will actually fit.<br>
 Only expansion is possible with this method.
+
+<hr>
 
 ## btrfs
 
