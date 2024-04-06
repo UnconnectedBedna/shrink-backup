@@ -120,27 +120,28 @@ Usage: sudo $(basename "$0") [-Uatyelzh] [--loop] imagefile.img [extra space (Mi
                   [extra space] extends img size/root partition
   -a            Autoresize root partition (extra space is ignored)
                   When used in combination with -U:
-                  Expand if img is +256MiB smaller than resize2fs recommended minimum, shrink if +512MiB bigger
+                  Expand if partition is >=256MiB smaller than resize2fs recommended minimum
+                  Shrink if partition is >=512MiB bigger than resize2fs recommended minimum
   -t            Use exclude.txt in same folder as script to set excluded directories
                   One directory per line: "/dir" or "/dir/*" to only exclude contents
-  -y            Disable prompts in script
-  -e            DO NOT expand filesystem when image is booted
+  -y            Disable prompts in script (please use this option with care!)
+  -e            DO NOT (disable) expand filesystem when image is booted
   -l            Write debug messages in logfile shrink-backup.log located in same directory as script
   -z            Make script zoom at light-speed, only question prompts might slow it down
                   Can be combined with -y for UNSAFE ultra mega superduper speed
-  --loop [img]  Loop [img file] and exit, works in combination with -l & -z
-                  If [extra space] is defined, the img file will be extended with the amount
+  --loop [img]  Loop img file and exit, works in combination with -l & -z
+                  If [extra space] is also defined, the img file will be extended with the amount before looping
                   NOTE that only the file gets truncated, no partitions
                   Useful for example if you want to manually manage the partitions
   -h --help     Show this help snippet
 ########################################################################
 Examples:
 sudo $(basename "$0") -a /path/to/backup.img (create img, automatically set size)
-sudo $(basename "$0") -e -y /path/to/backup.img 1024 (create img, ignore prompts, do not autoexpand, add 1024MiB extra space)
+sudo $(basename "$0") -e -y /path/to/backup.img 1024 (create img, ignore prompts, do NOT autoexpand, add 1024MiB extra space)
 sudo $(basename "$0") -Utl /path/to/backup.img (update img backup, use exclude.txt and write log to shrink-backup.log)
 sudo $(basename "$0") -Ua /path/to/backup.img (update img backup, automatically resizes img file if needed)
 sudo $(basename "$0") -U /path/to/backup.img 1024 (update img backup, expand img size/root partition with 1024MiB)
-sudo $(basename "$0") -l --loop /path/to/backup.img 1024 (write to log file, expand img file by 1024MiB and loop)
+sudo $(basename "$0") -l --loop /path/to/backup.img 1024 (write to log file, expand IMG FILE (not partition) by 1024MiB and loop)
 EOM
   echo "$help"
   exit 2
@@ -164,11 +165,10 @@ while true; do
     -l) DEBUG=true; shift;;
     -z) ZOOM=true; shift;;
     -h | --help) help; break;;
-    --loop) LOOPRUN=true; IMG_FILE="$2"; shift;;
-    --) break;;
+    --loop) LOOPRUN=true; IMG_FILE="$2"; shift 2;;
+    --) shift; break;;
     *) shift;;
   esac
-#  shift
 done
 
 # Check if script is run as root
@@ -1246,8 +1246,8 @@ function do_backup() {
 
   # Checking if resizing should be performed
   if [ "$RESIZE2FS_RUN" == true ]; then
-    debug 'DEBUG' "Running: fdisk --bytes -lo size $LOOP | tail -1"
-    IMG_ROOT_SIZE=$(fdisk --bytes -lo size "$LOOP" | tail -1)
+    debug 'DEBUG' "Running: fdisk --bytes -lo device,size "$LOOP" | grep "$IMG_DEV_ROOT_PATH" | awk '{print \$2}'"
+    IMG_ROOT_SIZE=$(fdisk --bytes -lo device,size "$LOOP" | grep "$IMG_DEV_ROOT_PATH" | awk '{print $2}' )
     diff=$(( ( LOCAL_RESIZE2FS_MIN - IMG_ROOT_SIZE ) / 1024 / 1024 ))
     debug 'DEBUG' "IMG_ROOT_SIZE=$IMG_ROOT_SIZE bytes | LOCAL_RESIZE2FS_MIN=$LOCAL_RESIZE2FS_MIN bytes | diff=${diff}MiB"
 
@@ -1256,7 +1256,11 @@ function do_backup() {
     elif [ "$IMG_ROOT_SIZE" -gt "$LOCAL_RESIZE2FS_MIN" ] && (( IMG_ROOT_SIZE - LOCAL_RESIZE2FS_MIN >= 536870912 )); then # 512MiB in bytes
       DIFFERENCE="$diff MiB, Shrinking img filesystem"
     else
-      DIFFERENCE="Too small ($diff MiB), not resizing filesystem"
+      if [ "$diff" != -* ]; then
+        DIFFERENCE="Too small ($diff MiB), not expanding filesystem"
+      else
+        DIFFERENCE="Too small ($diff MiB), not shrinking filesystem"
+      fi
     fi
   elif [ "$ADDED_SPACE" -ne 0 ]; then
     debug 'INFO' 'Manually added space provided by user, calculating img size (TRUNCATE_TOTAL) by adding ADDED_SPACE to IMG_SIZE'
@@ -1438,8 +1442,10 @@ ExecStop=/bin/bash -c "/usr/bin/rm /etc/systemd/system/basic.target.wants/expand
 WantedBy=basic.target
 EOF
 
-  debug 'DEBUG' "Systemd service not enabled, creating symlink: ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service"
-  ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service
+  if ! [ -L "${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service" ]; then
+    debug 'DEBUG' "Enabling systemd service by creating symlink: ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service"
+    ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service
+  fi
 
   echo '## Manjaro filesystem autoresizing at boot...'
   debug 'INFO' 'Manjaro filesystem autoresizing at boot'
@@ -1451,7 +1457,7 @@ EOF
 
 # Enabling autoexpansion for Armbian
 function autoexpansion_armbian() {
-  if ! test -f "${TMP_DIR}/etc/systemd/system/basic.target.wants/armbian-resize-filesystem.service"; then
+  if ! test -L "${TMP_DIR}/etc/systemd/system/basic.target.wants/armbian-resize-filesystem.service"; then
     debug 'DEBUG' "Enabling systemd service by creating symlink: ln -s /lib/systemd/system/armbian-resize-filesystem.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/armbian-resize-filesystem.service"
     ln -s /lib/systemd/system/armbian-resize-filesystem.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/armbian-resize-filesystem.service
   fi
@@ -1545,8 +1551,10 @@ ExecStop=/bin/bash -c "/usr/bin/rm /etc/systemd/system/basic.target.wants/expand
 WantedBy=basic.target
 EOF
 
-  debug 'DEBUG' "Enabling systemd service by creating symlink: ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service"
-  ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service
+  if ! [ -L "${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service" ]; then
+    debug 'DEBUG' "Enabling systemd service by creating symlink: ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service"
+    ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service
+  fi
 
   # Creating script for autoexpansion
   debug 'DEBUG' 'Creating expansion script ${TMP_DIR}/expand-fs.sh'
