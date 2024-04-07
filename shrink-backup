@@ -107,6 +107,9 @@ LOG_FILE="$(dirname "$0")/shrink-backup.log"
 RESIZE2FS_WARNING=false
 ZOOM=false
 LOOPRUN=false
+RSYNC_DELETE='--delete'
+IS_LOOPED=false
+RESIZE_RUN=false
 
 # Function to display help information
 help() {
@@ -115,7 +118,7 @@ help() {
 Script for creating an .img file and subsequently keeing it updated (-U), autoexpansion is enabled by default
 Directory where .img file is created is automatically excluded in backup
 ########################################################################
-Usage: sudo $(basename "$0") [-Uatyelzh] [--loop] imagefile.img [extra space (MiB)]
+Usage: sudo $(basename "$0") [-Uatyelzh] [--fix] [--loop] imagefile.img [extra space (MiB)]
   -U            Update existing img file (rsync to existing img)
                   [extra space] extends img size/root partition
   -a            Autoresize root partition (extra space is ignored)
@@ -125,10 +128,11 @@ Usage: sudo $(basename "$0") [-Uatyelzh] [--loop] imagefile.img [extra space (Mi
   -t            Use exclude.txt in same folder as script to set excluded directories
                   One directory per line: "/dir" or "/dir/*" to only exclude contents
   -y            Disable prompts in script (please use this option with care!)
-  -e            DO NOT (disable) expand filesystem when image is booted
+  -e            DO NOT expand filesystem when image is booted
   -l            Write debug messages in logfile shrink-backup.log located in same directory as script
   -z            Make script zoom at light-speed, only question prompts might slow it down
                   Can be combined with -y for UNSAFE ultra mega superduper speed
+  --fix         Try to fix the img file if -a fails with a "broken pipe" error
   --loop [img]  Loop img file and exit, works in combination with -l & -z
                   If [extra space] is also defined, the img file will be extended with the amount before looping
                   NOTE that only the file gets truncated, no partitions
@@ -149,7 +153,7 @@ EOM
 
 # Parse command-line options
 # Call getopt to validate the provided input.
-options=$(getopt -o Uatyelzh --long help,loop: -- "$@")
+options=$(getopt -o Uatyelzh --long help,fix,loop: -- "$@")
 [ $? -eq 0 ] || {
     echo "Incorrect options provided"
     help
@@ -158,13 +162,14 @@ eval set -- "$options"
 while true; do
   case "$1" in
     -U) UPDATE=true; shift;;
-    -a) RESIZE2FS_RUN=true; shift;;
+    -a) RESIZE2FS_RUN=true; RESIZE_RUN=true; shift;;
     -t) EXCLUDE_FILE=true; shift;;
     -y) PROMPTS=false; shift;;
     -e) AUTOEXPAND=false; shift;;
     -l) DEBUG=true; shift;;
     -z) ZOOM=true; shift;;
     -h | --help) help; break;;
+    --fix) RSYNC_DELETE='--delete-before'; shift;;
     --loop) LOOPRUN=true; IMG_FILE="$2"; shift 2;;
     --) shift; break;;
     *) shift;;
@@ -228,11 +233,19 @@ exit 2
 # Function to gather device information
 function get_dev_variables() {
 
+  if [ "$FSTYPE" == 'btrfs' ] && [ "$RESIZE2FS_RUN" == false ] && [ "$ADDED_SPACE" -eq 0 ]; then
+    debug 'INFO' 'Running function: get_btrfs_variables'
+    get_btrfs_variables
+    return 0
+  fi
+
+  ADDED_SPACE=$(( ADDED_SPACE * 1024 * 1024 )) # bytes, ADDED_SPACE=0 if RESIZE2FS_RUN=true
+
   # Check if separate boot and root partition exists and set variables accordingly
-  if [ $(lsblk | grep -c 'boot') -ne 0 ]; then
+  #if [ $(lsblk | grep -c 'boot') -ne 0 ]; then
+  if $(cat /etc/fstab | grep -q 'boot'); then
     debug 'INFO' 'Separate boot partition detected'
     LOCAL_DEV_BOOT_PATH=$(lsblk -lpo mountpoint,path | grep 'boot' | awk '{print $2}')
-    #LOCAL_DEV_ROOT_PATH=$(lsblk -lpo mountpoint,path | grep '/ ' | awk '{print $2}')
     LOCAL_DEV_ROOT_PATH=$(mount | grep '/ ' | awk '{print $1}')
     debug 'DEBUG' "LOCAL_DEV_BOOT_PATH=$LOCAL_DEV_BOOT_PATH | LOCAL_DEV_ROOT_PATH=$LOCAL_DEV_ROOT_PATH"
   else
@@ -244,36 +257,39 @@ function get_dev_variables() {
   LOCAL_ROOT_PARTN=$(parted -sm "$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
   debug 'DEBUG' "LOCAL_ROOT_PARTN=$LOCAL_ROOT_PARTN"
 
-  # Collecting data and making calculations
-  debug 'INFO' 'Calculating size for dd to cover bootsector in blocks (512B block size) and adding 256 blocks to overlap into root (only used in img creation)'
-  debug 'DEBUG' "Running: fdisk -lo start "$LOCAL_DEV_PATH" | tail -1"
-  LOCAL_ROOT_START=$(fdisk -lo start "$LOCAL_DEV_PATH" | tail -1 | awk '{print $1}') # blocks, 512B block size
-  LOCAL_BOOTSECTOR=$(( LOCAL_ROOT_START - 1 )) # blocks, to set the actual bootsector
-  LOCAL_DDBOOTSECTOR=$(( LOCAL_BOOTSECTOR + 256 )) # blocks, adding 256 extra to cover root filesystem
-  debug 'DEBUG' "LOCAL_ROOT_START=$LOCAL_ROOT_START blocks | LOCAL_BOOTSECTOR=$LOCAL_BOOTSECTOR blocks | LOCAL_DDBOOTSECTOR=$LOCAL_DDBOOTSECTOR blocks"
-  LOCAL_ROOT_START=$(( LOCAL_ROOT_START * 512 )) # bytes
-  LOCAL_BOOTSECTOR=$(( LOCAL_BOOTSECTOR * 512 )) # bytes
-  debug 'DEBUG' "LOCAL_ROOT_START=$LOCAL_ROOT_START bytes | LOCAL_BOOTSECTOR=$LOCAL_BOOTSECTOR bytes"
-  if [ $FSTYPE == 'ext4' ]; then
-    BLOCKSIZE=$(dumpe2fs -h "$LOCAL_DEV_ROOT_PATH" | grep -i "block size" | awk '{print $3}') # bytes
-    debug 'DEBUG' "BLOCKSIZE=$BLOCKSIZE"
-    LOCAL_RESIZE2FS_MIN=$(resize2fs -P "$LOCAL_DEV_ROOT_PATH" | awk '{print $7}') # blocks
-    LOCAL_RESIZE2FS_MIN=$(( LOCAL_RESIZE2FS_MIN * BLOCKSIZE )) # bytes
-    debug 'DEBUG' "LOCAL_RESIZE2FS_MIN=${LOCAL_RESIZE2FS_MIN} bytes"
-  else
-    debug 'INFO' 'Running function: get_btrfs_variables'
-    get_btrfs_variables
+  if [ "$UPDATE" == false ] || [ "$RESIZE_RUN" == true ]; then
+    # Collecting data and making calculations
+    debug 'INFO' 'Calculating size for dd to cover bootsector in blocks (512B block size) and adding 256 blocks to overlap into root (only used in img creation)'
+    debug 'DEBUG' "Running: fdisk -lo start "$LOCAL_DEV_PATH" | tail -1"
+    LOCAL_ROOT_START=$(fdisk -lo start "$LOCAL_DEV_PATH" | tail -1 | awk '{print $1}') # blocks, 512B block size
+    LOCAL_BOOTSECTOR=$(( LOCAL_ROOT_START - 1 )) # blocks, to set the actual bootsector
+    LOCAL_DDBOOTSECTOR=$(( LOCAL_BOOTSECTOR + 256 )) # blocks, adding 256 extra to cover root filesystem
+    debug 'DEBUG' "LOCAL_ROOT_START=$LOCAL_ROOT_START blocks | LOCAL_BOOTSECTOR=$LOCAL_BOOTSECTOR blocks | LOCAL_DDBOOTSECTOR=$LOCAL_DDBOOTSECTOR blocks"
+    LOCAL_ROOT_START=$(( LOCAL_ROOT_START * 512 )) # bytes
+    LOCAL_BOOTSECTOR=$(( LOCAL_BOOTSECTOR * 512 )) # bytes
+    debug 'DEBUG' "LOCAL_ROOT_START=$LOCAL_ROOT_START bytes | LOCAL_BOOTSECTOR=$LOCAL_BOOTSECTOR bytes"
+  fi
+
+  if [ "$RESIZE2FS_RUN" == true ]; then
+    if [ $FSTYPE == 'ext4' ]; then
+      BLOCKSIZE=$(dumpe2fs -h "$LOCAL_DEV_ROOT_PATH" | grep -i "block size" | awk '{print $3}') # bytes
+      debug 'DEBUG' "BLOCKSIZE=$BLOCKSIZE"
+      LOCAL_RESIZE2FS_MIN=$(resize2fs -P "$LOCAL_DEV_ROOT_PATH" | awk '{print $7}') # blocks
+      LOCAL_RESIZE2FS_MIN=$(( LOCAL_RESIZE2FS_MIN * BLOCKSIZE )) # bytes
+      debug 'DEBUG' "LOCAL_RESIZE2FS_MIN=${LOCAL_RESIZE2FS_MIN} bytes"
+    else
+      debug 'INFO' 'Running function: get_btrfs_variables'
+      get_btrfs_variables
+    fi
   fi
 
   # Method 1, using the value of "size - available"
   LOCAL_DF_OUTPUT=( $(df / -k --sync --output=size,avail | tail -1) ) # 1k blocks, 0 is the first position in an array
   LOCAL_USED_SPACE=$(( (${LOCAL_DF_OUTPUT[0]} - ${LOCAL_DF_OUTPUT[1]}) * 1024 )) # bytes, df is in 1k blocks, 0 is the first position
+
   # Method 2, using "used space" straight up
   #LOCAL_DF_OUTPUT=( $(df / -k --sync --output=used | tail -1) ) # 1k blocks
   #LOCAL_USED_SPACE=$(( LOCAL_DF_OUTPUT * 1024 )) # bytes, df is in 1k blocks
-
-  ADDED_SPACE=$(( ADDED_SPACE * 1024 * 1024 )) # bytes
-  WIGGLEROOM=134217728 # 128MiB = 134217728B, 192MiB = 201326592B
 
   # Use resize2fs to set size if option is selected
   if [ "$RESIZE2FS_RUN" == true ]; then
@@ -286,19 +302,22 @@ function get_dev_variables() {
   fi
   debug 'DEBUG' "TOTAL=${TOTAL} bytes"
 
-  TRUNCATE_TOTAL=$(( LOCAL_BOOTSECTOR + TOTAL )) # bytes
-  debug 'INFO' 'Calculating .img file size by adding LOCAL_BOOTSECTOR to TOTAL (only used in img creation)'
-  debug 'DEBUG' "TRUNCATE_TOTAL=${TRUNCATE_TOTAL} bytes"
+  if [ "$UPDATE" == false ] || [ "$RESIZE_RUN" == true ]; then
+    TRUNCATE_TOTAL=$(( LOCAL_BOOTSECTOR + TOTAL )) # bytes
+    debug 'INFO' 'Calculating .img file size by adding LOCAL_BOOTSECTOR to TOTAL'
+    debug 'DEBUG' "TRUNCATE_TOTAL=${TRUNCATE_TOTAL} bytes"
+  fi
 
   # Add 128MiB extra space if resize2fs reports bigger minimum than created
   if [ "$UPDATE" == false ] && [ "$TOTAL" -lt "$LOCAL_RESIZE2FS_MIN" ]; then
     debug 'WARNING' 'Adding WIGGLEROOM (128MiB) because manually requested ADDED_SPACE is less than resize2fs caluclated size'
     RESIZE2FS_WARNING=true
+    WIGGLEROOM=134217728 # 128MiB = 134217728B, 192MiB = 201326592B
     TRUNCATE_TOTAL=$(( TRUNCATE_TOTAL + WIGGLEROOM ))
     debug 'DEBUG' "RESIZE2FS_WARNING=true | WIGGLEROOM=${WIGGLEROOM} bytes | TRUNCATE_TOTAL=${TRUNCATE_TOTAL} bytes"
   fi
 
-  return 0
+return 0
 }
 
 
@@ -329,7 +348,7 @@ function get_btrfs_variables() {
     debug 'DEBUG' "After filtering, LOCAL_SUBVOLUMES=$(echo ${LOCAL_SUBVOLUMES[@]})"
   fi
 
-  return 0
+return 0
 }
 
 
@@ -341,6 +360,38 @@ function get_img_variables() {
   IMG_SIZE=$(ls -l "$IMG_FILE" | awk '{print $5}')
   debug 'DEBUG' "IMG_SIZE=$IMG_SIZE bytes"
 
+  if $(cat /etc/fstab | grep -q 'boot'); then
+    debug 'INFO' 'Separate boot partition detected'
+    debug 'DEBUG' "Running: cat /etc/fstab | grep '/boot' | awk '{print \$2}'"
+    BOOT_PATH=$(cat /etc/fstab | grep '/boot' | awk '{print $2}')
+    debug 'DEBUG' "BOOT_PATH=$BOOT_PATH"
+
+    # ext4
+    if [ "$FSTYPE" == 'ext4' ]; then
+      LOCAL_BOOT_UUID=$(lsblk -o uuid "$LOCAL_DEV_BOOT_PATH" | tail -1)
+      LOCAL_ROOT_UUID=$(lsblk -o uuid "$LOCAL_DEV_ROOT_PATH" | tail -1)
+      # no idea why, but without this sleep, IMG_DEV_BOOT_PATH & IMG_DEV_ROOT_PATH does not get set
+      sleep 1
+      IMG_DEV_BOOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
+      IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
+      debug 'DEBUG' "LOCAL_BOOT_UUID=$LOCAL_BOOT_UUID | LOCAL_ROOT_UUID=$LOCAL_ROOT_UUID"
+      debug 'DEBUG' "IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
+
+    # btrfs (old method)
+    else
+      IMG_DEV_BOOT_PATH="${LOOP}p1"
+      IMG_DEV_ROOT_PATH="${LOOP}p2"
+      debug 'DEBUG' "BOOT_PATH=$BOOT_PATH | IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
+    fi
+
+  else
+    debug 'INFO' 'No boot partition detected'
+    LOCAL_ROOT_UUID=$(lsblk -o uuid "$LOCAL_DEV_ROOT_PATH" | tail -1)
+    IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
+    debug 'DEBUG' "LOCAL_ROOT_UUID=$LOCAL_ROOT_UUID | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
+  fi
+
+  # check for subvolumes on img
   if [ "$FSTYPE" == 'btrfs' ]; then
     # Check for temp directory and create if needed
     if ! [ -d "$TMP_DIR" ]; then
@@ -370,30 +421,46 @@ function get_img_variables() {
     umount "$TMP_DIR"
   fi
 
-  return 0
+return 0
 }
 
 
 
 # Function for shared variables
-function get_shared_variables() {
+function set_img_variables() {
 
-  LOOP=$(losetup -f)
-  debug 'DEBUG' "LOOP=$LOOP"
-
-  if [ $(lsblk | grep -c 'boot') -ne 0 ]; then
+  if $(cat /etc/fstab | grep -q 'boot'); then
     debug 'INFO' 'Separate boot partition detected'
     debug 'DEBUG' "Running: cat /etc/fstab | grep '/boot' | awk '{print \$2}'"
     BOOT_PATH=$(cat /etc/fstab | grep '/boot' | awk '{print $2}')
-    IMG_DEV_BOOT_PATH="${LOOP}p1"
-    IMG_DEV_ROOT_PATH="${LOOP}p2"
-    debug 'DEBUG' "BOOT_PATH=$BOOT_PATH | IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
+    debug 'DEBUG' "BOOT_PATH=$BOOT_PATH"
+
+    # ext4
+    if [ "$FSTYPE" == 'ext4' ]; then
+      LOCAL_BOOT_UUID=$(lsblk -o uuid "$LOCAL_DEV_BOOT_PATH" | tail -1)
+      LOCAL_ROOT_UUID=$(lsblk -o uuid "$LOCAL_DEV_ROOT_PATH" | tail -1)
+      # no idea why, but without this sleep, IMG_DEV_BOOT_PATH & IMG_DEV_ROOT_PATH does not get set
+      sleep 1
+      IMG_DEV_BOOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
+      IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
+      debug 'DEBUG' "LOCAL_BOOT_UUID=$LOCAL_BOOT_UUID | LOCAL_ROOT_UUID=$LOCAL_ROOT_UUID"
+      debug 'DEBUG' "IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
+
+    # btrfs (old method)
+    else
+      IMG_DEV_BOOT_PATH="${LOOP}p1"
+      IMG_DEV_ROOT_PATH="${LOOP}p2"
+      debug 'DEBUG' "BOOT_PATH=$BOOT_PATH | IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
+    fi
+
   else
     debug 'INFO' 'No boot partition detected'
-    IMG_DEV_ROOT_PATH="${LOOP}p1"
-    debug 'DEBUG' "IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
+    LOCAL_ROOT_UUID=$(lsblk -o uuid "$LOCAL_DEV_ROOT_PATH" | tail -1)
+    IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
+    debug 'DEBUG' "LOCAL_ROOT_UUID=$LOCAL_ROOT_UUID | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
   fi
-  return 0
+
+return 0
 }
 
 
@@ -401,7 +468,7 @@ function get_shared_variables() {
 # Function to loop img file
 function do_loop() {
 
-  if [ -z "$LOOP" ]; then
+  if [ "$IS_LOOPED" == false ] && [ -z "$LOOP" ]; then
     LOOP=$(losetup -f)
     debug 'DEBUG' "LOOP=$LOOP"
   fi
@@ -415,7 +482,10 @@ function do_loop() {
     debug 'ERROR' "LOSETUP FAILED:\n$output\n------------------------------------------------------------------------------"
     exit 1
   fi
-  return 0
+  IS_LOOPED=true
+  debug 'DEBUG' "IS_LOOPED=$IS_LOOPED"
+
+return 0
 }
 
 
@@ -589,6 +659,8 @@ function do_resize() {
   debug 'INFO' 'Running function: do_e2fsck'
   do_e2fsck
 
+
+  # expanding
   if [ "$*" = 'expand' ]; then
 
     echo '## Expanding img filesystem...'
@@ -600,6 +672,8 @@ function do_resize() {
     debug 'INFO' 'Removing loop for truncate to take effect'
     debug 'DEBUG' "Running: losetup -d $LOOP"
     losetup -d "$LOOP"
+    IS_LOOPED=false
+    debug 'DEBUG' "IS_LOOPED=$IS_LOOPED"
 
     echo "## Resizing image file..."
     $SLEEPING
@@ -664,6 +738,8 @@ function do_resize() {
     debug 'INFO' 'Running function: do_e2fsck'
     do_e2fsck
 
+
+  # shrinking
   elif [ "$*" = 'shrink' ]; then
 
     echo '## Shrinking filesystem...'
@@ -730,8 +806,8 @@ function do_rsync() {
   debug 'DEBUG' "tmp_file=$tmp_file"
 
   if [ "$EXCLUDE_FILE" == true ]; then
-    debug 'DEBUG' "Running: rsync -ahvHAX --exclude-from=$(dirname $0)/exclude.txt --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats --delete --force --partial --delete-excluded / $TMP_DIR"
-    rsync -ahvHAX --exclude-from=$(dirname "$0")/exclude.txt --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats --delete --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/tty  > "$tmp_file"
+    debug 'DEBUG' "Running: rsync -ahvHAX --exclude-from=$(dirname $0)/exclude.txt --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / $TMP_DIR"
+    rsync -ahvHAX --exclude-from=$(dirname "$0")/exclude.txt --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/tty  > "$tmp_file"
     # Get the exit status of rsync from PIPESTATUS
     if [ "${PIPESTATUS[0]}" -ne 0 ]; then #code 23
       output=$(tail -16 "$tmp_file")
@@ -741,8 +817,8 @@ function do_rsync() {
       exit 1
     fi
   else
-    debug 'DEBUG' "Running: rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,${IMG_PATH}/*} --info=progress2 --stats --delete --force --partial --delete-excluded / $TMP_DIR"
-    rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,${IMG_PATH}/*} --info=progress2 --stats --delete --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/tty > "$tmp_file"
+    debug 'DEBUG' "Running: rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,${IMG_PATH}/*} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / $TMP_DIR"
+    rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,${IMG_PATH}/*} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/tty > "$tmp_file"
     if [ "${PIPESTATUS[0]}" -ne 0 ]; then #code 23
       output=$(tail -16 "$tmp_file")
       echo -e "$output\n## RSYNC FAILED!!!"
@@ -768,9 +844,6 @@ function make_img() {
 
   debug 'INFO' 'Running function: get_dev_variables'
   get_dev_variables
-
-  debug 'INFO' 'Running function: get_shared_variables'
-  get_shared_variables
 
   # Display information
   if [ "$PROMPTS" == true ]; then
@@ -923,6 +996,10 @@ function make_img() {
   # Loop img file
   debug 'DEBUG' 'Running function: do_loop'
   do_loop
+
+  # set img variables
+  debug 'INFO' 'Running function: set_img_variables'
+  set_img_variables
 
   # Remove partition
   echo '## Removing root partition...'
@@ -1226,8 +1303,9 @@ function do_backup() {
     exit 1
   fi
 
-  debug 'INFO' 'Running function: get_shared_variables'
-  get_shared_variables
+  debug 'INFO' 'Running function: get_dev_variables'
+  # get_btrfs_variables is run within get_dev_variables
+  get_dev_variables
 
   debug 'INFO' 'Running function: do_loop'
   do_loop
@@ -1235,14 +1313,14 @@ function do_backup() {
   debug 'INFO' 'Running function: get_img_variables'
   get_img_variables
 
-  if [ "$RESIZE2FS_RUN" == true ] || [ "$ADDED_SPACE" -ne 0 ]; then
-    debug 'INFO' 'Running function: get_dev_variables'
-    # get_btrfs_variables is run within get_dev_variables
-    get_dev_variables
-  elif [ "$FSTYPE" == 'btrfs' ] && [ "$RESIZE2FS_RUN" == false ] && [ "$ADDED_SPACE" -eq 0 ]; then
-    debug 'INFO' 'Running function: get_btrfs_variables'
-    get_btrfs_variables
-  fi
+#   if [ "$RESIZE2FS_RUN" == true ] || [ "$ADDED_SPACE" -ne 0 ]; then
+#     debug 'INFO' 'Running function: get_dev_variables'
+#     # get_btrfs_variables is run within get_dev_variables
+#     get_dev_variables
+#   elif [ "$FSTYPE" == 'btrfs' ] && [ "$RESIZE2FS_RUN" == false ] && [ "$ADDED_SPACE" -eq 0 ]; then
+#     debug 'INFO' 'Running function: get_btrfs_variables'
+#     get_btrfs_variables
+#   fi
 
   # Checking if resizing should be performed
   if [ "$RESIZE2FS_RUN" == true ]; then
@@ -1711,6 +1789,10 @@ if [ "$LOOPRUN" == true ]; then
   looprun
 fi
 
+if [ "$ADDED_SPACE" -ne 0 ]; then
+  RESIZE_RUN=true
+fi
+
 echo '## Scanning filesystem and calculating...'
 
 # Check what filesystem root is using
@@ -1736,11 +1818,12 @@ debug 'DEBUG' "LOCAL_DEV_PTUUID=$LOCAL_DEV_PTUUID | LOCAL_DEV_PATH=$LOCAL_DEV_PA
 PARTITION_TABLE=$(parted "$LOCAL_DEV_PATH" print | grep 'Partition Table' | awk '{print $3}')
 #PARTITION_TABLE=$(blkid "$LOCAL_DEV_PATH" | sed -n 's|^.*PTTYPE="\(\S\+\)".*|\1|p')
 debug 'DEBUG' "PARTITION_TABLE=$PARTITION_TABLE"
-
 debug 'DEBUG' "UPDATE=$UPDATE"
 debug 'DEBUG' "RESIZE2FS_RUN=$RESIZE2FS_RUN"
 debug 'DEBUG' "PROMPTS=$PROMPTS"
 debug 'DEBUG' "AUTOEXPAND=$AUTOEXPAND"
+debug 'DEBUG' "RESIZE_RUN=$RESIZE_RUN"
+debug 'DEBUG' "RSYNC_DELETE=$RSYNC_DELETE"
 
 # Check if usage of exclude.txt is requested
 if [ "$EXCLUDE_FILE" == true ]; then
