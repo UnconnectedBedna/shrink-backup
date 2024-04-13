@@ -35,7 +35,7 @@ Directory where .img file is created is automatically excluded in backup
 ########################################################################
 Usage: sudo shrink-backup [-Uatyelhz] [--loop] imagefile.img [extra space (MiB)]
   -U            Update existing img file (rsync to existing img)
-                  [extra space] extends img size/root partition
+                  Optional [extra space] extends img size of root partition
   -a            Autoresize root partition (extra space is ignored)
                   When used in combination with -U:
                   Expand if partition is >=256MiB smaller than resize2fs recommended minimum
@@ -43,12 +43,13 @@ Usage: sudo shrink-backup [-Uatyelhz] [--loop] imagefile.img [extra space (MiB)]
   -t            Use exclude.txt in same folder as script to set excluded directories
                   One directory per line: "/dir" or "/dir/*" to only exclude contents
   -y            Disable prompts in script (please use this option with care!)
-  -e            DO NOT (disable) expand filesystem when image is booted
-  -l            Write debug messages in logfile shrink-backup.log located in same directory as script
+  -e            DO NOT expand filesystem when image is booted
+  -l            Write debug messages to logfile shrink-backup.log located in same directory as script
   -z            Make script zoom at light-speed, only question prompts might slow it down
                   Can be combined with -y for UNSAFE ultra mega superduper speed
+  --fix         Try to fix the img file if -a fails with a "broken pipe" error
   --loop [img]  Loop img file and exit, works in combination with -l & -z
-                  If [extra space] is also defined, the img file will be extended with the amount before looping
+                  If optional [extra space] is also defined, the img file will be extended with the amount before looping
                   NOTE that only the file gets truncated, no partitions
                   Useful for example if you want to manually manage the partitions
   -h --help     Show this help snippet
@@ -57,18 +58,40 @@ Examples:
 sudo shrink-backup -a /path/to/backup.img (create img, resize2fs calcualtes size)
 sudo shrink-backup -e -y /path/to/backup.img 1024 (create img, ignore prompts, do not autoexpand, add 1024MiB extra space)
 sudo shrink-backup -Utl /path/to/backup.img (update img backup, use exclude.txt and write log to shrink-backup.log)
-sudo shrink-backup -Ua /path/to/backup.img (update img backup, resize2fs calculates and resizes img file if needed)
 sudo shrink-backup -U /path/to/backup.img 1024 (update img backup, expand img size/root partition with 1024MiB)
+sudo shrink-backup -Ua /path/to/backup.img (update img backup, resize2fs calculates and resizes img file if needed)
+sudo shrink-backup -Ua --fix /path/to/backup.img 1024 (update img backup, automatically resizes img file if needed, fix img free space)
 sudo shrink-backup -l --loop /path/to/backup.img 1024 (write to log file, expand IMG FILE (not partition) by 1024MiB and loop)
 ```
 
+#### Zoom speed (`-z`)
 The `-z` "zoom" option simply removes the one second sleep at each prompt to give the user time to read.<br>
-By using the option, you save 20-30s when running the script.<br>
+By using the option, you save 15-25s when running the script.<br>
 When used in combination with `-y` **warnings will also be "bypassed"! PLEASE use with care!**
-
+<br>
+<br>
+#### Broken pipe (`--fix`)
+Add `--fix` to your options if a backup fails during `rsync` with a "broken pipe" error. You can also manually add `[extra space]` instead of using `-a` to solve this.<br>
+The reason it happens is because `rsync` normally deletes files during the backup, not creating a file-list > removing files from img before starting to copy.<br>
+So if you have removed data from the system you backup from and added new data, the risk is `rsync` tries to copy the files before deleting other files from the img.<br>
+Using `--fix` makes `rsync` create a file-list and delete the files before backup. This also means the backup takes a little longer.<br>
+Having a "broken pipe" error during backup has in my experience never broken an img backup after either repairing or increasing space.
+<br>
+<br>
+#### Loop img file (`--loop`)
+Use `--loop` to loop an img file to your `/dev`.<br>
+If used in combination with `[extra space]` the amount in MiB will be added to the **IMG FILE** NOT any partition.<br>
+With this you can run for example run `sudo gparted /dev/loop0` (if you have a graphical interface) to manually manage the img partitions in a graphical interface.<br>
+If you added `[extra space]` this will then show up as unpartitioned space at the end of the device.
+<br>
+<br>
+#### Log file (`-l`)
+Use `-l` to write debug info into `shrink-backup.log` file located in the same directory as the script.
+<br>
+<br>
+#### exclude.txt (`-t`)
 The folder where the img file is created will ALWAYS be excluded in the backup.<br>
-If `-t` option is selected, `exclude.txt` **MUST exist** (but can be empty) within the **directory where the script is located** or the script will exit with an error.
-
+If `-t` option is selected, `exclude.txt` **MUST exist** (but can be empty) within the **directory where the script is located** or the script will exit with an error.<br>
 Use one directory per line in `exclude.txt`.<br>
 `/directory/*` = create directory but exclude content.<br>
 `/directory` = exclude the directory completely.
@@ -86,11 +109,10 @@ If `-t` is **NOT** selected the following folders will be excluded:
 /var/swap
 ```
 
+#### Info
 **Rsync WILL cross filesystem boundries, so make sure you exclude external drives unless you want them included in the backup.**<br>
 Not excluding other partitions will copy the data to the img root partition, not create more partitions so make sure to **manually add extra space** if you do this.<br>
 The script will **ONLY** look at your `root` partition when calculating sizes.
-
-Use `-l` to write debug info into `shrink-backup.log` file located in the same directory as the script.
 
 **Applications used in the script:**
 - fdisk
@@ -107,12 +129,15 @@ Use `-l` to write debug info into `shrink-backup.log` file located in the same d
 
 ## Image creation
 
+To create a backup img using recomended size, use the `-a` option and the path to the img file.<br>
+**Example:** `sudo shrink-backup -a /path/to/backup.img`
+
 Theoretically the script should work on any device as long as root filesystem is `ext4`. But IMHO is best applied on ARM hardware.<br>
-Since the script uses `lsblk` to figure out where the root resides it does not matter what device it is on.<br>
+Since the script uses `lsblk` to crosscheck with `/etc/fstab` to figure out where the root resides it does not matter what device it is on.<br>
 Even if you forget to disable autoexpansion on a non supported system, the backup will not fail. :)
 
 ### Order of operations - Image creation
-1. Uses `lsblk` to figure out the correct disk device to back up.
+1. Uses `lsblk` & `/etc/fstab` to figure out the correct disk device to back up.
 2. Reads the block sizes of the system's `root` (and `boot` if it exists) partition.
 3. Uses `dd` to create the boot part of the system + a few megabytes to include the filesystem on root. (this _can_ be a partition)
 4. Uses `df` & `resize2fs` to calculate sizes by analyzing the system's `root` partition. (For btrfs `btrfs filesystem du` + 192MiB is used instead of `resize2fs`)
@@ -137,7 +162,7 @@ By using `-a` in combination with `-U` the script will resize the img file if ne
 
 To get the absolute smallest img file possible, do NOT use `-a` option and set "extra space" to 0
 
-Example: `sudo shrink-backup /path/to/backup.img 0`
+**Example:** `sudo shrink-backup /path/to/backup.img 0`
 
 This will instruct the script to get the used space from `df` and adding 128MiB "*wiggle room*".<br>
 If you are like me, doing a lot of testing, rewriting the sd-card multiple times. The extra time it takes each time will add up pretty fast.
@@ -161,7 +186,7 @@ Using combination`-Ua` on an img that has become overfilled works, or at least I
 ## Image update
 
 To update an existing img file simply use the `-U` option and the path to the img file.<br>
-Example: `sudo shrink-backup -U /path/to/backup.img`
+**Example:** `sudo shrink-backup -U /path/to/backup.img`
 
 ### Order of operations - Image update
 1. Loops the img file.
