@@ -82,7 +82,9 @@ Having a "broken pipe" error during backup has in my experience never broken an 
 Use `--loop` to loop an img file to your `/dev`.<br>
 If used in combination with `[extra space]` the amount in MiB will be added to the **IMG FILE** NOT any partition.<br>
 With this you can run for example run `sudo gparted /dev/loop0` (if you have a graphical interface) to manually manage the img partitions in a graphical interface.<br>
-If you added `[extra space]` this will then show up as unpartitioned space at the end of the device.
+If you added `[extra space]` this will then show up as unpartitioned space at the end of the device.<br>
+This functionality works on any linux system, just use the script on any img file anywhere available to the computer.<br>
+To remove the loop: `sudo losetup -d /dev/loop0`, change `loop0` to the correct dev it got looped to. `lsblk /dev/loop*` if you lost the information after using `--mount`
 <br>
 <br>
 #### Log file (`-l`)
