@@ -17,9 +17,9 @@ Steps to reproduce the behavior:
 A clear and concise description of what you expected to happen.
 
 **Harware (please complete the following information):**
- - OS: [e.g. iOS]
- - Version [e.g. 22]
+ - Hardware: [f.ex. raspberrypi 4 OR orangepi 5]
+ - OS: [f.ex. rpi bookworm OR armbian for opi5]
 
 **Additional context**
 Add any other context about the problem here.
-Run in debug mode by using `-d` option and please provide the output of shrink-backup.log
+Run in debug mode by using `-l` option and please provide the output of shrink-backup.log
