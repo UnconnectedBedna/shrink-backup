@@ -3,7 +3,7 @@
 _I made this script because I wanted a universal method of backing up my SBC:s into small img files as fast as possible (with rsync), indepentent of what os is in use._
 
 Autoexpansion tested on **Raspberry Pi** os (bookworm and older), **Armbian**, **Manjaro-arm** and **ArchLinuxARM** for rpi with **ext4** root partition.<br>
-(Now also **experimental** btrfs functionality, please read further down)
+(Now also **experimental** [btrfs functionality](#btrfs), please read further down)
 
 **Latest release:** [shrink-backup.v1.0.0](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v1.0.0/shrink-backup.v1.0.0.tar.gz)<br>
 [**Testing branch:**](https://github.com/UnconnectedBedna/shrink-backup/tree/testing) If you want to have the absolute latest version. There might be bugs.
@@ -73,9 +73,9 @@ When used in combination with `-y` **warnings will also be bypassed! PLEASE use 
 #### Broken pipe (`--fix`)
 Add `--fix` to your options if a backup fails during `rsync` with a "broken pipe" error. You can also _manually add_ `[extra space]` instead of using `-a` to solve this.<br>
 The reason it happens is because `rsync` normally deletes files during the backup, not creating a file-list > removing files from img before starting to copy.<br>
-So if you have removed data from the system you backup from and added new data, the risk is `rsync` tries to copy the files before deleting other files from the img.<br>
+So if you have removed and added new data on the system you backup from, there is a risk `rsync` tries to copy the files before deleting data from the img.<br>
 Using `--fix` makes `rsync` create a file-list and delete the files before backup. This also means the backup takes a little longer.<br>
-Having a "broken pipe" error during backup has in my experience never broken an img backup after either repairing or increasing space.
+Having a "broken pipe" error during backup has in my experience never broken an img backup after either using `--fix` or adding `[extra space]`.
 <br>
 <br>
 #### Loop img file (`--loop`)
@@ -84,7 +84,7 @@ If used in combination with `[extra space]` the amount in MiB will be added to t
 With this you can run for example run `sudo gparted /dev/loop0` (if you have a graphical interface) to manually manage the img partitions in a graphical interface.<br>
 If you added `[extra space]` this will then show up as unpartitioned space at the end of the device.<br>
 This functionality works on any linux system, just use the script on any img file anywhere available to the computer.<br>
-To remove the loop: `sudo losetup -d /dev/loop0`, change `loop0` to the correct `dev` it got looped to. `lsblk /dev/loop*` if you lost the information after using `--mount`
+To remove the loop: `sudo losetup -d /dev/loop0`, change `loop0` to the correct `dev` it got looped to. `lsblk /dev/loop*` if you forgot the location after using `--mount`
 <br>
 <br>
 #### Log file (`-l`)
@@ -134,7 +134,7 @@ The script will **ONLY** look at your `root` partition when calculating sizes.
 To create a backup img using recomended size, use the `-a` option and the path to the img file.<br>
 **Example:** `sudo shrink-backup -a /path/to/backup.img`
 
-Theoretically the script should work on any device as long as root filesystem is `ext4` (and experimental `btrfs`). But IMHO is best applied on ARM hardware.<br>
+Theoretically the script should work on any device as long as root filesystem is `ext4` (and experimental [`btrfs`](#btrfs)). But IMHO is best applied on ARM hardware.<br>
 Since the script uses `lsblk` to crosscheck with `/etc/fstab` to figure out where the root resides it does not matter what device it is on.<br>
 Even if you forget to disable autoexpansion on a non supported system, the backup will not fail. :)
 
@@ -158,7 +158,8 @@ Added space is added on top of `df` reported "used space", not the size of the p
 The script can be instructed to set the img size by requesting recomended minimum size from `e2fsck` by using the `-a` option.<br>
 This is not the absolute smallest size you can achieve but is the "safest" way to create a "smallest possible" img file.<br>
 If you do not increase the size of the filesystem you are backing up from too much, you can most likely keep it updated with the update function (`-U`) of the script.<br>
-By using `-a` in combination with `-U` the script will resize the img file if needed. Please see section about image update further down for more information.
+By using `-a` in combination with `-U` the script will resize the img file if needed.<br>
+Please see [`--fix`](#broken-pipe---fix) and [image update](#image-update) section further down for more information.
 
 ### Smallest image possible
 
@@ -180,8 +181,9 @@ Because of how filesystems work, `df` is never a true representation of what wil
 Each file, no matter the size, will take up one block of the filesystem, so if you have a LOT of very small files (running `docker` f.ex) the "0 added space method" might fail during rsync. Increase the 0 a little bit and retry.<br>
 This also means you have VERY little free space on the img file after creation.<br>
 If the filesystem you back up from increases in size, an update (`-U`) of the img file might fail.<br>
-By using `-a` in combination with `-U` the script will resize the img file if needed. Please see section about image update below for more information.<br>
-Using combination `-Ua` on an img that has become overfilled works, or at least I have not gotten it to fail, but use at own risk.
+By using `-a` in combination with `-U` the script will resize the img file if needed.<br>
+Using combination `-Ua` on an img that has become overfilled works, if not add `--fix`.<br>
+Please see [`--fix`](#broken-pipe---fix) and image update section below for more information.
 
 <hr>
 
@@ -194,7 +196,7 @@ To update an existing img file simply use the `-U` option and the path to the im
 1. Loops the img file.
 2. Probes the loop of the img file for information about partitions.
 3. If `-a` is selected, calculates sizes by comparing `root` sizes on system and img file by using `fdisk` & `resize2fs`.
-4. Expands filesystem on img file if needed or if _manually added_ `[extra space]` is used.
+4. Expands filesystem on img file if requested and needed or if _manually added_ `[extra space]` is used.
 5. Creates temp directory and mounts `root` partition from loop.
 6. Checks if `boot` partition exists, if true, checks `fstab` and creates directory on `root` and mounts accordingly from loop.
 7. Uses `rsync` to sync filesystems.
