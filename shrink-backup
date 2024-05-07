@@ -1158,7 +1158,8 @@ function make_img() {
   # ext4 & f2fs on root
   elif [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
     debug 'DEBUG' "Running: parted -s -a none $LOOP unit B mkpart primary $FSTYPE $LOCAL_ROOT_START 100%"
-    if ! output=$(parted -s -a none "$LOOP" unit B mkpart primary "$FSTYPE" "$LOCAL_ROOT_START" 100% 2>&1); then
+    #if ! output=$(parted -s -a none "$LOOP" unit B mkpart primary "$FSTYPE" "$LOCAL_ROOT_START" 100% 2>&1); then
+    if ! output=$(parted -s -a none "$LOOP" unit B mkpart primary "$LOCAL_ROOT_START" 100% 2>&1); then
       echo -e "$output\n## PARTED FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
