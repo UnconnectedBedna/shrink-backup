@@ -297,8 +297,13 @@ function get_dev_variables() {
       LOCAL_AUTORESIZE_MIN=$(( LOCAL_AUTORESIZE_MIN * BLOCKSIZE )) # bytes
       debug 'DEBUG' "LOCAL_AUTORESIZE_MIN=${LOCAL_AUTORESIZE_MIN} bytes"
     elif [ "$FSTYPE" == 'f2fs' ]; then
-      debug 'INFO' 'f2fs filesystem detected, using du (+512MiB) instead to calculate recommended root size'
-      LOCAL_AUTORESIZE_MIN=$(du -xsb / | awk '{print $1}') # bytes
+#       debug 'INFO' 'f2fs filesystem detected, using du (+512MiB) instead to calculate recommended root size'
+#       LOCAL_AUTORESIZE_MIN=$(du -xsb / | awk '{print $1}') # bytes
+#       LOCAL_AUTORESIZE_MIN=$(( LOCAL_AUTORESIZE_MIN + 536870912 )) # adding 512MiB
+      debug 'INFO' 'f2fs filesystem detected, using df (+512MiB) to set recommended root size'
+      # Method 2, using "used space" straight up
+      LOCAL_AUTORESIZE_DF=$(df / -k --sync --output=used | tail -1) # 1k blocks
+      LOCAL_AUTORESIZE_MIN=$(( LOCAL_AUTORESIZE_DF * 1024 )) # bytes
       LOCAL_AUTORESIZE_MIN=$(( LOCAL_AUTORESIZE_MIN + 536870912 )) # adding 512MiB
       debug 'DEBUG' "LOCAL_AUTORESIZE_MIN=${LOCAL_AUTORESIZE_MIN} bytes"
     else
