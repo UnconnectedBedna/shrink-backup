@@ -93,10 +93,10 @@ PROMPTS=true
 DEBUG=false
 EXCLUDE_FILE=false
 AUTOEXPAND=true
-RESIZE2FS_RUN=false
+AUTORESIZE_RUN=false
 UPDATE=false
 LOG_FILE="$(dirname "$0")/shrink-backup.log"
-RESIZE2FS_WARNING=false
+AUTORESIZE_WARNING=false
 ZOOM=false
 LOOPRUN=false
 RSYNC_DELETE='--delete'
@@ -156,7 +156,7 @@ eval set -- "$options"
 while true; do
   case "$1" in
     -U) UPDATE=true; shift;;
-    -a) RESIZE2FS_RUN=true; shift;;
+    -a) AUTORESIZE_RUN=true; shift;;
     -t) EXCLUDE_FILE=true; shift;;
     -y) PROMPTS=false; shift;;
     -e) AUTOEXPAND=false; shift;;
@@ -229,13 +229,14 @@ exit 2
 # Function to gather device information
 function get_dev_variables() {
 
-  if [ "$FSTYPE" = 'btrfs' ] && [ "$RESIZE2FS_RUN" = false ] && [ "$ADDED_SPACE" -eq 0 ]; then
+  # Run get_btrfs_variables and then exit THIS function
+  if [ "$FSTYPE" = 'btrfs' ] && [ "$AUTORESIZE_RUN" = false ] && [ "$ADDED_SPACE" -eq 0 ]; then
     debug 'INFO' 'Running function: get_btrfs_variables'
     get_btrfs_variables
     return 0
   fi
 
-  ADDED_SPACE=$(( ADDED_SPACE * 1024 * 1024 )) # bytes, ADDED_SPACE=0 if RESIZE2FS_RUN=true
+  ADDED_SPACE=$(( ADDED_SPACE * 1024 * 1024 )) # bytes, ADDED_SPACE=0 if AUTORESIZE_RUN=true
 
   # Check if separate boot and root partition exists and set variables accordingly
   if $(cat /etc/fstab | grep -q 'boot'); then
@@ -261,8 +262,8 @@ function get_dev_variables() {
   LOCAL_ROOT_PARTN=$(parted -sm "$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
   debug 'DEBUG' "LOCAL_ROOT_PARTN=$LOCAL_ROOT_PARTN"
 
-  if [ "$UPDATE" = false ] || [ "$ADDED_SPACE" -ne 0 ] || [ "$RESIZE2FS_RUN" = true ]; then
-    # Collecting data and making calculations
+  # Collecting information about partitions
+  if [ "$UPDATE" = false ] || [ "$ADDED_SPACE" -ne 0 ] || [ "$AUTORESIZE_RUN" = true ]; then
     debug 'INFO' 'Calculating size for dd to cover bootsector in blocks (512B block size) and adding 256 blocks to overlap into root (only used in img creation)'
     debug 'DEBUG' "Running: fdisk -lo start "$LOCAL_DEV_PATH" | tail -1"
     LOCAL_ROOT_START=$(fdisk -lo start "$LOCAL_DEV_PATH" | tail -1 | awk '{print $1}') # blocks, 512B block size
@@ -274,31 +275,32 @@ function get_dev_variables() {
     debug 'DEBUG' "LOCAL_ROOT_START=$LOCAL_ROOT_START bytes | LOCAL_BOOTSECTOR=$LOCAL_BOOTSECTOR bytes"
   fi
 
-#   if [ "$RESIZE2FS_RUN" = true ]; then
+#   if [ "$AUTORESIZE_RUN" = true ]; then
 #     if [ "$FSTYPE" == 'ext4' ]; then
 #       BLOCKSIZE=$(dumpe2fs -h "$LOCAL_DEV_ROOT_PATH" 2>/dev/null | grep -i "block size" | awk '{print $3}') # bytes
 #       debug 'DEBUG' "BLOCKSIZE=$BLOCKSIZE"
-#       LOCAL_RESIZE2FS_MIN=$(resize2fs -P "$LOCAL_DEV_ROOT_PATH" 2>/dev/null | awk '{print $7}') # blocks
-#       LOCAL_RESIZE2FS_MIN=$(( LOCAL_RESIZE2FS_MIN * BLOCKSIZE )) # bytes
-#       debug 'DEBUG' "LOCAL_RESIZE2FS_MIN=${LOCAL_RESIZE2FS_MIN} bytes"
+#       LOCAL_AUTORESIZE_MIN=$(resize2fs -P "$LOCAL_DEV_ROOT_PATH" 2>/dev/null | awk '{print $7}') # blocks
+#       LOCAL_AUTORESIZE_MIN=$(( LOCAL_AUTORESIZE_MIN * BLOCKSIZE )) # bytes
+#       debug 'DEBUG' "LOCAL_AUTORESIZE_MIN=${LOCAL_AUTORESIZE_MIN} bytes"
 #     else
 #       debug 'INFO' 'Running function: get_btrfs_variables'
 #       get_btrfs_variables
 #     fi
 #   fi
 
-  if [ "$RESIZE2FS_RUN" = true ] || [ "$UPDATE" = false ]; then
+  # Setting automated calculated size (get_btrfs_variables if btrfs filesystem)
+  if [ "$AUTORESIZE_RUN" = true ] || [ "$UPDATE" = false ] || [ "$FSTYPE" == 'btrfs' ]; then
     BLOCKSIZE=$(stat -f / | grep -i 'Block size' | awk '{print $3}') # bytes
     debug 'DEBUG' "BLOCKSIZE=${BLOCKSIZE} bytes"
     if [ "$FSTYPE" == 'ext4' ]; then
-      LOCAL_RESIZE2FS_MIN=$(resize2fs -P "$LOCAL_DEV_ROOT_PATH" 2>/dev/null | awk '{print $7}') # blocks
-      LOCAL_RESIZE2FS_MIN=$(( LOCAL_RESIZE2FS_MIN * BLOCKSIZE )) # bytes
-      debug 'DEBUG' "LOCAL_RESIZE2FS_MIN=${LOCAL_RESIZE2FS_MIN} bytes"
+      LOCAL_AUTORESIZE_MIN=$(resize2fs -P "$LOCAL_DEV_ROOT_PATH" 2>/dev/null | awk '{print $7}') # blocks
+      LOCAL_AUTORESIZE_MIN=$(( LOCAL_AUTORESIZE_MIN * BLOCKSIZE )) # bytes
+      debug 'DEBUG' "LOCAL_AUTORESIZE_MIN=${LOCAL_AUTORESIZE_MIN} bytes"
     elif [ "$FSTYPE" == 'f2fs' ]; then
       debug 'INFO' 'f2fs filesystem detected, using du (+512MiB) instead to calculate recommended root size'
-      LOCAL_RESIZE2FS_MIN=$(du -xsb / | awk '{print $1}') # bytes
-      LOCAL_RESIZE2FS_MIN=$(( LOCAL_RESIZE2FS_MIN + 536870912 )) # adding 512MiB
-      debug 'DEBUG' "LOCAL_RESIZE2FS_MIN=${LOCAL_RESIZE2FS_MIN} bytes"
+      LOCAL_AUTORESIZE_MIN=$(du -xsb / | awk '{print $1}') # bytes
+      LOCAL_AUTORESIZE_MIN=$(( LOCAL_AUTORESIZE_MIN + 536870912 )) # adding 512MiB
+      debug 'DEBUG' "LOCAL_AUTORESIZE_MIN=${LOCAL_AUTORESIZE_MIN} bytes"
     else
       debug 'INFO' 'Running function: get_btrfs_variables'
       get_btrfs_variables
@@ -314,9 +316,9 @@ function get_dev_variables() {
   #LOCAL_USED_SPACE=$(( LOCAL_DF_OUTPUT * 1024 )) # bytes, df is in 1k blocks
 
   # Set recommended size if option is selected
-  if [ "$RESIZE2FS_RUN" = true ]; then
+  if [ "$AUTORESIZE_RUN" = true ]; then
     debug 'INFO' 'Setting TOTAL (space needed for files on root) to size calculated by resize2fs'
-    TOTAL=$LOCAL_RESIZE2FS_MIN # bytes
+    TOTAL=$LOCAL_AUTORESIZE_MIN # bytes
   else
     debug 'INFO' 'Calculating TOTAL (space needed for files on root) by adding LOCAL_USED_SPACE and ADDED_SPACE'
     debug 'DEBUG' "LOCAL_USED_SPACE=${LOCAL_USED_SPACE} bytes | ADDED_SPACE=${ADDED_SPACE} bytes"
@@ -331,12 +333,12 @@ function get_dev_variables() {
   fi
 
   # Add 128MiB extra space if resize2fs reports bigger minimum than created on new img
-  if [ "$UPDATE" = false ] && [ "$TOTAL" -lt "$LOCAL_RESIZE2FS_MIN" ]; then
-    debug 'WARNING' 'Adding WIGGLEROOM (128MiB) because manually requested ADDED_SPACE is less than resize2fs caluclated size'
-    RESIZE2FS_WARNING=true
+  if [ "$UPDATE" = false ] && [ "$TOTAL" -lt "$LOCAL_AUTORESIZE_MIN" ]; then
+    debug 'WARNING' 'Adding WIGGLEROOM (128MiB) because manually requested ADDED_SPACE is less than automated caluclated size'
+    AUTORESIZE_WARNING=true
     WIGGLEROOM=134217728 # 128MiB = 134217728B, 192MiB = 201326592B
     TRUNCATE_TOTAL=$(( TRUNCATE_TOTAL + WIGGLEROOM ))
-    debug 'DEBUG' "RESIZE2FS_WARNING=$RESIZE2FS_WARNING | WIGGLEROOM=${WIGGLEROOM} bytes | TRUNCATE_TOTAL=${TRUNCATE_TOTAL} bytes"
+    debug 'DEBUG' "AUTORESIZE_WARNING=$AUTORESIZE_WARNING | WIGGLEROOM=${WIGGLEROOM} bytes | TRUNCATE_TOTAL=${TRUNCATE_TOTAL} bytes"
   fi
 return 0
 }
@@ -349,12 +351,12 @@ function get_btrfs_variables() {
   BOOT_PATH=$(cat /etc/fstab | grep '/boot' | awk '{print $2}')
   debug 'DEBUG' "BOOT_PATH=$BOOT_PATH"
 
-  if [ "$RESIZE2FS_RUN" = true ]; then
+  if [ "$AUTORESIZE_RUN" = true ]; then
     debug 'INFO' 'Using btrfs fi du to calculate recommended size and adding 192MiB'
-    LOCAL_RESIZE2FS_MIN=$(btrfs filesystem du -s --raw / 2>/dev/null) # bytes
-    LOCAL_RESIZE2FS_MIN=$(echo "$LOCAL_RESIZE2FS_MIN" | tail -1 | awk '{print $1}')
-    LOCAL_RESIZE2FS_MIN=$(( LOCAL_RESIZE2FS_MIN + 201326592 )) # 192MiB = 201326592B
-    debug 'DEBUG' "LOCAL_RESIZE2FS_MIN=$LOCAL_RESIZE2FS_MIN bytes"
+    LOCAL_AUTORESIZE_MIN=$(btrfs filesystem du -s --raw / 2>/dev/null) # bytes
+    LOCAL_AUTORESIZE_MIN=$(echo "$LOCAL_AUTORESIZE_MIN" | tail -1 | awk '{print $1}')
+    LOCAL_AUTORESIZE_MIN=$(( LOCAL_AUTORESIZE_MIN + 201326592 )) # 192MiB = 201326592B
+    debug 'DEBUG' "LOCAL_AUTORESIZE_MIN=$LOCAL_AUTORESIZE_MIN bytes"
   fi
   debug 'DEBUG' "Running: btrfs subvolume list / | awk '{print \$9}'"
   #LOCAL_SUBVOLUMES=( $(sudo btrfs subvolume list / | awk '{print $2,$9}') )
@@ -881,29 +883,29 @@ function make_img() {
     echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
     echo "# Zoom speed requested: $ZOOM"
-    echo "# Autocalculate img root partition size: $RESIZE2FS_RUN"
+    echo "# Autocalculate img root partition size: $AUTORESIZE_RUN"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
     echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MiB"
     echo "# Estemated root usage: $(( $(df / -k --sync --output=used | tail -1) / 1024 ))MiB"
-    if [ "$RESIZE2FS_RUN" = true ]; then
-      echo "# Auto calculated size (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MiB"
+    if [ "$AUTORESIZE_RUN" = true ]; then
+      echo "# Auto calculated size (root partition): $(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB"
       echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
     else
       echo "# Manually added space: $(( ADDED_SPACE / 1024 / 1024 ))MiB"
       echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB with $(( ADDED_SPACE / 1024 / 1024 ))MiB extra space included."
-      if [ "$RESIZE2FS_WARNING" = true ]; then
+      if [ "$AUTORESIZE_WARNING" = true ]; then
         echo '# ----------------------------------------------------------------------------'
         echo '# WARNING!!! Manually added space is smaller than calculated recommended minimum'
         echo '# This does NOT mean the backup WILL fail, but CAN fail due to lack of space'
         echo '# Consider using the -a option or manually adding more space'
         echo "# Requested root size: $(( TOTAL / 1024 / 1024 ))MiB"
-        echo "# Calculated recommended minimum: $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MiB"
+        echo "# Calculated recommended minimum: $(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB"
       fi
     fi
     if [ "$F2FS" = true ]; then
       echo '# ----------------------------------------------------------------------------'
-      echo '# WARNING!!! F2FS option selected. f2fs filesystem will be created on img file'
+      echo '# WARNING!!! --f2fs option selected. f2fs filesystem will be created on img file'
       echo '# This option is only for CONVERTING existing filesystem into f2fs on img file'
       echo '# This option is NOT needed for normal backups from f2fs on root'
       echo '# Only tested for Raspberry pi OS'
@@ -959,29 +961,29 @@ function make_img() {
     echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
     echo "# Zoom speed requested: $ZOOM"
-    echo "# Autocalculate img root partition size: $RESIZE2FS_RUN"
+    echo "# Autocalculate img root partition size: $AUTORESIZE_RUN"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
     echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MiB"
     echo "# Estemated root usage: $(( $(df / -k --sync --output=used | tail -1) / 1024 ))MiB"
-    if [ "$RESIZE2FS_RUN" = true ]; then
-      echo "# Auto calculated size (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MiB"
+    if [ "$AUTORESIZE_RUN" = true ]; then
+      echo "# Auto calculated size (root partition): $(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB"
       echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
     else
       echo "# Manually added space: $(( ADDED_SPACE / 1024 / 1024 ))MiB"
       echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB with $(( ADDED_SPACE / 1024 / 1024 ))MiB extra space included."
-      if [ "$RESIZE2FS_WARNING" = true ]; then
+      if [ "$AUTORESIZE_WARNING" = true ]; then
         echo '# ----------------------------------------------------------------------------'
         echo "# WARNING!!! Manually added space is smaller than calculated recommended minimum"
         echo "# This does NOT mean the backup WILL fail, but CAN fail due to lack of space"
         echo "# Consider using the -a option or manually adding more space"
         echo "# Requested root size: $(( TOTAL / 1024 / 1024 ))MiB"
-        echo "# Calculated recommended minimum: $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MiB"
+        echo "# Calculated recommended minimum: $(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB"
       fi
     fi
     if [ "$F2FS" = true ]; then
       echo '# ----------------------------------------------------------------------------'
-      echo '# WARNING!!! F2FS option selected. f2fs filesystem will be created on img file'
+      echo '# WARNING!!! --f2fs option selected. f2fs filesystem will be created on img file'
       echo '# This option is only for CONVERTING existing filesystem into f2fs on img file'
       echo '# This option is NOT needed for normal backups from f2fs on root'
       echo '# Only tested for Raspberry pi OS'
@@ -1144,9 +1146,9 @@ function make_img() {
   $SLEEPING
   debug 'INFO' 'Using parted to recreate root partition'
 
-  # converting to f2fs
+  # Converting to f2fs
   if [ "$F2FS" = true ]; then
-    debug 'INFO' '--f2fs selected by user, creating f2fs filesystem on img file'
+    debug 'INFO' '--f2fs selected by user, creating f2fs partition on img file'
     debug 'DEBUG' "Running: parted -s -a none $LOOP unit B mkpart primary f2fs $LOCAL_ROOT_START 100%"
     if ! output=$(parted -s -a none "$LOOP" unit B mkpart primary f2fs "$LOCAL_ROOT_START" 100% 2>&1); then
       echo -e "$output\n## PARTED FAILED!!!"
@@ -1213,7 +1215,7 @@ function make_img() {
       $SLEEPING
     fi
 
-    debug 'INFO' 'Using mkfs.f2fs to format root filesystem'
+    debug 'DEBUG' "Running: mkfs.f2fs -f -U $UUID -l $LABEL $IMG_DEV_ROOT_PATH"
     if ! output=$(mkfs.f2fs -f -U "$UUID" -l "$LABEL" "$IMG_DEV_ROOT_PATH" 2>&1 | tee /dev/tty ); then
       echo -e "$output\n## MKFS.F2FS FAILED!!!"
       debug 'BREAK'
@@ -1229,11 +1231,11 @@ function make_img() {
 
   # ext4
   elif [ "$FSTYPE" == 'ext4' ]; then
-    debug 'INFO' "Using mkfs.$FSTYPE to format root filesystem"
-    if ! output=$(mkfs."$FSTYPE" -U "$UUID" -L "$LABEL" "$IMG_DEV_ROOT_PATH" 2>&1 | tee /dev/tty ); then
-      echo -e "$output\n## MKFS.$FSTYPE FAILED!!!"
+    debug 'INFO' "Using mkfs.ext4 to format root filesystem"
+    if ! output=$(mkfs.ext4 -U "$UUID" -L "$LABEL" "$IMG_DEV_ROOT_PATH" 2>&1 | tee /dev/tty ); then
+      echo -e "$output\n## MKFS.EXT4 FAILED!!!"
       debug 'BREAK'
-      debug 'ERROR' "MKFS.$FSTYPE FAILED:\n$output\n------------------------------------------------------------------------------"
+      debug 'ERROR' "MKFS.EXT4 FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
     fi
     debug 'BREAK'
@@ -1248,7 +1250,7 @@ function make_img() {
 
   # f2fs
   elif [ "$FSTYPE" == 'f2fs' ]; then
-    debug 'INFO' "Using mkfs.$FSTYPE to format root filesystem"
+    debug 'INFO' "Using mkfs.f2fs to format root filesystem"
     if ! output=$(mkfs.f2fs -f -U "$UUID" -l "$LABEL" "$IMG_DEV_ROOT_PATH" 2>&1 | tee /dev/tty ); then
       echo -e "$output\n## MKFS.F2FS FAILED!!!"
       debug 'BREAK'
@@ -1449,16 +1451,16 @@ function do_backup() {
   get_img_variables
 
   # Checking if resizing should be performed
-  if [ "$RESIZE2FS_RUN" = true ]; then
+  if [ "$AUTORESIZE_RUN" = true ]; then
     debug 'DEBUG' "Running: fdisk --bytes -lo device,size "$LOOP" | grep "$IMG_DEV_ROOT_PATH" | awk '{print \$2}'"
     IMG_ROOT_SIZE=$(fdisk --bytes -lo device,size "$LOOP" | grep "$IMG_DEV_ROOT_PATH" | awk '{print $2}' )
-    diff=$(( (IMG_ROOT_SIZE - LOCAL_RESIZE2FS_MIN) / 1024 / 1024 ))
-    debug 'DEBUG' "IMG_ROOT_SIZE=$IMG_ROOT_SIZE bytes | LOCAL_RESIZE2FS_MIN=$LOCAL_RESIZE2FS_MIN bytes | diff=${diff}MiB"
+    diff=$(( (IMG_ROOT_SIZE - LOCAL_AUTORESIZE_MIN) / 1024 / 1024 ))
+    debug 'DEBUG' "IMG_ROOT_SIZE=$IMG_ROOT_SIZE bytes | LOCAL_AUTORESIZE_MIN=$LOCAL_AUTORESIZE_MIN bytes | diff=${diff}MiB"
 
-    if [ "$IMG_ROOT_SIZE" -lt "$LOCAL_RESIZE2FS_MIN" ] && (( LOCAL_RESIZE2FS_MIN - IMG_ROOT_SIZE >= 268435456 )); then # 256MiB in bytes
+    if [ "$IMG_ROOT_SIZE" -lt "$LOCAL_AUTORESIZE_MIN" ] && (( LOCAL_AUTORESIZE_MIN - IMG_ROOT_SIZE >= 268435456 )); then # 256MiB in bytes
       DIFFERENCE="${diff}MiB, Expanding img filesystem"
       RESIZE_FUNCTION='expand'
-    elif [ "$IMG_ROOT_SIZE" -gt "$LOCAL_RESIZE2FS_MIN" ] && (( IMG_ROOT_SIZE - LOCAL_RESIZE2FS_MIN >= 536870912 )); then # 512MiB in bytes
+    elif [ "$IMG_ROOT_SIZE" -gt "$LOCAL_AUTORESIZE_MIN" ] && (( IMG_ROOT_SIZE - LOCAL_AUTORESIZE_MIN >= 536870912 )); then # 512MiB in bytes
       DIFFERENCE="${diff}MiB, Shrinking img filesystem"
       RESIZE_FUNCTION='shrink'
     else
@@ -1490,12 +1492,12 @@ function do_backup() {
     echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
     echo "# Zoom speed requested: $ZOOM"
-    echo "# Autocalculate img root partition size: $RESIZE2FS_RUN"
+    echo "# Autocalculate img root partition size: $AUTORESIZE_RUN"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
-    if [ "$RESIZE2FS_RUN" = true ]; then
+    if [ "$AUTORESIZE_RUN" = true ]; then
       echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MiB"
-      echo "# Auto calculated size (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MiB"
+      echo "# Auto calculated size (root partition): $(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB"
       echo "# Old img size: $(( IMG_SIZE / 1024 / 1024 ))MiB"
       echo "# New img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
       echo "# Difference: $DIFFERENCE"
@@ -1541,12 +1543,12 @@ function do_backup() {
     echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
     echo "# Zoom speed requested: $ZOOM"
-    echo "# Autocalculate img root partition size: $RESIZE2FS_RUN"
+    echo "# Autocalculate img root partition size: $AUTORESIZE_RUN"
     echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "# Use exclude.txt: $EXCLUDE_FILE"
-    if [ "$RESIZE2FS_RUN" = true ]; then
+    if [ "$AUTORESIZE_RUN" = true ]; then
       echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MiB"
-      echo "# Auto calculated size (root partition): $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MiB"
+      echo "# Auto calculated size (root partition): $(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB"
       echo "# Old img size: $(( IMG_SIZE / 1024 / 1024 ))MiB"
       echo "# New img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
       echo "# Difference: $DIFFERENCE"
@@ -1570,9 +1572,9 @@ function do_backup() {
   fi
 
   # Resizing if needed
-  if [ "$RESIZE2FS_RUN" = true ]; then
+  if [ "$AUTORESIZE_RUN" = true ]; then
     # Expanding
-    #if [ "$IMG_ROOT_SIZE" -lt "$LOCAL_RESIZE2FS_MIN" ] && (( LOCAL_RESIZE2FS_MIN - IMG_ROOT_SIZE >= 268435456 )); then # 256MiB in bytes
+    #if [ "$IMG_ROOT_SIZE" -lt "$LOCAL_AUTORESIZE_MIN" ] && (( LOCAL_AUTORESIZE_MIN - IMG_ROOT_SIZE >= 268435456 )); then # 256MiB in bytes
     if [ "$RESIZE_FUNCTION" = 'expand' ]; then
       debug 'INFO' 'Img root partition size is smaller than auto calculated size'
       debug 'DEBUG' "Difference=$diff MiB"
@@ -1580,7 +1582,7 @@ function do_backup() {
       do_resize 'expand'
 
     # Shrinking
-    #elif [ "$IMG_ROOT_SIZE" -gt "$LOCAL_RESIZE2FS_MIN" ] && (( IMG_ROOT_SIZE - LOCAL_RESIZE2FS_MIN >= 536870912 )); then # 512MiB in bytes
+    #elif [ "$IMG_ROOT_SIZE" -gt "$LOCAL_AUTORESIZE_MIN" ] && (( IMG_ROOT_SIZE - LOCAL_AUTORESIZE_MIN >= 536870912 )); then # 512MiB in bytes
     elif [ "$RESIZE_FUNCTION" = 'shrink' ]; then
       debug 'INFO' 'Img root partition size is bigger than auto calculated size'
       debug 'DEBUG' "diff=${diff}MiB"
@@ -1804,9 +1806,9 @@ function print_result() {
     echo "## Write to logfile: $DEBUG"
     echo "## Autoexpand filesystem at boot: $AUTOEXPAND"
     echo "## Use exclude.txt: $EXCLUDE_FILE"
-    if [ "$RESIZE2FS_RUN" = true ]; then
-      echo "## $IMG_FILE is ${AFTER_SIZE}MiB with a root partition of $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MiB."
-      debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MiB with a root partition of $(( LOCAL_RESIZE2FS_MIN / 1024 / 1024 ))MiB"
+    if [ "$AUTORESIZE_RUN" = true ]; then
+      echo "## $IMG_FILE is ${AFTER_SIZE}MiB with a root partition of $(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB."
+      debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MiB with a root partition of $(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB"
     else
       echo "## $IMG_FILE is ${AFTER_SIZE}MiB with $(( ADDED_SPACE / 1024 / 1024 ))MiB extra space included."
       debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MiB with $(( ADDED_SPACE / 1024 / 1024 ))MiB extra space included"
@@ -1873,8 +1875,8 @@ if [[ "$IMG_FILE" != *.img ]]; then
   exit 3
 fi
 
-# Setting ADDED_SPACE to 0 if RESIZE2FS_RUN option is enabled
-if [ "$RESIZE2FS_RUN" = true ] && [ "$LOOPRUN" = false ]; then
+# Setting ADDED_SPACE to 0 if AUTORESIZE_RUN option is enabled
+if [ "$AUTORESIZE_RUN" = true ] && [ "$LOOPRUN" = false ]; then
   ADDED_SPACE=0
   debug 'INFO' '-a selected by user'
   debug 'DEBUG' "ADDED_SPACE=$ADDED_SPACE"
@@ -1960,7 +1962,7 @@ if [ "$FSTYPE" == 'f2fs' ] || [ "$F2FS" = true ]; then
     echo 'Create new img to enable f2fs conversion'
     debug 'ERROR' '--f2fs selected in combination with -U, conversion not possible, exit 3'
     exit 3
-  elif [ "$FSTYPE" == 'f2fs' ] && [ "$UPDATE" = true ] && [ "$RESIZE2FS_RUN" = true ]; then
+  elif [ "$FSTYPE" == 'f2fs' ] && [ "$UPDATE" = true ] && [ "$AUTORESIZE_RUN" = true ]; then
     echo 'ERROR! -U selected in combination with -a , operation not supported'
     echo 'Only creation of new img backups support operations with -a when using f2fs on root'
     debug 'ERROR' '-U selected in combination with -a, operation not supported, exit 3'
@@ -1980,7 +1982,7 @@ if [ "$DEBUG" = true ]; then
   debug 'BREAK'
   debug 'DEBUG' "PARTITION_TABLE=$PARTITION_TABLE"
   debug 'DEBUG' "UPDATE=$UPDATE"
-  debug 'DEBUG' "RESIZE2FS_RUN=$RESIZE2FS_RUN"
+  debug 'DEBUG' "AUTORESIZE_RUN=$AUTORESIZE_RUN"
   debug 'DEBUG' "PROMPTS=$PROMPTS"
   debug 'DEBUG' "EXCLUDE_FILE=$EXCLUDE_FILE"
   debug 'DEBUG' "AUTOEXPAND=$AUTOEXPAND"
