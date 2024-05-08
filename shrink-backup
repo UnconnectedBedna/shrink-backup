@@ -201,7 +201,7 @@ function debug() {
 # Function to loop the img file and exit
 function looprun() {
 
-  if [ -n "$ADDED_SPACE" ]; then
+  if [ "$ADDED_SPACE" -ne 0 ]; then
     echo "## Extra space detected, truncating file by adding ${ADDED_SPACE}MiB"
     $SLEEPING
     truncate -s +$(( ADDED_SPACE * 1024 * 1024 )) "$IMG_FILE"
@@ -1888,7 +1888,7 @@ if [ "$AUTORESIZE_RUN" = true ] && [ "$LOOPRUN" = false ]; then
 fi
 
 # Setting adding ADDED_SPACE to 0 if update is requested and variable ADDED_SPACE is a zero value
-if [ $UPDATE = true ] && [ -z "$ADDED_SPACE" ] && [ "$LOOPRUN" = false ]; then
+if [ $UPDATE = true ] && [ -z "$ADDED_SPACE" ] || [ "$LOOPRUN" = true ] && [ -z "$ADDED_SPACE" ]; then
   ADDED_SPACE=0
   debug 'INFO' '-U selected, -a not selected or extra space not provided by user, setting to ADDED_SPACE to 0 (non-zero value)'
   debug 'DEBUG' "ADDED_SPACE=$ADDED_SPACE"
