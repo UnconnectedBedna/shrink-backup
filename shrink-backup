@@ -30,14 +30,14 @@ function cleanup() {
   # exit 10 = stopped by user mid script
   local exit_code="$?"
 
-  if [ "$exit_code" -ne 2 ]; then
+  if [ "$exit_code" -ne 2 ] || [ "$exit_code" -ne 3 ]; then
     case $exit_code in
-      0) debug 'DEBUG' 'Cleanup function called with exit 0';;
-      3) debug 'WARNING' 'Early error, cleanup exit 3';;
-      4) debug 'WARNING' 'Script aborted by user early, cleanup exit 4';;
-      5) debug 'WARNING' 'Script aborted by user later, cleanup exit 5';;
-      10) echo -e '\n## Script stopped by user...'; debug 'WARNING' 'Script stopped by user with ctrl+c, cleanup exit 10';;
-      *) echo '## Cleanup function called with non zero exit code, something went wrong!!!'; debug 'ERROR' "Cleanup function called with non zero exit code: exit $exit_code";;
+      0) debug 'DEBUG' 'Cleanup function called with exit 0'; break;;
+      #3) debug 'WARNING' 'Early error, cleanup exit 3'; break;;
+      4) debug 'WARNING' 'Script aborted by user early, cleanup exit 4'; break;;
+      5) debug 'WARNING' 'Script aborted by user later, cleanup exit 5'; break;;
+      10) echo -e '\n## Script stopped by user...'; debug 'WARNING' 'Script stopped by user with ctrl+c, cleanup exit 10'; break;;
+      *) echo '## Cleanup function called with non zero exit code, something went wrong!!!'; debug 'ERROR' "Cleanup function called with non zero exit code: exit $exit_code"; break;;
     esac
 
     echo '## Exiting and cleaning up...'
@@ -202,6 +202,21 @@ function debug() {
 function looprun() {
 
   if [ "$ADDED_SPACE" -ne 0 ]; then
+
+    echo "## WARNING, you have requested to add ${ADDED_SPACE}MiB to the img file"
+    read -p "Do you want to continue with the truncate operation? [y/n] " -n 1 -r
+    debug 'INFO' 'Do you want to continue with the truncate operation? [y/n]'
+    if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
+      echo ''
+      echo '## Aborting...'
+      exit 4
+    fi
+    echo ''
+    debug 'INFO' 'Y or y pressed to confirm'
+
+
+
+
     echo "## Extra space detected, truncating file by adding ${ADDED_SPACE}MiB"
     $SLEEPING
     truncate -s +$(( ADDED_SPACE * 1024 * 1024 )) "$IMG_FILE"
@@ -921,7 +936,6 @@ function make_img() {
     read -p "Do you want to continue? [y/n] " -n 1 -r
     debug 'INFO' 'Do you want to continue? [y/n]'
     if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
-      debug 'WARNING' 'Aborted by user, exit 4'
       echo ''
       echo '## Aborting...'
       exit 4
@@ -938,7 +952,6 @@ function make_img() {
       read -p "Do you want to overwrite? [y/n] " -n 1 -r
       debug 'WARNING' 'Do you want to overwrite? [y/n]'
       if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
-        debug 'WARNING' 'Aborted by user, exit 4'
         echo ''
         echo '## Aborting...'
         exit 4
@@ -1061,7 +1074,6 @@ function make_img() {
       read -p "Do you want to try to install gdisk? [y/n] " -n 1 -r
       debug 'INFO' 'Do you want to try to install gdisk? [y/n]'
       if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
-        debug 'WARNING' 'Aborted by user, exit 5'
         echo ''
         echo '## Aborting...'
         exit 5
@@ -1073,7 +1085,6 @@ function make_img() {
         read -p "Do you want to use apt to install gdisk? [y/n] " -n 1 -r
         debug 'INFO' 'Do you want to use apt to install gdisk? [y/n]'
         if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
-          debug 'WARNING' 'Aborted by user, exit 5'
           echo ''
           echo '## Aborting...'
           exit 5
@@ -1089,7 +1100,6 @@ function make_img() {
         read -p "Do you want to use pacman to install gptfdisk? (will do -Syu first) [y/n] " -n 1 -r
         debug 'INFO' 'Do you want to use apt to install gptfdisk? (will do -Syu first) [y/n]'
         if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
-          debug 'WARNING' 'Aborted by user, exit 5'
           echo ''
           echo '## Aborting...'
           exit 5
@@ -1101,7 +1111,7 @@ function make_img() {
         pacman -Syu && pacman -S gptfdisk
         $SLEEPING
       else
-        echo '## Did not manage to install gdisk, please install gdisk and retry script...'
+        echo '## Did not manage to install gdisk, please install gdisk manually and retry script...'
         debug 'ERROR' 'Did not succeed in installing gdisk, aborting exit 1'
         echo '## Aborting...'
         exit 1
@@ -1202,7 +1212,6 @@ function make_img() {
       read -p "Do you want to use apt to install f2fs-tools? [y/n] " -n 1 -r
       debug 'INFO' 'Do you want to try to install f2fs-tools? [y/n]'
       if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
-        debug 'WARNING' 'Aborted by user, exit 5'
         echo ''
         echo '## Aborting...'
         exit 5
@@ -1522,7 +1531,6 @@ function do_backup() {
     read -p "Do you want to continue? [y/n] " -n 1 -r
     debug 'INFO' 'Do you want to continue? [y/n]'
     if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
-      debug 'WARNING' 'Aborted by user, exit 4'
       echo ''
       echo 'Aborting...'
       exit 4
@@ -1883,14 +1891,21 @@ fi
 # Setting ADDED_SPACE to 0 if AUTORESIZE_RUN option is enabled
 if [ "$AUTORESIZE_RUN" = true ] && [ "$LOOPRUN" = false ]; then
   ADDED_SPACE=0
-  debug 'INFO' '-a selected by user'
+  debug 'INFO' '-a selected by user, setting ADDED_SPACE to 0 (non-zero value)'
   debug 'DEBUG' "ADDED_SPACE=$ADDED_SPACE"
 fi
 
-# Setting adding ADDED_SPACE to 0 if update is requested and variable ADDED_SPACE is a zero value
-if [ $UPDATE = true ] && [ -z "$ADDED_SPACE" ] || [ "$LOOPRUN" = true ] && [ -z "$ADDED_SPACE" ]; then
+# Setting ADDED_SPACE to 0 if update is requested and variable ADDED_SPACE is a zero value
+if [ $UPDATE = true ] && [ -z "$ADDED_SPACE" ] && [ "$LOOPRUN" = false ]; then
   ADDED_SPACE=0
-  debug 'INFO' '-U selected, -a not selected or extra space not provided by user, setting to ADDED_SPACE to 0 (non-zero value)'
+  debug 'INFO' '-U selected, -a not selected or [extra space] not provided by user, setting ADDED_SPACE to 0 (non-zero value)'
+  debug 'DEBUG' "ADDED_SPACE=$ADDED_SPACE"
+fi
+
+# Setting ADDED_SPACE to 0 if --loop is selected without providing [extra space]
+if [ "$LOOPRUN" = true ] && [ -z "$ADDED_SPACE" ]; then
+  ADDED_SPACE=0
+  debug 'INFO' '--loop selected and [extra space] not provided by user, setting ADDED_SPACE to 0 (non-zero value)'
   debug 'DEBUG' "ADDED_SPACE=$ADDED_SPACE"
 fi
 
