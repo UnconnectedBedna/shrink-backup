@@ -33,7 +33,6 @@ function cleanup() {
   if [ "$exit_code" -ne 2 ] && [ "$exit_code" -ne 3 ]; then
     case $exit_code in
       0) debug 'DEBUG' 'Cleanup function called with exit 0';;
-      #3) debug 'WARNING' 'Early error, cleanup exit 3';;
       4) debug 'WARNING' 'Script aborted by user early, cleanup exit 4';;
       5) debug 'WARNING' 'Script aborted by user later, cleanup exit 5';;
       10) echo -e '\n## Script stopped by user...'; debug 'WARNING' 'Script stopped by user with ctrl+c, cleanup exit 10';;
@@ -112,18 +111,18 @@ Directory where .img file is created is automatically excluded in backup
 ########################################################################
 Usage: sudo $(basename "$0") [-Uatyelzh] [--fix] [--loop] [--f2fs] imagefile.img [extra space (MiB)]
   -U            Update existing img file (rsync to existing img)
-                  Optional [extra space] extends img size of root partition
+                  Optional [extra space] extends img root partition
   -a            Autocalculate root size partition, [extra space] is ignored
                   When used in combination with -U:
-                  Expand if partition is >=256MiB smaller than resize2fs recommended minimum
-                  Shrink if partition is >=512MiB bigger than resize2fs recommended minimum
+                  Expand if partition is >=256MiB smaller than autocalculated recommended minimum
+                  Shrink if partition is >=512MiB bigger than autocalculated recommended minimum
   -t            Use exclude.txt in same folder as script to set excluded directories
                   One directory per line: "/dir" or "/dir/*" to only exclude contents
   -y            Disable prompts in script (please use this option with care!)
   -e            DO NOT expand filesystem when image is booted
   -l            Write debug messages to logfile shrink-backup.log located in same directory as script
   -z            Make script zoom at light-speed, only question prompts might slow it down
-                  Can be combined with -y for UNSAFE ultra mega superduper speed
+                  Can be combined with -y for UNSAFE ultra-mega-superduper-speed
   --fix         Try to fix the img file if -a fails with a "broken pipe" error
   --loop [img]  Loop img file and exit, works in combination with -l & -z
                   If optional [extra space] is defined, the img file will be extended with the amount before looping
@@ -486,6 +485,8 @@ function set_img_variables() {
 
   else
     debug 'INFO' 'No boot partition detected'
+    # I have no idea why, but if I do not put this sleep here, IMG_DEV_BOOT_PATH does not get set
+    sleep 1
     IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
     debug 'DEBUG' "IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
   fi
@@ -932,31 +933,41 @@ function make_img() {
     fi
     echo '##############################################################################'
 
-    # Confirm with user input
-    read -p "Do you want to continue? [y/n] " -n 1 -r
+#     # Confirm with user input
+#     read -p "Do you want to continue? [y/n] " -n 1 -r
+#     debug 'INFO' 'Do you want to continue? [y/n]'
+#     if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
+#       echo ''
+#       echo '## Aborting...'
+#       exit 4
+#     fi
+#     echo ''
     debug 'INFO' 'Do you want to continue? [y/n]'
-    if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
-      echo ''
-      echo '## Aborting...'
-      exit 4
-    fi
-    echo ''
+    while true; do
+      read -n 1 -r -p '## Do you want to continue? [y/n] ' input
+      case $input in
+        [Yy]) echo -e '\n'; break;;
+        [Nn]) echo -e '\n## Aborting...'; exit 4;;
+        *) echo -e "\n## ERROR, please enter 'y/Y' or 'n/N'"; debug 'WARNING' "ERROR, please enter 'y/Y' or 'n/N'";;
+      esac
+    done
     debug 'INFO' 'Y or y pressed to confirm'
     debug 'BREAK'
 
     if test -f "$IMG_FILE"; then
       debug 'WARNING' "$IMG_FILE ALREADY EXISTS!"
-      echo 'WARNING!!! WARNING!!! WARNING!!!'
-      echo "$IMG_FILE"
-      echo 'FILE ALREADY EXISTS!!!'
-      read -p "Do you want to overwrite? [y/n] " -n 1 -r
+      echo '!! WARNING!!! WARNING!!! WARNING!!!'
+      echo "!! $IMG_FILE"
+      echo '!! FILE ALREADY EXISTS!!!'
       debug 'WARNING' 'Do you want to overwrite? [y/n]'
-      if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
-        echo ''
-        echo '## Aborting...'
-        exit 4
-      fi
-      echo ''
+      while true; do
+        read -n 1 -r -p '!! Do you want to overwrite? [y/n] ' input
+        case $input in
+          [Yy]) echo -e '\n'; break;;
+          [Nn]) echo -e '\n!! Aborting...'; exit 4;;
+          *) echo -e "\n!! ERROR, please enter 'y/Y' or 'n/N'"; debug 'WARNING' "ERROR, please enter 'y/Y' or 'n/N'";;
+        esac
+      done
       debug 'WARNING' 'Overwrite confirmed by user'
     fi
 
@@ -1019,7 +1030,7 @@ function make_img() {
   # Delete existing file if user validation above passed
   if [ -f "$IMG_FILE" ]; then
     debug 'WARNING' "Removing: $IMG_FILE"
-    echo '## Removing old img file...'
+    echo '!! Removing old img file...'
     rm "$IMG_FILE"
     $SLEEPING
   fi
@@ -1530,14 +1541,15 @@ function do_backup() {
     echo '##############################################################################'
 
     # Confirm with user input
-    read -p "Do you want to continue? [y/n] " -n 1 -r
     debug 'INFO' 'Do you want to continue? [y/n]'
-    if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
-      echo ''
-      echo 'Aborting...'
-      exit 4
-    fi
-    echo ''
+    while true; do
+      read -n 1 -r -p '## Do you want to continue? [y/n] ' input
+      case $input in
+        [Yy]) echo -e '\n'; break;;
+        [Nn]) echo -e '\n## Aborting...'; exit 4;;
+        *) echo -e "\n## ERROR, please enter 'y/Y' or 'n/N'"; debug 'WARNING' "ERROR, please enter 'y/Y' or 'n/N'";;
+      esac
+    done
     debug 'INFO' 'Y or y pressed to confirm'
     debug 'BREAK'
 
