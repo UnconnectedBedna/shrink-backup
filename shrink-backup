@@ -849,22 +849,26 @@ function do_rsync() {
     debug 'DEBUG' "Running: rsync -ahvHAX --exclude-from=$(dirname $0)/exclude.txt --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / $TMP_DIR"
     rsync -ahvHAX --exclude-from=$(dirname "$0")/exclude.txt --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/tty  > "$tmp_file"
     # Get the exit status of rsync from PIPESTATUS
-    if [ "${PIPESTATUS[0]}" -ne 0 ]; then #code 23
+    if [ "${PIPESTATUS[0]}" -ne 0 ] && [ "${PIPESTATUS[0]}" -ne 23 ]; then # code 23 = rsync warning: some files vanished before they could be transferred (code 24) at main.c
       output=$(tail -16 "$tmp_file")
       echo -e "$output\n!! RSYNC FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "RSYNC FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
+    elif [ "${PIPESTATUS[0]}" -eq 23 ]; then
+      debug 'WARNING' 'rsync code 23, some files vanished before they could be transferred (code 24) at main.c'
     fi
   else
     debug 'DEBUG' "Running: rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,${IMG_PATH}/*} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / $TMP_DIR"
     rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,${IMG_PATH}/*} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/tty > "$tmp_file"
-    if [ "${PIPESTATUS[0]}" -ne 0 ]; then #code 23
+    if [ "${PIPESTATUS[0]}" -ne 0 ] && [ "${PIPESTATUS[0]}" -ne 23 ]; then # code 23 = rsync warning: some files vanished before they could be transferred (code 24) at main.c
       output=$(tail -16 "$tmp_file")
       echo -e "$output\n!! RSYNC FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "RSYNC FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
+    elif [ "${PIPESTATUS[0]}" -eq 23 ]; then
+      debug 'WARNING' 'rsync code 23, some files vanished before they could be transferred (code 24) at main.c'
     fi
   fi
   echo '## Rsync done...'
@@ -1515,6 +1519,7 @@ function do_backup() {
     fi
     if [ "$RSYNC_DELETE" = '--delete-before' ]; then
       echo '# --fix option selected, rsync will delete files on img before copy'
+      debug 'DEBUG' '--fix option selected by user, rsync deleting files before copy'
     fi
     echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
@@ -1568,6 +1573,7 @@ function do_backup() {
     fi
     if [ "$RSYNC_DELETE" = '--delete-before' ]; then
       echo '# --fix option selected, rsync will delete files on img before copy'
+      debug 'DEBUG' '--fix option selected by user, rsync deleting files before copy'
     fi
     echo '# ----------------------------------------------------------------------------'
     echo "# Write to logfile: $DEBUG"
@@ -2020,6 +2026,7 @@ if [ "$DEBUG" = true ]; then
   debug 'DEBUG' "AUTOEXPAND=$AUTOEXPAND"
   debug 'DEBUG' "RSYNC_DELETE=$RSYNC_DELETE"
   debug 'DEBUG' "F2FS=$F2FS"
+  debug 'DEBUG' ""
   debug 'BREAK'
 fi
 
