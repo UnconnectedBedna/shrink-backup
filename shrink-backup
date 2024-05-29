@@ -2026,7 +2026,6 @@ if [ "$DEBUG" = true ]; then
   debug 'DEBUG' "AUTOEXPAND=$AUTOEXPAND"
   debug 'DEBUG' "RSYNC_DELETE=$RSYNC_DELETE"
   debug 'DEBUG' "F2FS=$F2FS"
-  debug 'DEBUG' ""
   debug 'BREAK'
 fi
 
