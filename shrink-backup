@@ -20,7 +20,7 @@ function cleanup() {
   # exit 3 = early/clean error
   # exit 4 = abort early
   # exit 5 = abort later
-  # exit 10 = stopped by user mid script
+  # exit 10 = stopped by user mid script (ctrl+c)
   local exit_code="$?"
 
   if [ "$exit_code" -ne 2 ] && [ "$exit_code" -ne 3 ]; then
@@ -207,7 +207,7 @@ function looprun() {
     $SLEEPING
     #truncate -s +$(( ADDED_SPACE * 1024 * 1024 )) "$IMG_FILE"
     if ! output=$(truncate -s +$(( ADDED_SPACE * 1024 * 1024 )) "$IMG_FILE" 2>&1); then
-      echo -e "$output\n## TRUNCATE FAILED!!!"
+      echo -e "$output\n!! TRUNCATE FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "TRUNCATE FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -329,7 +329,7 @@ function get_dev_variables() {
 
   # Set recommended size if option is selected
   if [ "$AUTORESIZE_RUN" = true ]; then
-    debug 'INFO' 'Setting TOTAL (space needed for files on root) to size calculated by resize2fs'
+    debug 'INFO' 'Setting TOTAL (space needed for files on root) to autocalculated size'
     TOTAL=$LOCAL_AUTORESIZE_MIN # bytes
   else
     debug 'INFO' 'Calculating TOTAL (space needed for files on root) by adding LOCAL_USED_SPACE and ADDED_SPACE'
@@ -438,7 +438,7 @@ function get_img_variables() {
     debug 'INFO' 'Mounting root to find subvolumes'
     debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH $TMP_DIR"
     if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
-      echo -e "$output\n## ROOT MOUNT FAILED!!!"
+      echo -e "$output\n!! ROOT MOUNT FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "ROOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -461,7 +461,7 @@ function set_img_variables() {
   if $(cat /etc/fstab | grep -q 'boot'); then
     debug 'INFO' 'Separate boot partition detected'
 
-    # ext4
+    # ext4 & f2fs
     if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
       # I have no idea why, but if I do not put this sleep here, IMG_DEV_BOOT_PATH does not get set
       sleep 1
@@ -478,7 +478,7 @@ function set_img_variables() {
 
   else
     debug 'INFO' 'No boot partition detected'
-    # I have no idea why, but if I do not put this sleep here, IMG_DEV_BOOT_PATH does not get set
+    # I have no idea why, but if I do not put this sleep here, IMG_DEV_ROOT_PATH does not get set
     sleep 1
     IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
     debug 'DEBUG' "IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
@@ -500,7 +500,7 @@ function do_loop() {
   $SLEEPING
   debug 'DEBUG' "Running: losetup -P $LOOP $IMG_FILE"
   if ! output=$(losetup -P "$LOOP" "$IMG_FILE" 2>&1); then
-    echo -e "$output\n## LOSETUP FAILED!!!"
+    echo -e "$output\n!! LOSETUP FAILED!!!"
     debug 'BREAK'
     debug 'ERROR' "LOSETUP FAILED:\n$output\n------------------------------------------------------------------------------"
     exit 1
@@ -534,7 +534,7 @@ function do_mount() {
 #     debug 'INFO' 'Mounting root partition from loop'
 #     debug 'DEBUG' "Running: mount $IMG_DEV_ROOT_PATH $TMP_DIR"
 #     if ! output=$(mount "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
-#       echo -e "$output\n## ROOT MOUNT FAILED!!!"
+#       echo -e "$output\n!! ROOT MOUNT FAILED!!!"
 #       debug 'BREAK'
 #       debug 'ERROR' "ROOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
 #       exit 1
@@ -547,7 +547,7 @@ function do_mount() {
     debug 'INFO' 'Mounting root partition from loop'
     debug 'DEBUG' "Running: mount $IMG_DEV_ROOT_PATH $TMP_DIR"
     if ! output=$(mount "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
-      echo -e "$output\n## ROOT MOUNT FAILED!!!"
+      echo -e "$output\n!! ROOT MOUNT FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "ROOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -559,7 +559,7 @@ function do_mount() {
     echo "## Mounting root subvolume..."
     debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH $TMP_DIR"
     if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
-      echo -e "$output\n## ROOT SUBVOLUME MOUNT FAILED!!!"
+      echo -e "$output\n!! ROOT SUBVOLUME MOUNT FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "ROOT SUBVOLUME MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -577,7 +577,7 @@ function do_mount() {
         echo "## Mounting subvolume: $subvol_path"
         debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH ${TMP_DIR}${fstab[1]}"
         if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" ${TMP_DIR}${fstab[1]} 2>&1); then
-          echo -e "$output\n## SUBVOLUME MOUNT FAILED!!!"
+          echo -e "$output\n!! SUBVOLUME MOUNT FAILED!!!"
           debug 'BREAK'
           debug 'ERROR' "SUBVOLUME MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
           exit 1
@@ -594,7 +594,13 @@ function do_mount() {
   fi
 
   # Checking if boot partition exists and if true, mount boot
-  if [ $(lsblk | grep -c 'boot') -ne 0 ]; then
+  #if [ $(lsblk | grep -c 'boot') -ne 0 ]; then
+  if [ -n "$BOOT_PATH" ]; then
+    if [ $(lsblk | grep -c 'boot') -eq 0 ]; then
+      echo '!! BOOT PARTITION NOT MOUNTED ON SYSTEM, PLEASE MOUNT BOOT PARTITION AND RE-RUN THE SCRIPT!!!'
+      debug 'ERROR' 'BOOT PARTITION NOT MOUNTED ON SYSTEM, PLEASE MOUNT BOOT PARTITION AND RE-RUN THE SCRIPT!!!'
+      exit 1
+    fi
     echo '## Mounting img boot partition...'
     $SLEEPING
     debug 'INFO' 'Separate boot partition detected, mounting boot inside root'
@@ -605,7 +611,7 @@ function do_mount() {
     fi
     debug 'DEBUG' "Running: mount $IMG_DEV_BOOT_PATH ${TMP_DIR}${BOOT_PATH}"
     if ! output=$(mount "$IMG_DEV_BOOT_PATH" "${TMP_DIR}${BOOT_PATH}" 2>&1); then
-      echo -e "$output\n## BOOT MOUNT FAILED!!!"
+      echo -e "$output\n!! BOOT MOUNT FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "BOOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -714,7 +720,7 @@ function do_resize() {
     debug 'INFO' "Using truncate to resize img file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
     debug 'DEBUG' "Running: truncate --size=$TRUNCATE_TOTAL $IMG_FILE"
     if ! output=$(truncate --size="$TRUNCATE_TOTAL" "$IMG_FILE" 2>&1); then
-      echo -e "$output\n## TRUNCATE FAILED!!!"
+      echo -e "$output\n!! TRUNCATE FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "TRUNCATE FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -736,8 +742,8 @@ function do_resize() {
     #if ! output=$(sfdisk --delete -f "$LOOP" "$IMG_ROOT_PARTN" 2>&1); then # might fail if img size is very big
     if ! output=$(parted -s "$LOOP" rm "$IMG_ROOT_PARTN" 2>&1); then # for some reason this line works here but not when creating img
     #if ! output=$(printf 'Ignore\n'$IMG_ROOT_PARTN | parted $LOOP rm $IMG_ROOT_PARTN ---pretend-input-tty 2>&1); then # raspberry pi os does not like this method, keep for memory
-      #echo -e "$output\n## SFDISK FAILED!!!"
-      echo -e "$output\n## PARTED FAILED!!!"
+      #echo -e "$output\n!! SFDISK FAILED!!!"
+      echo -e "$output\n!! PARTED FAILED!!!"
       debug 'BREAK'
       #debug 'ERROR' "SFDISK FAILED:\n$output\n------------------------------------------------------------------------------"
       debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
@@ -749,7 +755,7 @@ function do_resize() {
     debug 'INFO' 'Using parted to recreate root partition'
     debug 'DEBUG' "Running: parted -s -a none $LOOP unit B mkpart primary ext4 $IMG_ROOT_START 100%"
     if ! output=$(parted -s -a none "$LOOP" unit B mkpart primary ext4 "$IMG_ROOT_START" 100% 2>&1); then
-      echo -e "$output\n## PARTED FAILED!!!"
+      echo -e "$output\n!! PARTED FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -761,7 +767,7 @@ function do_resize() {
     debug 'BREAK'
     debug 'DEBUG' "Running: resize2fs -p -f $IMG_DEV_ROOT_PATH"
     if ! output=$(resize2fs -p -f "$IMG_DEV_ROOT_PATH" 2>&1); then
-      echo -e "$output\n## RESIZE2FS FAILED!!!"
+      echo -e "$output\n!! RESIZE2FS FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "RESIZE2FS FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -782,7 +788,7 @@ function do_resize() {
     debug 'BREAK'
     debug 'DEBUG' "Running: resize2fs -p -f $IMG_DEV_ROOT_PATH ${TOTALK}K"
     if ! output=$(resize2fs -p -f "$IMG_DEV_ROOT_PATH" "$TOTALK"K 2>&1 | tee /dev/tty); then
-      echo -e "$output\n## RESIZE2FS FAILED!!!"
+      echo -e "$output\n!! RESIZE2FS FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "RESIZE2FS FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -798,7 +804,7 @@ function do_resize() {
 
     #if ! output=$(parted -s -a none "$LOOP" unit B resizepart "$IMG_ROOT_PARTN" "$TRUNCATE_TOTAL" 2>&1); then # tested may 2024 and does not work, still asking for user confirmation even though --script is used
     if ! output=$(printf 'Yes\n' | parted -a none "$LOOP" unit B resizepart "$IMG_ROOT_PARTN" "$TRUNCATE_TOTAL" ---pretend-input-tty 2>&1); then
-      echo -e "$output\n## PARTED FAILED!!!"
+      echo -e "$output\n!! PARTED FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -810,7 +816,7 @@ function do_resize() {
     debug 'INFO' "Using truncate to shrink img file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
     debug 'DEBUG' "Running: truncate --size=$TRUNCATE_TOTAL $IMG_FILE"
     if ! output=$(truncate --size="$TRUNCATE_TOTAL" "$IMG_FILE" 2>&1); then
-      echo -e "$output\n## TRUNCATE FAILED!!!"
+      echo -e "$output\n!! TRUNCATE FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "TRUNCATE FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -845,7 +851,7 @@ function do_rsync() {
     # Get the exit status of rsync from PIPESTATUS
     if [ "${PIPESTATUS[0]}" -ne 0 ]; then #code 23
       output=$(tail -16 "$tmp_file")
-      echo -e "$output\n## RSYNC FAILED!!!"
+      echo -e "$output\n!! RSYNC FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "RSYNC FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -855,7 +861,7 @@ function do_rsync() {
     rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,${IMG_PATH}/*} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/tty > "$tmp_file"
     if [ "${PIPESTATUS[0]}" -ne 0 ]; then #code 23
       output=$(tail -16 "$tmp_file")
-      echo -e "$output\n## RSYNC FAILED!!!"
+      echo -e "$output\n!! RSYNC FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "RSYNC FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -1033,7 +1039,7 @@ function make_img() {
   $SLEEPING
   debug 'INFO' 'Using dd to create bootsector'
   if ! output=$(dd bs=512 count=$LOCAL_DDBOOTSECTOR if="$LOCAL_DEV_PATH" of="$IMG_FILE" conv=noerror,sync status=progress 2>&1 | tee /dev/tty); then
-    echo -e "$output\n## DD TO LOCAL_BOOTSECTOR FAILED!!!"
+    echo -e "$output\n!! DD TO LOCAL_BOOTSECTOR FAILED!!!"
     debug 'BREAK'
     debug 'ERROR' "DD TO LOCAL_BOOTSECTOR FAILED:\n$output\n------------------------------------------------------------------------------"
     exit 1
@@ -1049,7 +1055,7 @@ function make_img() {
   debug 'INFO' "Using truncate to resize img file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
   debug 'DEBUG' "Running: truncate --size=$TRUNCATE_TOTAL $IMG_FILE"
   if ! output=$(truncate --size="$TRUNCATE_TOTAL" "$IMG_FILE" 2>&1); then
-    echo -e "$output\n## TRUNCATE FAILED!!!"
+    echo -e "$output\n!! TRUNCATE FAILED!!!"
     debug 'BREAK'
     debug 'ERROR' "TRUNCATE FAILED:\n$output\n------------------------------------------------------------------------------"
     exit 1
@@ -1131,7 +1137,7 @@ function make_img() {
     debug 'INFO' 'Using sgdisk to remove root partition'
     debug 'DEBUG' "Running: sgdisk $LOOP -d $LOCAL_ROOT_PARTN"
     if ! output=$(sgdisk "$LOOP" -d "$LOCAL_ROOT_PARTN" 2>&1); then
-      echo -e "$output\n## SGDISK FAILED!!!"
+      echo -e "$output\n!! SGDISK FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "SGDISK FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -1149,8 +1155,8 @@ function make_img() {
     if ! output=$(sfdisk --delete -f "$LOOP" "$LOCAL_ROOT_PARTN" 2>&1); then # might fail if img size is very big
     #if ! output=$(parted -s "$LOOP" rm "$LOCAL_ROOT_PARTN" 2>&1); then # retry this after -f got removed, before = does not work, still asking for user confirmation even though --script and -f (automatically answer "fix" to exceptions in script mode) is used. faults with: "Error: Can't have a partition outside the disk!". for some reason this line works in the resizing function
     #if ! output=$(printf 'Ignore\n'$LOCAL_ROOT_PARTN | parted $LOOP rm $LOCAL_ROOT_PARTN ---pretend-input-tty 2>&1); then # raspberry pi os does not like this method, keep for memory
-      echo -e "$output\n## SFDISK FAILED!!!"
-      #echo -e "$output\n## PARTED FAILED!!!"
+      echo -e "$output\n!! SFDISK FAILED!!!"
+      #echo -e "$output\n!! PARTED FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "SFDISK FAILED:\n$output\n------------------------------------------------------------------------------"
       #debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
@@ -1169,7 +1175,7 @@ function make_img() {
     debug 'INFO' '--f2fs selected by user, creating f2fs partition on img file'
     debug 'DEBUG' "Running: parted -s -a none $LOOP unit B mkpart primary f2fs $LOCAL_ROOT_START 100%"
     if ! output=$(parted -s -a none "$LOOP" unit B mkpart primary f2fs "$LOCAL_ROOT_START" 100% 2>&1); then
-      echo -e "$output\n## PARTED FAILED!!!"
+      echo -e "$output\n!! PARTED FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -1180,7 +1186,7 @@ function make_img() {
     debug 'DEBUG' "Running: parted -s -a none $LOOP unit B mkpart primary $FSTYPE $LOCAL_ROOT_START 100%"
     #if ! output=$(parted -s -a none "$LOOP" unit B mkpart primary "$FSTYPE" "$LOCAL_ROOT_START" 100% 2>&1); then
     if ! output=$(parted -s -a none "$LOOP" unit B mkpart primary "$LOCAL_ROOT_START" 100% 2>&1); then
-      echo -e "$output\n## PARTED FAILED!!!"
+      echo -e "$output\n!! PARTED FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -1190,7 +1196,7 @@ function make_img() {
   else
     debug 'DEBUG' "Running: parted -s -a none $LOOP unit B mkpart primary btrfs $LOCAL_ROOT_START 100%"
     if ! output=$(parted -s -a none "$LOOP" unit B mkpart primary btrfs "$LOCAL_ROOT_START" 100% 2>&1); then
-      echo -e "$output\n## PARTED FAILED!!!"
+      echo -e "$output\n!! PARTED FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "PARTED FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -1234,7 +1240,7 @@ function make_img() {
 
     debug 'DEBUG' "Running: mkfs.f2fs -f -U $UUID -l $LABEL $IMG_DEV_ROOT_PATH"
     if ! output=$(mkfs.f2fs -f -U "$UUID" -l "$LABEL" "$IMG_DEV_ROOT_PATH" 2>&1 | tee /dev/tty ); then
-      echo -e "$output\n## MKFS.F2FS FAILED!!!"
+      echo -e "$output\n!! MKFS.F2FS FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "MKFS.F2FS FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -1250,7 +1256,7 @@ function make_img() {
   elif [ "$FSTYPE" == 'ext4' ]; then
     debug 'INFO' "Using mkfs.ext4 to format root filesystem"
     if ! output=$(mkfs.ext4 -U "$UUID" -L "$LABEL" "$IMG_DEV_ROOT_PATH" 2>&1 | tee /dev/tty ); then
-      echo -e "$output\n## MKFS.EXT4 FAILED!!!"
+      echo -e "$output\n!! MKFS.EXT4 FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "MKFS.EXT4 FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -1269,7 +1275,7 @@ function make_img() {
   elif [ "$FSTYPE" == 'f2fs' ]; then
     debug 'INFO' "Using mkfs.f2fs to format root filesystem"
     if ! output=$(mkfs.f2fs -f -U "$UUID" -l "$LABEL" "$IMG_DEV_ROOT_PATH" 2>&1 | tee /dev/tty ); then
-      echo -e "$output\n## MKFS.F2FS FAILED!!!"
+      echo -e "$output\n!! MKFS.F2FS FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "MKFS.F2FS FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -1286,7 +1292,7 @@ function make_img() {
     debug 'INFO' 'Using mkfs.btrfs to format root filesystem'
     partprobe "$LOOP"
     if ! output=$(mkfs.btrfs -f -m single -L "$LABEL" -v "$IMG_DEV_ROOT_PATH" 2>&1 | tee /dev/tty ); then # btrfs does NOT like having the same uuid on 2 filesystems at the same time
-      echo -e "$output\n## MKFS.BTRFS FAILED!!!"
+      echo -e "$output\n!! MKFS.BTRFS FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "MKFS.BTRFS FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -1309,7 +1315,7 @@ function make_img() {
     debug 'INFO' 'Creating btrfs subvolumes'
     debug 'DEBUG' "Running: mount -o compress=zstd $IMG_DEV_ROOT_PATH $TMP_DIR"
     if ! output=$(mount -o noatime,compress=zstd "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
-      echo -e "$output\n## ROOT MOUNT FAILED!!!"
+      echo -e "$output\n!! ROOT MOUNT FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "ROOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -1323,7 +1329,7 @@ function make_img() {
         echo "## Creating subvolume: $subvol_path"
         debug 'DEBUG' "Running: btrfs subvolume create ${TMP_DIR}/${subvol_path}"
         if ! output=$(btrfs subvolume create "$TMP_DIR"/"$subvol_path" 2>&1); then
-          echo -e "$output\n## CREATE SUBVOLUME FAILED!!!"
+          echo -e "$output\n!! CREATE SUBVOLUME FAILED!!!"
           debug 'BREAK'
           debug 'ERROR' "CREATE SUBVOLUME FAILED:\n$output\n------------------------------------------------------------------------------"
           exit 1
@@ -1342,7 +1348,7 @@ function make_img() {
     declare -a fstab=( $(cat /etc/fstab | grep '/ ') )
     debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH $TMP_DIR"
     if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
-      echo -e "$output\n## ROOT SUBVOLUME MOUNT FAILED!!!"
+      echo -e "$output\n!! ROOT SUBVOLUME MOUNT FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "ROOT SUBVOLUME MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -1360,7 +1366,7 @@ function make_img() {
         echo "## Creating volume: $subvol_path"
         debug 'DEBUG' "Running: btrfs subvolume create ${TMP_DIR}/${subvol_path}"
         if ! output=$(btrfs subvolume create "$TMP_DIR"/"$subvol_path" 2>&1); then
-          echo -e "$output\n## CREATE VOLUME FAILED!!!"
+          echo -e "$output\n!! CREATE VOLUME FAILED!!!"
           debug 'BREAK'
           debug 'ERROR' "CREATE VOLUME FAILED:\n$output\n------------------------------------------------------------------------------"
           exit 1
@@ -1383,7 +1389,7 @@ function make_img() {
         echo "## Mounting subvolume: $subvol_path"
         debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH ${TMP_DIR}${fstab[1]}"
         if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" ${TMP_DIR}${fstab[1]} 2>&1); then
-          echo -e "$output\n## VOLUME MOUNT FAILED!!!"
+          echo -e "$output\n!! VOLUME MOUNT FAILED!!!"
           debug 'BREAK'
           debug 'ERROR' "VOLUME MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
           exit 1
@@ -1396,7 +1402,7 @@ function make_img() {
     debug 'DEBUG' "Running: mount $IMG_DEV_BOOT_PATH ${TMP_DIR}${BOOT_PATH}"
     mkdir -p ${TMP_DIR}${BOOT_PATH}
     if ! output=$(mount "$IMG_DEV_BOOT_PATH" "${TMP_DIR}${BOOT_PATH}" 2>&1); then
-      echo -e "$output\n## BOOT MOUNT FAILED!!!"
+      echo -e "$output\n!! BOOT MOUNT FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "BOOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
