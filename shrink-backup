@@ -246,7 +246,7 @@ function get_dev_variables() {
   ADDED_SPACE=$(( ADDED_SPACE * 1024 * 1024 )) # bytes, ADDED_SPACE=0 if AUTORESIZE_RUN=true
 
   # Check if separate boot and root partition exists and set variables accordingly
-  if $(cat /etc/fstab | grep -q 'boot'); then
+  if grep -q 'boot' /etc/fstab; then
     debug 'INFO' 'Separate boot partition detected'
     LOCAL_DEV_BOOT_PATH=$(lsblk -lpo mountpoint,path | grep 'boot' | awk '{print $2}')
     LOCAL_DEV_ROOT_PATH=$(mount | grep '/ ' | awk '{print $1}')
@@ -397,13 +397,13 @@ function get_img_variables() {
   IMG_SIZE=$(ls -l "$IMG_FILE" | awk '{print $5}')
   debug 'DEBUG' "IMG_SIZE=$IMG_SIZE bytes"
 
-  if $(cat /etc/fstab | grep -q 'boot'); then
+  if grep -q 'boot' /etc/fstab; then
     debug 'INFO' 'Separate boot partition detected'
 
-    # ext4
+    # ext4 & f2fs
     if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
       # I have no idea why, but if I do not put this sleep here, IMG_DEV_BOOT_PATH does not get set
-      sleep 1
+      sleep 2
       IMG_DEV_BOOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
       IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
       debug 'DEBUG' "IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
@@ -417,6 +417,8 @@ function get_img_variables() {
 
   else
     debug 'INFO' 'No boot partition detected'
+    # I have no idea why, but if I do not put this sleep here, IMG_DEV_ROOT_PATH does not get set
+    sleep 2
     IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
     debug 'DEBUG' "IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
   fi
@@ -458,13 +460,14 @@ return 0
 # Function for shared variables
 function set_img_variables() {
 
-  if $(cat /etc/fstab | grep -q 'boot'); then
+  if grep -q 'boot' /etc/fstab; then
     debug 'INFO' 'Separate boot partition detected'
 
     # ext4 & f2fs
     if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
       # I have no idea why, but if I do not put this sleep here, IMG_DEV_BOOT_PATH does not get set
-      sleep 1
+      sleep 2
+      #pause 'Press [Enter] key to continue...'
       IMG_DEV_BOOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
       IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
       debug 'DEBUG' "IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
@@ -479,7 +482,7 @@ function set_img_variables() {
   else
     debug 'INFO' 'No boot partition detected'
     # I have no idea why, but if I do not put this sleep here, IMG_DEV_ROOT_PATH does not get set
-    sleep 1
+    sleep 2
     IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
     debug 'DEBUG' "IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
   fi
@@ -491,7 +494,8 @@ return 0
 # Function to loop img file
 function do_loop() {
 
-  if [ "$IS_LOOPED" = false ] && [ -z "$LOOP" ]; then
+  #if [ "$IS_LOOPED" = false ] && [ -z "$LOOP" ]; then
+  if [ -z "$LOOP" ]; then
     LOOP=$(losetup -f)
     debug 'DEBUG' "LOOP=$LOOP"
   fi
@@ -527,19 +531,6 @@ function do_mount() {
   $SLEEPING
   partprobe "$LOOP"
 
-#   # f2fs
-#   if [ "$F2FS" = true ]; then
-#     echo '## Mounting img root partition...'
-#     $SLEEPING
-#     debug 'INFO' 'Mounting root partition from loop'
-#     debug 'DEBUG' "Running: mount $IMG_DEV_ROOT_PATH $TMP_DIR"
-#     if ! output=$(mount "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
-#       echo -e "$output\n!! ROOT MOUNT FAILED!!!"
-#       debug 'BREAK'
-#       debug 'ERROR' "ROOT MOUNT FAILED:\n$output\n------------------------------------------------------------------------------"
-#       exit 1
-#     fi
-
   # ext4 & f2fs
   if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ] || [ "$F2FS" = true ]; then
     echo '## Mounting img root partition...'
@@ -568,7 +559,8 @@ function do_mount() {
 
     for ((i = 0; i < ${#LOCAL_SUBVOLUMES[@]}; i++)); do
       subvol_path="${LOCAL_SUBVOLUMES[i]}"
-      if $(cat /etc/fstab | grep -q "$subvol_path") && [[ "$subvol_path" != '@' ]]; then
+      #if $(cat /etc/fstab | grep -q "$subvol_path") && [[ "$subvol_path" != '@' ]]; then
+      if grep -q "$subvol_path" /etc/fstab && [[ "$subvol_path" != '@' ]]; then
         declare -a fstab=( $(cat /etc/fstab | grep "$subvol_path") )
         if ! [ -d "${TMP_DIR}${fstab[1]}" ]; then
           debug 'DEBUG' "Running: mkdir -p ${TMP_DIR}${fstab[1]}"
@@ -596,7 +588,7 @@ function do_mount() {
   # Checking if boot partition exists and if true, mount boot
   #if [ $(lsblk | grep -c 'boot') -ne 0 ]; then
   if [ -n "$BOOT_PATH" ]; then
-    if [ $(lsblk | grep -c 'boot') -eq 0 ]; then
+    if ! lsblk | grep -q 'boot'; then
       echo '!! BOOT PARTITION NOT MOUNTED ON SYSTEM, PLEASE MOUNT BOOT PARTITION AND RE-RUN THE SCRIPT!!!'
       debug 'ERROR' 'BOOT PARTITION NOT MOUNTED ON SYSTEM, PLEASE MOUNT BOOT PARTITION AND RE-RUN THE SCRIPT!!!'
       exit 1
@@ -838,7 +830,7 @@ function do_rsync() {
 
   echo '## Backing up files...'
   $SLEEPING
-  IMG_PATH=$(dirname "$IMG_FILE")
+  #IMG_PATH=$(dirname "$IMG_FILE")
   debug 'INFO' 'Creating temporary file to store rsync output'
   debug 'DEBUG' "Backing up to ${IMG_PATH}${IMG_FILE}"
   debug 'DEBUG' 'Running: mktemp -t rsync-XXX'
@@ -846,8 +838,10 @@ function do_rsync() {
   debug 'DEBUG' "tmp_file=$tmp_file"
 
   if [ "$EXCLUDE_FILE" = true ]; then
-    debug 'DEBUG' "Running: rsync -ahvHAX --exclude-from=$(dirname $0)/exclude.txt --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / $TMP_DIR"
-    rsync -ahvHAX --exclude-from=$(dirname "$0")/exclude.txt --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/tty  > "$tmp_file"
+    #debug 'DEBUG' "Running: rsync -ahvHAX --exclude-from=$(dirname $0)/exclude.txt --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / $TMP_DIR"
+    #rsync -ahvHAX --exclude-from=$(dirname "$0")/exclude.txt --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/tty  > "$tmp_file"
+    debug 'DEBUG' "Running: rsync -ahvHAX --exclude-from=$(dirname $0)/exclude.txt --exclude={${IMG_FILE},${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / $TMP_DIR"
+    rsync -ahvHAX --exclude-from=$(dirname "$0")/exclude.txt --exclude={${IMG_FILE},${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/tty  > "$tmp_file"
     # Get the exit status of rsync from PIPESTATUS
     if [ "${PIPESTATUS[0]}" -ne 0 ] && [ "${PIPESTATUS[0]}" -ne 23 ]; then # code 23 = rsync warning: some files vanished before they could be transferred (code 24) at main.c
       output=$(tail -16 "$tmp_file")
@@ -859,8 +853,8 @@ function do_rsync() {
       debug 'WARNING' 'rsync code 23, some files vanished before they could be transferred (code 24) at main.c'
     fi
   else
-    debug 'DEBUG' "Running: rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,${IMG_PATH}/*} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / $TMP_DIR"
-    rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,${IMG_PATH}/*} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/tty > "$tmp_file"
+    debug 'DEBUG' "Running: rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,${IMG_FILE}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / $TMP_DIR"
+    rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,${IMG_FILE}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/tty > "$tmp_file"
     if [ "${PIPESTATUS[0]}" -ne 0 ] && [ "${PIPESTATUS[0]}" -ne 23 ]; then # code 23 = rsync warning: some files vanished before they could be transferred (code 24) at main.c
       output=$(tail -16 "$tmp_file")
       echo -e "$output\n!! RSYNC FAILED!!!"
@@ -1210,6 +1204,7 @@ function make_img() {
 
   # Format filesystem
   echo '## Formatting filesystem...'
+  debug 'INFO' 'Formatting filesystem'
   $SLEEPING
   LABEL=$(lsblk -o label "$LOCAL_DEV_ROOT_PATH" | tail -1)
   UUID=$(lsblk -o uuid "$LOCAL_DEV_ROOT_PATH" | tail -1)
@@ -1386,7 +1381,7 @@ function make_img() {
 
     for ((i = 0; i < ${#LOCAL_SUBVOLUMES[@]}; i++)); do
       subvol_path="${LOCAL_SUBVOLUMES[i]}"
-      if $(cat /etc/fstab | grep -q "$subvol_path") && [[ "$subvol_path" != '@' ]]; then
+      if grep -q "$subvol_path" /etc/fstab && [[ "$subvol_path" != '@' ]]; then
         declare -a fstab=( $(cat /etc/fstab | grep "$subvol_path") )
         debug 'DEBUG' "Running: mkdir -p ${TMP_DIR}${fstab[1]}"
         mkdir -p ${TMP_DIR}${fstab[1]}
@@ -2057,27 +2052,27 @@ if [ "$AUTOEXPAND" = true ]; then
   echo '## Enabling fs-autoexpand...'
   debug 'INFO' 'Checking OS for autoexpand function'
   $SLEEPING
-  if cat /etc/os-release | grep -i 'manjaro' >/dev/null; then
-    echo '## Manjaro os detected...'
-    debug 'INFO' 'Manjaro os detected'
+  if grep -qsi 'manjaro' /etc/os-release; then
+    echo '## Manjaro OS detected...'
+    debug 'INFO' 'Manjaro OS detected'
     debug 'INFO' 'Running function: autoexpansion_manjaro'
     $SLEEPING
     autoexpansion_manjaro
-  elif [ -e /etc/armbian-release ]; then
-    debug 'INFO' 'Armbian os detected'
+  elif [ -e /etc/armbian-release ] || grep -qsi 'armbian' /etc/os-release; then
+    echo '## Armbian OS detected...'
+    debug 'INFO' 'Armbian OS detected'
     debug 'INFO' 'Running function: autoexpansion_armbian'
-    echo '## Armbian os detected...'
     $SLEEPING
     autoexpansion_armbian
-  elif uname -a | grep -q 'raspberry' || [ -e /etc/apt/sources.list.d/raspi.list ]; then
+  elif [ -e /etc/apt/sources.list.d/raspi.list ]; then
+    echo '## Raspberry pi detected...'
     debug 'INFO' 'Raspberry pi detected'
     debug 'INFO' 'Running function: autoexpansion_rpi'
-    echo '## Raspberry pi detected...'
     $SLEEPING
     autoexpansion_rpi
-  elif grep -q 'archlinuxarm' /etc/os-release; then
-    echo '## ArchLinuxArm os detected...'
-    debug 'INFO' 'ArchLinuxArm os detected'
+  elif grep -qsi 'archlinuxarm' /etc/os-release; then
+    echo '## ArchLinuxArm detected...'
+    debug 'INFO' 'ArchLinuxArm detected'
     debug 'INFO' 'Running function: autoexpansion_arch'
     $SLEEPING
     autoexpansion_arch
