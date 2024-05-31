@@ -1874,6 +1874,12 @@ do
   fi
 done
 
+# Make sure direct path is used on img file
+if [ "$IMG_FILE" != '^/' ]; then
+  debug 'INFO' 'Direct paths not provided for img file, adding pwd to variable'
+  IMG_FILE="$(pwd)/$IMG_FILE"
+fi
+
 # Check if debugging is requested
 if [ "$DEBUG" = true ]; then
   echo "## Debugging requested, writing to log file $LOG_FILE"
@@ -2011,6 +2017,7 @@ fi
 # Enter variables into logfile
 if [ "$DEBUG" = true ]; then
   debug 'BREAK'
+  debug 'DEBUG' "IMG_FILE=$IMG_FILE"
   debug 'DEBUG' "PARTITION_TABLE=$PARTITION_TABLE"
   debug 'DEBUG' "UPDATE=$UPDATE"
   debug 'DEBUG' "AUTORESIZE_RUN=$AUTORESIZE_RUN"
