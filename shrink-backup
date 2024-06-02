@@ -403,6 +403,8 @@ function get_img_variables() {
     # ext4 & f2fs
     if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
       # I have no idea why, but if I do not put this sleep here, IMG_DEV_BOOT_PATH does not get set
+      # Let's also put a partprobe before running the lsblk for the sake of it
+      partprobe $LOOP
       sleep 2
       IMG_DEV_BOOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
       IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
@@ -418,6 +420,8 @@ function get_img_variables() {
   else
     debug 'INFO' 'No boot partition detected'
     # I have no idea why, but if I do not put this sleep here, IMG_DEV_ROOT_PATH does not get set
+    # Let's also put a partprobe before running the lsblk for the sake of it
+    partprobe $LOOP
     sleep 2
     IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
     debug 'DEBUG' "IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
@@ -466,6 +470,8 @@ function set_img_variables() {
     # ext4 & f2fs
     if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
       # I have no idea why, but if I do not put this sleep here, IMG_DEV_BOOT_PATH does not get set
+      # Let's also put a partprobe before running the lsblk for the sake of it
+      partprobe $LOOP
       sleep 2
       #pause 'Press [Enter] key to continue...'
       IMG_DEV_BOOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
@@ -482,6 +488,8 @@ function set_img_variables() {
   else
     debug 'INFO' 'No boot partition detected'
     # I have no idea why, but if I do not put this sleep here, IMG_DEV_ROOT_PATH does not get set
+    # Let's also put a partprobe before running the lsblk for the sake of it
+    partprobe $LOOP
     sleep 2
     IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
     debug 'DEBUG' "IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
@@ -1876,7 +1884,7 @@ done
 
 # Make sure direct path is used on img file
 if [ "$IMG_FILE" != '^/' ]; then
-  debug 'INFO' 'Direct paths not provided for img file, adding pwd to variable'
+  debug 'INFO' 'Direct path not provided for img file, adding pwd to variable'
   IMG_FILE="$(pwd)/$IMG_FILE"
 fi
 
