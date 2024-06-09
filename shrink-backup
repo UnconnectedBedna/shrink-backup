@@ -110,6 +110,12 @@ LOOPRUN=false
 RSYNC_DELETE='--delete'
 IS_LOOPED=false
 RESIZE_RUN=false
+# Check if running interactively
+if [ -t 0 ]; then
+  LOG_TARGET="/dev/tty"
+else
+  LOG_TARGET="$LOG_FILE"
+fi
 
 # Function to display help information
 help() {
@@ -747,7 +753,7 @@ function do_resize() {
     debug 'INFO' 'Using resize2fs to shrink filesystem'
     debug 'BREAK'
     debug 'DEBUG' "Running: resize2fs -p -f $IMG_DEV_ROOT_PATH ${TOTALK}K"
-    if ! output=$(resize2fs -p -f "$IMG_DEV_ROOT_PATH" "$TOTALK"K 2>&1 | tee /dev/tty); then
+    if ! output=$(resize2fs -p -f "$IMG_DEV_ROOT_PATH" "$TOTALK"K 2>&1 | tee "$LOG_TARGET"); then
       echo -e "$output\n## RESIZE2FS FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "RESIZE2FS FAILED:\n$output\n------------------------------------------------------------------------------"
@@ -807,7 +813,7 @@ function do_rsync() {
 
   if [ "$EXCLUDE_FILE" == true ]; then
     debug 'DEBUG' "Running: rsync -ahvHAX --exclude-from=$(dirname $0)/exclude.txt --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / $TMP_DIR"
-    rsync -ahvHAX --exclude-from=$(dirname "$0")/exclude.txt --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/tty  > "$tmp_file"
+    rsync -ahvHAX --exclude-from=$(dirname "$0")/exclude.txt --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee "$LOG_TARGET"  > "$tmp_file"
     # Get the exit status of rsync from PIPESTATUS
     if [ "${PIPESTATUS[0]}" -ne 0 ]; then #code 23
       output=$(tail -16 "$tmp_file")
@@ -818,7 +824,7 @@ function do_rsync() {
     fi
   else
     debug 'DEBUG' "Running: rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,${IMG_PATH}/*} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / $TMP_DIR"
-    rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,${IMG_PATH}/*} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/tty > "$tmp_file"
+    rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,${IMG_PATH}/*} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee "$LOG_TARGET" > "$tmp_file"
     if [ "${PIPESTATUS[0]}" -ne 0 ]; then #code 23
       output=$(tail -16 "$tmp_file")
       echo -e "$output\n## RSYNC FAILED!!!"
@@ -969,7 +975,7 @@ function make_img() {
   echo '## Creating bootsector...'
   $SLEEPING
   debug 'INFO' 'Using dd to create bootsector'
-  if ! output=$(dd bs=512 count=$LOCAL_DDBOOTSECTOR if="$LOCAL_DEV_PATH" of="$IMG_FILE" conv=noerror,sync status=progress 2>&1 | tee /dev/tty); then
+  if ! output=$(dd bs=512 count=$LOCAL_DDBOOTSECTOR if="$LOCAL_DEV_PATH" of="$IMG_FILE" conv=noerror,sync status=progress 2>&1 | tee "$LOG_TARGET"); then
     echo -e "$output\n## DD TO LOCAL_BOOTSECTOR FAILED!!!"
     debug 'BREAK'
     debug 'ERROR' "DD TO LOCAL_BOOTSECTOR FAILED:\n$output\n------------------------------------------------------------------------------"
@@ -1138,7 +1144,7 @@ function make_img() {
   # ext4
   if [ $FSTYPE = 'ext4' ]; then
     debug 'INFO' 'Using mkfs.ext4 to format root filesystem'
-    if ! output=$(mkfs.ext4 "$IMG_DEV_ROOT_PATH" -U "$UUID" -L "$LABEL" -v 2>&1 | tee /dev/tty ); then
+    if ! output=$(mkfs.ext4 "$IMG_DEV_ROOT_PATH" -U "$UUID" -L "$LABEL" -v 2>&1 | tee "$LOG_TARGET" ); then
       echo -e "$output\n## MKFS.EXT4 FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "MKFS.EXT4 FAILED:\n$output\n------------------------------------------------------------------------------"
@@ -1158,7 +1164,7 @@ function make_img() {
   else
     debug 'INFO' 'Using mkfs.btrfs to format root filesystem'
     partprobe "$LOOP"
-    if ! output=$(mkfs.btrfs -m single -L "$LABEL" -f -v "$IMG_DEV_ROOT_PATH" 2>&1 | tee /dev/tty ); then # btrfs does NOT like having the same uuid on 2 filesystems at the same time
+    if ! output=$(mkfs.btrfs -m single -L "$LABEL" -f -v "$IMG_DEV_ROOT_PATH" 2>&1 | tee "$LOG_TARGET" ); then # btrfs does NOT like having the same uuid on 2 filesystems at the same time
       echo -e "$output\n## MKFS.BTRFS FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "MKFS.BTRFS FAILED:\n$output\n------------------------------------------------------------------------------"
