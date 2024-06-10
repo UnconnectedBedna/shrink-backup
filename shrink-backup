@@ -152,7 +152,7 @@ help() {
 Script for creating an .img file and subsequently keeing it updated (-U), autoexpansion is enabled by default
 Directory where .img file is created is automatically excluded in backup
 ########################################################################
-Usage: sudo $(basename "$0") [-Uatyelzh] [--fix] [--loop] [--f2fs] imagefile.img [extra space (MiB)]
+Usage: ${Green}sudo $(basename "$0") [-Uatyelzh] [--fix] [--loop] [--f2fs] imagefile.img [extra space (MiB)]${NC}
   -U            Update existing img file (rsync to existing img)
                   Optional [extra space] extends img root partition
   -a            Autocalculate root size partition, [extra space] is ignored
@@ -177,21 +177,21 @@ Usage: sudo $(basename "$0") [-Uatyelzh] [--fix] [--loop] [--f2fs] imagefile.img
                   Then change ext4 to f2fs in both files and add discard to options on root partition in fstab
   -h --help     Show this help snippet
 ########################################################################
-${Green}Examples:
-${Blue}sudo $(basename "$0") -a /path/to/backup.img ${NC}(create img, automatically set size)
-${Blue}sudo $(basename "$0") -e -y /path/to/backup.img 1024 ${NC}(create img, ignore prompts, do NOT autoexpand, add 1024MiB extra space)
-${Blue}sudo $(basename "$0") -Utl /path/to/backup.img ${NC}(update img backup, use exclude.txt and write log to shrink-backup.log)
-${Blue}sudo $(basename "$0") -U /path/to/backup.img 1024 ${NC}(update img backup, expand img size/root partition with 1024MiB)
-${Blue}sudo $(basename "$0") -Ua /path/to/backup.img ${NC}(update img backup, automatically resizes img file if needed)
-${Blue}sudo $(basename "$0") -Ua --fix /path/to/backup.img 1024 ${NC}(update img backup, automatically resizes img file if needed, fix img free space)
-${Blue}sudo $(basename "$0") -l --loop /path/to/backup.img 1024 ${NC}(write to log file, expand IMG FILE (not partition) by 1024MiB and loop)
+${Blue}Examples:
+${Green}sudo $(basename "$0") -a /path/to/backup.img ${NC}(create img, automatically set size)
+${Green}sudo $(basename "$0") -e -y /path/to/backup.img 1024 ${NC}(create img, ignore prompts, do NOT autoexpand, add 1024MiB extra space)
+${Green}sudo $(basename "$0") -Utl /path/to/backup.img ${NC}(update img backup, use exclude.txt and write log to shrink-backup.log)
+${Green}sudo $(basename "$0") -U /path/to/backup.img 1024 ${NC}(update img backup, expand img size/root partition with 1024MiB)
+${Green}sudo $(basename "$0") -Ua /path/to/backup.img ${NC}(update img backup, automatically resizes img file if needed)
+${Green}sudo $(basename "$0") -Ua --fix /path/to/backup.img 1024 ${NC}(update img backup, automatically resizes img file if needed, fix img free space)
+${Green}sudo $(basename "$0") -l --loop /path/to/backup.img 1024 ${NC}(write to log file, expand IMG FILE (not partition) by 1024MiB and loop)
 EOM
   echo -e "$help"
   exit 2
 }
 
 # Parse command-line options
-options=$(getopt -o Uatyelzh --long help,fix,f2fs,loop: -- "$@")
+options=$(getopt -o Uatyelzh --long help,fix,f2fs,notty,loop: -- "$@")
 [ $? -eq 0 ] || {
     echo -e "${Red}Incorrect options provided${NC}"
     help
@@ -367,12 +367,12 @@ function get_dev_variables() {
   fi
 
   # Method 1, using the value of "size - available"
-  declare -a LOCAL_DF_OUTPUT=( $(df / -k --sync --output=size,avail | tail -1) ) # 1k blocks, 0 is the first position in an array
-  LOCAL_USED_SPACE=$(( (${LOCAL_DF_OUTPUT[0]} - ${LOCAL_DF_OUTPUT[1]}) * 1024 )) # bytes, df is in 1k blocks, 0 is the first position
+  #declare -a LOCAL_DF_OUTPUT=( $(df / -k --sync --output=size,avail | tail -1) ) # 1k blocks, 0 is the first position in an array
+  #LOCAL_USED_SPACE=$(( (${LOCAL_DF_OUTPUT[0]} - ${LOCAL_DF_OUTPUT[1]}) * 1024 )) # bytes, df is in 1k blocks, 0 is the first position
 
   # Method 2, using "used space" straight up
-  #LOCAL_DF_OUTPUT=( $(df / -k --sync --output=used | tail -1) ) # 1k blocks
-  #LOCAL_USED_SPACE=$(( LOCAL_DF_OUTPUT * 1024 )) # bytes, df is in 1k blocks
+  declare -a LOCAL_DF_OUTPUT=( $(df / -k --sync --output=used | tail -1) ) # 1k blocks
+  LOCAL_USED_SPACE=$(( LOCAL_DF_OUTPUT * 1024 )) # bytes, df is in 1k blocks
 
   # Set recommended size if option is selected
   if [ "$AUTORESIZE_RUN" = true ]; then
@@ -450,7 +450,7 @@ function get_img_variables() {
       # Let's also put a partprobe before running the lsblk for the sake of it
       # NVM, that only gives an error about the partition being outsude of disk
       #partprobe "$LOOP"
-      sleep 1
+      sleep 2
       #pause 'Press [Enter] key to continue...'
       IMG_DEV_BOOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
       IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
@@ -469,7 +469,7 @@ function get_img_variables() {
     # Let's also put a partprobe before running the lsblk for the sake of it
     # NVM, that only gives an error about the partition being outsude of disk
     #partprobe "$LOOP"
-    sleep 1
+    sleep 2
     #pause 'Press [Enter] key to continue...'
     IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
     debug 'DEBUG' "IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
@@ -521,7 +521,7 @@ function set_img_variables() {
       # Let's also put a partprobe before running the lsblk for the sake of it
       # NVM, that only gives an error about the partition being outsude of disk
       #partprobe "$LOOP"
-      sleep 1
+      sleep 2
       #pause 'Press [Enter] key to continue...'
       IMG_DEV_BOOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
       IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
@@ -540,7 +540,7 @@ function set_img_variables() {
     # Let's also put a partprobe before running the lsblk for the sake of it
     # NVM, that only gives an error about the partition being outsude of disk
     #partprobe "$LOOP"
-    sleep 1
+    sleep 2
     #pause 'Press [Enter] key to continue...'
     IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
     debug 'DEBUG' "IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
@@ -966,18 +966,18 @@ function make_img() {
       echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB with $(( ADDED_SPACE / 1024 / 1024 ))MiB extra space included."
       if [ "$AUTORESIZE_WARNING" = true ]; then
         echo '# ----------------------------------------------------------------------------'
-        echo '# WARNING!!! Manually added space is smaller than calculated recommended minimum'
-        echo '# This does NOT mean the backup WILL fail, but CAN fail due to lack of space'
-        echo '# Consider using the -a option or manually adding more space'
-        echo "# Requested root size: $(( TOTAL / 1024 / 1024 ))MiB"
-        echo "# Calculated recommended minimum: $(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB"
+        echo -e "! ${Red}WARNING!!! Manually added space is smaller than calculated recommended minimum${NC}"
+        echo -e "! ${Red}This does NOT mean the backup WILL fail, but CAN fail due to lack of space${NC}"
+        echo -e "! ${Red}Consider using the -a option or manually adding more space${NC}"
+        echo -e "# ${Yellow}Requested root size:            ${Red}$(( TOTAL / 1024 / 1024 ))MiB${NC}"
+        echo -e "# ${Yellow}Calculated recommended minimum: ${Green}$(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB${NC}"
       fi
     fi
     if [ "$F2FS" = true ]; then
       echo '# ----------------------------------------------------------------------------'
-      echo '# WARNING!!! --f2fs option selected. f2fs filesystem will be created on img file'
-      echo '# This option is only for CONVERTING existing filesystem into f2fs on img file'
-      echo '# This option is NOT needed for normal backups from f2fs on root'
+      echo -e "! ${Yellow}WARNING!!! --f2fs option selected. f2fs filesystem will be created on img file${NC}"
+      echo -e "! ${Yellow}This option is only for CONVERTING existing filesystem into f2fs on img file${NC}"
+      echo -e "! ${Yellow}This option is NOT needed for normal backups from f2fs on root${NC}"
       echo '# Only tested for Raspberry pi OS'
     fi
     echo '##############################################################################'
@@ -996,8 +996,8 @@ function make_img() {
       read -n 1 -r -p '## Do you want to continue? [y/n] ' input
       case $input in
         [Yy]) echo -e '\n'; break;;
-        [Nn]) echo -e '\n## Aborting...'; exit 4;;
-        *) echo -e "\n## ERROR, please enter 'y/Y' or 'n/N'"; debug 'WARNING' "ERROR, please enter 'y/Y' or 'n/N'";;
+        [Nn]) echo -e "\n!! ${Red}Aborting...${NC}"; exit 4;;
+        *) echo -e "\n!! ${Yellow}ERROR, please enter 'y/Y' or 'n/N'${NC}"; debug 'WARNING' "ERROR, please enter 'y/Y' or 'n/N'";;
       esac
     done
     debug 'INFO' 'Y or y pressed to confirm'
@@ -1005,16 +1005,16 @@ function make_img() {
 
     if test -f "$IMG_FILE"; then
       debug 'WARNING' "$IMG_FILE ALREADY EXISTS!"
-      echo '!! WARNING!!! WARNING!!! WARNING!!!'
-      echo "!! $IMG_FILE"
-      echo '!! FILE ALREADY EXISTS!!!'
+      echo -e "!! ${Red}WARNING!!! WARNING!!! WARNING!!!${NC}"
+      echo -e "!! ${Red}$IMG_FILE${NC}"
+      echo -e "!! ${Red}FILE ALREADY EXISTS!!!${NC}"
       debug 'WARNING' 'Do you want to overwrite? [y/n]'
       while true; do
         read -n 1 -r -p '!! Do you want to overwrite? [y/n] ' input
         case $input in
           [Yy]) echo -e '\n'; break;;
-          [Nn]) echo -e '\n!! Aborting...'; exit 4;;
-          *) echo -e "\n!! ERROR, please enter 'y/Y' or 'n/N'"; debug 'WARNING' "ERROR, please enter 'y/Y' or 'n/N'";;
+          [Nn]) echo -e "\n!! ${Red}Aborting...${NC}"; exit 4;;
+          *) echo -e "\n!! ${Yellow}ERROR, please enter 'y/Y' or 'n/N'${NC}"; debug 'WARNING' "ERROR, please enter 'y/Y' or 'n/N'";;
         esac
       done
       debug 'WARNING' 'Overwrite confirmed by user'
@@ -1052,23 +1052,23 @@ function make_img() {
       echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB with $(( ADDED_SPACE / 1024 / 1024 ))MiB extra space included."
       if [ "$AUTORESIZE_WARNING" = true ]; then
         echo '# ----------------------------------------------------------------------------'
-        echo "# WARNING!!! Manually added space is smaller than calculated recommended minimum"
-        echo "# This does NOT mean the backup WILL fail, but CAN fail due to lack of space"
-        echo "# Consider using the -a option or manually adding more space"
-        echo "# Requested root size: $(( TOTAL / 1024 / 1024 ))MiB"
-        echo "# Calculated recommended minimum: $(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB"
+        echo -e "! ${Red}WARNING!!! Manually added space is smaller than calculated recommended minimum${NC}"
+        echo -e "! ${Red}This does NOT mean the backup WILL fail, but CAN fail due to lack of space"${NC}
+        echo -e "! ${Red}Consider using the -a option or manually adding more space${NC}"
+        echo -e "# ${Yellow}Requested root size:            ${Red}$(( TOTAL / 1024 / 1024 ))MiB${NC}"
+        echo -e "# ${Yellow}Calculated recommended minimum: ${Red}$(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB${NC}"
       fi
     fi
     if [ "$F2FS" = true ]; then
       echo '# ----------------------------------------------------------------------------'
-      echo '# WARNING!!! --f2fs option selected. f2fs filesystem will be created on img file'
-      echo '# This option is only for CONVERTING existing filesystem into f2fs on img file'
-      echo '# This option is NOT needed for normal backups from f2fs on root'
+      echo -e "! ${Yellow}WARNING!!! --f2fs option selected. f2fs filesystem will be created on img file${NC}"
+      echo -e "! ${Yellow}This option is only for CONVERTING existing filesystem into f2fs on img file${NC}"
+      echo -e "! ${Yeelow}This option is NOT needed for normal backups from f2fs on root${NC}"
       echo '# Only tested for Raspberry pi OS'
       echo '# ----------------------------------------------------------------------------'
     fi
     if [ "$ZOOM" = false ]; then
-      echo '# PRESS CTRL+C WITHIN 5s TO CANCEL!'
+      echo -e "!! ${Red}PRESS CTRL+C WITHIN 5s TO CANCEL!${NC}"
       echo '##############################################################################'
       sleep 6
       debug 'INFO' '6 seconds passed, user did not stop operation'
@@ -1079,7 +1079,7 @@ function make_img() {
   # Delete existing file if user validation above passed
   if [ -f "$IMG_FILE" ]; then
     debug 'WARNING' "Removing: $IMG_FILE"
-    echo '!! Removing old img file...'
+    echo -e "!! ${Yellow}Removing old img file...${NC}"
     rm "$IMG_FILE"
     $SLEEPING
   fi
@@ -1594,8 +1594,8 @@ function do_backup() {
       read -n 1 -r -p '## Do you want to continue? [y/n] ' input
       case $input in
         [Yy]) echo -e '\n'; break;;
-        [Nn]) echo -e '\n## Aborting...'; exit 4;;
-        *) echo -e "\n## ERROR, please enter 'y/Y' or 'n/N'"; debug 'WARNING' "ERROR, please enter 'y/Y' or 'n/N'";;
+        [Nn]) echo -e "\n!! ${Red}Aborting...${NC}"; exit 4;;
+        *) echo -e "\n!! ${Yellow}ERROR, please enter 'y/Y' or 'n/N'${NC}"; debug 'WARNING' "ERROR, please enter 'y/Y' or 'n/N'";;
       esac
     done
     debug 'INFO' 'Y or y pressed to confirm'
@@ -1641,7 +1641,7 @@ function do_backup() {
       echo "# Total img size: $(( IMG_SIZE / 1024 / 1024 ))MiB"
     fi
     if [ "$ZOOM" = false ]; then
-      echo '# PRESS CTRL+C WITHIN 5s TO CANCEL!'
+      echo -e "!! ${Red}PRESS CTRL+C WITHIN 5s TO CANCEL!${NC}"
       echo '##############################################################################'
       sleep 6
       debug 'INFO' '6 seconds passed, user did not stop operation'
@@ -1876,7 +1876,7 @@ function print_result() {
   AFTER_SIZE=$(( AFTER_SIZE / 1024 / 1024 ))
 
   if [ "$UPDATE" != true ]; then
-    echo '## Backup done.'
+    echo -e "## ${Green}Backup done.${NC}"
     echo '##############################################################################'
     echo "## Write to logfile: $DEBUG"
     echo "## Autoexpand filesystem at boot: $AUTOEXPAND"
@@ -1890,7 +1890,7 @@ function print_result() {
     fi
     debug 'INFO' 'Img file created'
   else
-    echo '## Backup done.'
+    echo -e "## ${Green}Backup done.${NC}"
     echo '##############################################################################'
     echo "## Write to logfile: $DEBUG"
     echo "## Autoexpand filesystem at boot: $AUTOEXPAND"
@@ -1900,7 +1900,7 @@ function print_result() {
     debug 'INFO' 'Img file updated'
   fi
   if [ "$AUTOEXPAND" = true ]; then
-    echo "## Please wait for the system to reboot after restoring an image with autoexpansion."
+    echo -e "## ${Yellow}Please wait for the system to reboot after restoring an image with autoexpansion.${NC}"
   fi
   echo '##############################################################################'
   debug 'INFO' 'Backup done'
