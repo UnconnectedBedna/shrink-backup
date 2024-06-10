@@ -184,14 +184,14 @@ ${Green}sudo $(basename "$0") -Utl /path/to/backup.img ${NC}(update img backup, 
 ${Green}sudo $(basename "$0") -U /path/to/backup.img 1024 ${NC}(update img backup, expand img size/root partition with 1024MiB)
 ${Green}sudo $(basename "$0") -Ua /path/to/backup.img ${NC}(update img backup, automatically resizes img file if needed)
 ${Green}sudo $(basename "$0") -Ua --fix /path/to/backup.img 1024 ${NC}(update img backup, automatically resizes img file if needed, fix img free space)
-${Green}sudo $(basename "$0") -l --loop /path/to/backup.img 1024 ${NC}(write to log file, expand IMG FILE (not partition) by 1024MiB and loop)
+${Green}sudo $(basename "$0") -l --loop /path/to/backup.img 1024 ${NC}(write to log file, expand IMG FILE (not partition) by 1024MiB, loop then exit script)
 EOM
   echo -e "$help"
   exit 2
 }
 
 # Parse command-line options
-options=$(getopt -o Uatyelzh --long help,fix,f2fs,notty,loop: -- "$@")
+options=$(getopt -o Uatyelzh --long help,fix,f2fs,loop: -- "$@")
 [ $? -eq 0 ] || {
     echo -e "${Red}Incorrect options provided${NC}"
     help
@@ -206,7 +206,7 @@ while true; do
     -e) AUTOEXPAND=false; shift;;
     -l) DEBUG=true; shift;;
     -z) ZOOM=true; shift;;
-    -h | --help) help; break;;
+    -h|--help) help; break;;
     --fix) RSYNC_DELETE='--delete-before'; shift;;
     --f2fs) F2FS=true; shift;;
     --loop) LOOPRUN=true; IMG_FILE="$2"; shift 2;;
@@ -526,6 +526,28 @@ function set_img_variables() {
       IMG_DEV_BOOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
       IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
       debug 'DEBUG' "IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
+      if ! [ -e "$IMG_DEV_BOOT_PATH" ] || ! [ -e "$IMG_DEV_ROOT_PATH" ]; then
+        for (( i=1; i<=3; i++ )); do
+          echo -e "!! ${Yellow}LOOP paths can not be set, retrying in 5 seconds...${NC}"
+          debug 'WARNING' 'LOOP paths can not be set, retrying in 5 seconds'
+          debug 'WARNING' "IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
+          sleep 5
+          IMG_DEV_BOOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
+          IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
+          if ! [[ "$IMG_DEV_BOOT_PATH" =~ '' ]] || ! [[ "$IMG_DEV_ROOT_PATH" =~ '' ]]; then
+            echo -e "## ${Green}LOOP paths found, resuming backup...${NC}"
+            debug 'INFO' "LOOP paths found, resuming backup"
+            debug 'DEBUG' "IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
+            break
+          fi
+        done
+      fi
+
+      if ! [ -e "$IMG_DEV_BOOT_PATH" ] || ! [ -e "$IMG_DEV_ROOT_PATH" ]; then
+        echo -e "${Red}!! LOOP PATHS CAN NOT BE SET!!!${NC}"
+        debug 'ERROR' 'LOOP PATHS CAN NOT BE SET'
+        exit 1
+      fi
 
     # btrfs (old method)
     elif [ "$FSTYPE" == 'btrfs' ]; then
