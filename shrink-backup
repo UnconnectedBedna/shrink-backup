@@ -455,6 +455,22 @@ function get_img_variables() {
       IMG_DEV_BOOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
       IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
       debug 'DEBUG' "IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
+      if ! [ -e "$IMG_DEV_BOOT_PATH" ] || ! [ -e "$IMG_DEV_ROOT_PATH" ]; then
+        for (( i=1; i<=3; i++ )); do
+          echo -e "!! ${Yellow}LOOP paths can not be set, retrying in 5 seconds...${NC}"
+          debug 'WARNING' 'LOOP paths can not be set, retrying in 5 seconds'
+          debug 'WARNING' "IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
+          sleep 5
+          IMG_DEV_BOOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
+          IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
+          if [ -e "$IMG_DEV_BOOT_PATH" ] && [ -e "$IMG_DEV_ROOT_PATH" ]; then
+            echo -e "## ${Green}LOOP paths found, resuming backup...${NC}"
+            debug 'INFO' "LOOP paths found, resuming backup"
+            debug 'DEBUG' "IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
+            break
+          fi
+        done
+      fi
 
     # btrfs (old method)
     else
