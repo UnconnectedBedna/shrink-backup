@@ -332,11 +332,13 @@ function get_dev_variables() {
 #     LOCAL_ROOT_START=$(( LOCAL_ROOT_START * 512 )) # bytes
 #     LOCAL_BOOTSECTOR=$(( LOCAL_BOOTSECTOR * 512 )) # bytes
 #     debug 'DEBUG' "LOCAL_ROOT_START=$LOCAL_ROOT_START bytes | LOCAL_BOOTSECTOR=$LOCAL_BOOTSECTOR bytes"
-    debug 'INFO' 'Calculating size for dd to cover bootsector and adding 1MiB (1048576 bytes) to overlap into root (only used in img creation)'
+    debug 'INFO' 'Calculating size for dd to cover bootsector and adding 5MiB (5242880 bytes) to overlap into root (only used in img creation)'
     LOCAL_ROOT_START=$(fdisk -lo device,start "$LOCAL_DEV_PATH" | grep "$LOCAL_DEV_ROOT_PATH" | awk '{print $2}') # 512B blocks
+    LOCAL_BOOTSECTOR=$(( LOCAL_ROOT_START - 1 )) # blocks, to set the actual bootsector, needed in case no boot partition exists
     LOCAL_ROOT_START=$(( LOCAL_ROOT_START * 512 )) # bytes
-    LOCAL_BOOTSECTOR=$(lsblk --bytes -o size "$LOCAL_DEV_BOOT_PATH" | tail -1) # bytes
-    LOCAL_DDBOOTSECTOR=$(( (LOCAL_BOOTSECTOR + 10485760) / 512 )) # 512B blocks, 10485760 = 10MiB in bytes
+    LOCAL_BOOTSECTOR=$(( LOCAL_BOOTSECTOR * 512 )) # bytes
+    #LOCAL_BOOTSECTOR=$(lsblk --bytes -o size "$LOCAL_DEV_BOOT_PATH" | tail -1) # bytes, can not be used, will be 0 if no boot partition exists
+    LOCAL_DDBOOTSECTOR=$(( (LOCAL_BOOTSECTOR + 5242880) / 512 )) # 512B blocks, 5242880 = 5MiB in bytes
     debug 'DEBUG' "LOCAL_ROOT_START=$LOCAL_ROOT_START bytes | LOCAL_BOOTSECTOR=$LOCAL_BOOTSECTOR bytes | LOCAL_DDBOOTSECTOR=$LOCAL_DDBOOTSECTOR 4k blocks"
   #fi
 
@@ -447,14 +449,12 @@ function get_img_variables() {
     # ext4 & f2fs
     if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
       # I have no idea why, but if I do not put this sleep here, IMG_DEV_BOOT_PATH does not get set
-      # Let's also put a partprobe before running the lsblk for the sake of it
-      # NVM, that only gives an error about the partition being outsude of disk
-      #partprobe "$LOOP"
       sleep 2
       #pause 'Press [Enter] key to continue...'
       IMG_DEV_BOOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
       IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
       debug 'DEBUG' "IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
+      # Sleep was not enough, might have to do with slow network if img file is on a network share
       if ! [ -e "$IMG_DEV_BOOT_PATH" ] || ! [ -e "$IMG_DEV_ROOT_PATH" ]; then
         for (( i=1; i<=3; i++ )); do
           echo -e "!! ${Yellow}LOOP paths can not be set, retrying in 5 seconds...${NC}"
@@ -482,9 +482,6 @@ function get_img_variables() {
   else
     debug 'INFO' 'No boot partition detected'
     # I have no idea why, but if I do not put this sleep here, IMG_DEV_ROOT_PATH does not get set
-    # Let's also put a partprobe before running the lsblk for the sake of it
-    # NVM, that only gives an error about the partition being outsude of disk
-    #partprobe "$LOOP"
     sleep 2
     #pause 'Press [Enter] key to continue...'
     IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
@@ -534,14 +531,12 @@ function set_img_variables() {
     # ext4 & f2fs
     if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
       # I have no idea why, but if I do not put this sleep here, IMG_DEV_BOOT_PATH does not get set
-      # Let's also put a partprobe before running the lsblk for the sake of it
-      # NVM, that only gives an error about the partition being outsude of disk
-      #partprobe "$LOOP"
       sleep 2
       #pause 'Press [Enter] key to continue...'
       IMG_DEV_BOOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
       IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
       debug 'DEBUG' "IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
+      # Sleep was not enough, might have to do with slow network if img file is on a network share
       if ! [ -e "$IMG_DEV_BOOT_PATH" ] || ! [ -e "$IMG_DEV_ROOT_PATH" ]; then
         for (( i=1; i<=3; i++ )); do
           echo -e "!! ${Yellow}LOOP paths can not be set, retrying in 5 seconds...${NC}"
@@ -575,9 +570,6 @@ function set_img_variables() {
   else
     debug 'INFO' 'No boot partition detected'
     # I have no idea why, but if I do not put this sleep here, IMG_DEV_ROOT_PATH does not get set
-    # Let's also put a partprobe before running the lsblk for the sake of it
-    # NVM, that only gives an error about the partition being outsude of disk
-    #partprobe "$LOOP"
     sleep 2
     #pause 'Press [Enter] key to continue...'
     IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
@@ -923,8 +915,8 @@ function do_rsync() {
   echo '## Backing up files...'
   $SLEEPING
   IMG_PATH=$(dirname "$IMG_FILE")
-  debug 'INFO' 'Creating temporary file to store rsync output'
   debug 'DEBUG' "Backing up to ${IMG_PATH}${IMG_FILE}"
+  debug 'INFO' 'Creating temporary file to store rsync output'
   debug 'DEBUG' 'Running: mktemp -t rsync-XXX'
   tmp_file=$(mktemp -t rsync-XXX)
   debug 'DEBUG' "tmp_file=$tmp_file"
@@ -977,38 +969,38 @@ function make_img() {
   if [ "$PROMPTS" = true ]; then
     echo ''
     echo '##############################################################################'
-    echo "# A backup will be created at $IMG_FILE"
-    echo "# $FSTYPE filesystem detected on root"
+    echo -e "# ${Blue}A backup will be created at ${Green}$IMG_FILE${NC}"
+    echo -e "# ${Green}$FSTYPE ${Blue}filesystem detected on root${NC}"
     if [ "$FSTYPE" == 'btrfs' ]; then
-      echo "# ${#LOCAL_SUBVOLUMES[@]} btrfs volumes will be included"
-      echo "# btrfs volumes: ${LOCAL_SUBVOLUMES[@]}"
+      echo -e "# ${Green}${#LOCAL_SUBVOLUMES[@]} ${Blue}btrfs volumes will be included${NC}"
+      echo -e "# ${Blue}btrfs volumes: ${Green}${LOCAL_SUBVOLUMES[@]}${NC}"
     elif [ "$FSTYPE" == 'f2fs' ]; then
-      echo '# Autoexpand filesystem at boot not available for f2fs'
+      echo -e "# ${Yellow}Autoexpand filesystem at boot not available for f2fs${NC}"
     elif [ "$F2FS" = true ]; then
-      echo '# Converting filesystem into f2fs on img file'
-      echo '# Autoexpand filesystem at boot not available for f2fs'
+      echo -e "# ${Yellow}Converting filesystem into f2fs on img file${NC}"
+      echo -e "# ${Yellow}Autoexpand filesystem at boot not available for f2fs${NC}"
     fi
     echo '# ----------------------------------------------------------------------------'
-    echo "# Write to logfile: $DEBUG"
-    echo "# Zoom speed requested: $ZOOM"
-    echo "# Autocalculate img root partition size: $AUTORESIZE_RUN"
-    echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
-    echo "# Use exclude.txt: $EXCLUDE_FILE"
-    echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MiB"
-    echo "# Estemated root usage: $(( $(df / -k --sync --output=used | tail -1) / 1024 ))MiB"
+    echo -e "# ${Blue}Write to logfile: ${Green}$DEBUG${NC}"
+    echo -e "# ${Blue}Zoom speed requested: ${Green}$ZOOM${NC}"
+    echo -e "# ${Blue}Autocalculate img root partition size: ${Green}$AUTORESIZE_RUN${NC}"
+    echo -e "# ${Blue}Autoexpand filesystem at boot: ${Green}$AUTOEXPAND${NC}"
+    echo -e "# ${Blue}Use exclude.txt: ${Green}$EXCLUDE_FILE${NC}"
+    echo -e "# ${Blue}Bootsector size: ${Green}$(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MiB${NC}"
+    echo -e "# ${Blue}Estemated root usage: ${Green}$(( $(df / -k --sync --output=used | tail -1) / 1024 ))MiB${NC}"
     if [ "$AUTORESIZE_RUN" = true ]; then
-      echo "# Auto calculated size (root partition): $(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB"
-      echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
+      echo -e "# ${Blue}Auto calculated size (root partition): ${Green}$(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB${NC}"
+      echo -e "# ${Blue}Total img size: ${Green}$(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB${NC}"
     else
-      echo "# Manually added space: $(( ADDED_SPACE / 1024 / 1024 ))MiB"
-      echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB with $(( ADDED_SPACE / 1024 / 1024 ))MiB extra space included."
+      echo -e "# ${Blue}Manually added space: ${Green}$(( ADDED_SPACE / 1024 / 1024 ))MiB${NC}"
+      echo -e "# ${Blue}Total img size: ${Green}$(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB ${Blue}with ${Green}$(( ADDED_SPACE / 1024 / 1024 ))${Blue}MiB extra space included.${NC}"
       if [ "$AUTORESIZE_WARNING" = true ]; then
         echo '# ----------------------------------------------------------------------------'
-        echo -e "! ${Red}WARNING!!! Manually added space is smaller than calculated recommended minimum${NC}"
-        echo -e "! ${Red}This does NOT mean the backup WILL fail, but CAN fail due to lack of space${NC}"
-        echo -e "! ${Red}Consider using the -a option or manually adding more space${NC}"
-        echo -e "# ${Yellow}Requested root size:            ${Red}$(( TOTAL / 1024 / 1024 ))MiB${NC}"
-        echo -e "# ${Yellow}Calculated recommended minimum: ${Green}$(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB${NC}"
+        echo -e "! ${Yellow}WARNING!!! Manually added space is smaller than calculated recommended minimum${NC}"
+        echo -e "! ${Yellow}This does NOT mean the backup WILL fail, but CAN fail due to lack of space${NC}"
+        echo -e "! ${Yellow}Consider using the -a option or manually adding more space${NC}"
+        echo -e "# ${Blue}Requested root size:            ${Yellow}$(( TOTAL / 1024 / 1024 ))MiB${NC}"
+        echo -e "# ${Blue}Calculated recommended minimum: ${Green}$(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB${NC}"
       fi
     fi
     if [ "$F2FS" = true ]; then
@@ -1016,7 +1008,7 @@ function make_img() {
       echo -e "! ${Yellow}WARNING!!! --f2fs option selected. f2fs filesystem will be created on img file${NC}"
       echo -e "! ${Yellow}This option is only for CONVERTING existing filesystem into f2fs on img file${NC}"
       echo -e "! ${Yellow}This option is NOT needed for normal backups from f2fs on root${NC}"
-      echo '# Only tested for Raspberry pi OS'
+      echo -e "# ${Blue}Only tested for Raspberry pi OS${NC}"
     fi
     echo '##############################################################################'
 
@@ -1838,7 +1830,7 @@ sync
 exit 0
 EOF2
 
-  debug 'DEBUG' 'Making /expand-fs.sh executable'
+  debug 'DEBUG' 'Making expand-fs.sh executable'
   chmod +x ${TMP_DIR}/expand-fs.sh
 
   echo '## Raspberry pi filesystem autoresizing at boot...'
