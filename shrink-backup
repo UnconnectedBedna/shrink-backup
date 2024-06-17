@@ -138,7 +138,7 @@ RSYNC_DELETE='--delete'
 F2FS=false
 #STARTLINE="$0 $*" # will produce doubble // if script is in $PATH
 STARTLINE="$(dirname $0)/$(basename $0) $*" # will produce absolute path if script is in $PATH
-#STARTLINE="$(realpath $0) $*" # same as bove, but will ALWYAS prodice absolute path
+#STARTLINE="$(realpath $0) $*" # same as bove, but will ALWYAS produce absolute path
 
 # If no TTY is available (for example running custom command in webmin)
 if [ -t 0 ]; then
@@ -991,53 +991,65 @@ function make_img() {
   get_dev_variables
 
   # Display information
-  if [ "$PROMPTS" = true ]; then
-    echo ''
-    echo '##############################################################################'
-    echo -e "# ${Blue}A backup will be created at ${Green}$IMG_FILE${NC}"
-    echo -e "# ${Green}$FSTYPE ${Blue}filesystem detected on root${NC}"
-    if [ "$FSTYPE" == 'btrfs' ]; then
-      echo -e "# ${Green}${#LOCAL_SUBVOLUMES[@]} ${Blue}btrfs volumes will be included${NC}"
-      echo -e "# ${Blue}btrfs volumes: ${Green}${LOCAL_SUBVOLUMES[@]}${NC}"
-    elif [ "$FSTYPE" == 'f2fs' ]; then
-      echo -e "# ${Yellow}Autoexpand filesystem at boot not available for f2fs${NC}"
-    elif [ "$F2FS" = true ]; then
-      echo -e "# ${Yellow}Converting filesystem into f2fs on img file${NC}"
-      echo -e "# ${Yellow}Autoexpand filesystem at boot not available for f2fs${NC}"
-    fi
-    echo '# ----------------------------------------------------------------------------'
-    echo -e "# ${Blue}Write to logfile: ${Green}$DEBUG${NC}"
-    echo -e "# ${Blue}Zoom speed requested: ${Green}$ZOOM${NC}"
-    echo -e "# ${Blue}Autocalculate img root partition size: ${Green}$AUTORESIZE_RUN${NC}"
-    echo -e "# ${Blue}Autoexpand filesystem at boot: ${Green}$AUTOEXPAND${NC}"
-    echo -e "# ${Blue}Use exclude.txt: ${Green}$EXCLUDE_FILE${NC}"
-    echo -e "# ${Blue}Bootsector size: ${Green}$(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MiB${NC}"
-    echo -e "# ${Blue}Estemated root usage: ${Green}$(( $(df / -k --sync --output=used | tail -1) / 1024 ))MiB${NC}"
-    if [ "$AUTORESIZE_RUN" = true ]; then
-      echo -e "# ${Blue}Auto calculated size (root partition): ${Green}$(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB${NC}"
-      echo -e "# ${Blue}Total img size: ${Green}$(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB${NC}"
-    else
-      echo -e "# ${Blue}Manually added space: ${Green}$(( ADDED_SPACE / 1024 / 1024 ))MiB${NC}"
-      echo -e "# ${Blue}Total img size: ${Green}$(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB ${Blue}with ${Green}$(( ADDED_SPACE / 1024 / 1024 ))MiB ${Blue}extra space included.${NC}"
-      if [ "$AUTORESIZE_WARNING" = true ]; then
-        echo '# ----------------------------------------------------------------------------'
-        echo -e "! ${Yellow}WARNING!!! Manually added space is smaller than calculated recommended minimum${NC}"
-        echo -e "! ${Yellow}This does NOT mean the backup WILL fail, but CAN fail due to lack of space${NC}"
-        echo -e "! ${Yellow}Consider using the -a option or manually adding more space${NC}"
-        echo -e "# ${Blue}Requested root size:            ${Yellow}$(( TOTAL / 1024 / 1024 ))MiB${NC}"
-        echo -e "# ${Blue}Calculated recommended minimum: ${Green}$(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB${NC}"
-      fi
-    fi
-    if [ "$F2FS" = true ]; then
+#  echo ''
+  echo '##############################################################################'
+  if [ "$PROMPTS" = false ]; then
+    debug 'INFO' '-y selected by user. prompts are disabled'
+    echo -e "# ${Yellow}DISABLE PROMPTS SELECTED (-y), NO WARNINGS ABOUT DELETION!!!${NC}"
+  fi
+  echo -e "# ${Blue}A backup will be created at ${Green}$IMG_FILE${NC}"
+  echo -e "# ${Green}$FSTYPE ${Blue}filesystem detected on root${NC}"
+  if [ "$FSTYPE" == 'btrfs' ]; then
+    echo -e "# ${Green}${#LOCAL_SUBVOLUMES[@]} ${Blue}btrfs volumes will be included${NC}"
+    echo -e "# ${Blue}btrfs volumes: ${Green}${LOCAL_SUBVOLUMES[@]}${NC}"
+  elif [ "$FSTYPE" == 'f2fs' ]; then
+    echo -e "# ${Yellow}Autoexpand filesystem at boot not available for f2fs${NC}"
+  elif [ "$F2FS" = true ]; then
+    echo -e "# ${Yellow}Converting filesystem into f2fs on img file${NC}"
+    echo -e "# ${Yellow}Autoexpand filesystem at boot not available for f2fs${NC}"
+  fi
+  echo '# ----------------------------------------------------------------------------'
+  echo -e "# ${Blue}Write to logfile: ${Green}$DEBUG${NC}"
+  echo -e "# ${Blue}Zoom speed requested: ${Green}$ZOOM${NC}"
+  echo -e "# ${Blue}Autocalculate img root partition size: ${Green}$AUTORESIZE_RUN${NC}"
+  echo -e "# ${Blue}Autoexpand filesystem at boot: ${Green}$AUTOEXPAND${NC}"
+  echo -e "# ${Blue}Use exclude.txt: ${Green}$EXCLUDE_FILE${NC}"
+  echo -e "# ${Blue}Bootsector size: ${Green}$(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MiB${NC}"
+  echo -e "# ${Blue}Estemated root usage: ${Green}$(( $(df / -k --sync --output=used | tail -1) / 1024 ))MiB${NC}"
+  if [ "$AUTORESIZE_RUN" = true ]; then
+    echo -e "# ${Blue}Auto calculated size (root partition): ${Green}$(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB${NC}"
+    echo -e "# ${Blue}Total img size: ${Green}$(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB${NC}"
+  else
+    echo -e "# ${Blue}Manually added space: ${Green}$(( ADDED_SPACE / 1024 / 1024 ))MiB${NC}"
+    echo -e "# ${Blue}Total img size: ${Green}$(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB ${Blue}with ${Green}$(( ADDED_SPACE / 1024 / 1024 ))MiB ${Blue}extra space included.${NC}"
+    if [ "$AUTORESIZE_WARNING" = true ]; then
       echo '# ----------------------------------------------------------------------------'
-      echo -e "! ${Yellow}WARNING!!! --f2fs option selected. f2fs filesystem will be created on img file${NC}"
-      echo -e "! ${Yellow}This option is only for CONVERTING existing filesystem into f2fs on img file${NC}"
-      echo -e "! ${Yellow}This option is NOT needed for normal backups from f2fs on root${NC}"
-      echo -e "# ${Blue}Only tested for Raspberry pi OS${NC}"
+      echo -e "! ${Yellow}WARNING!!! Manually added space is smaller than calculated recommended minimum${NC}"
+      echo -e "! ${Yellow}This does NOT mean the backup WILL fail, but CAN fail due to lack of space${NC}"
+      echo -e "! ${Yellow}Consider using the -a option or manually adding more space${NC}"
+      echo -e "# ${Blue}Requested root size:            ${Yellow}$(( TOTAL / 1024 / 1024 ))MiB${NC}"
+      echo -e "# ${Blue}Calculated recommended minimum: ${Green}$(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB${NC}"
     fi
-    echo '##############################################################################'
+  fi
+  if [ "$F2FS" = true ]; then
+    echo '# ----------------------------------------------------------------------------'
+    echo -e "! ${Yellow}WARNING!!! --f2fs option selected. f2fs filesystem will be created on img file${NC}"
+    echo -e "! ${Yellow}This option is only for CONVERTING existing filesystem into f2fs on img file${NC}"
+    echo -e "! ${Yellow}This option is NOT needed for normal backups from f2fs on root${NC}"
+    echo -e "# ${Blue}Only tested for Raspberry pi OS${NC}"
+  fi
 
-#     # Confirm with user input
+  # Disabled prompts
+  if [ "$PROMPTS" = false ] && [ "$ZOOM" = false ]; then
+    echo -e "!! ${Red}PRESS CTRL+C WITHIN 5s TO CANCEL!${NC}"
+    echo '##############################################################################'
+    sleep 6
+    debug 'INFO' '6 seconds passed, user did not stop operation'
+    debug 'BREAK'
+
+  # Confirm with user input
+  else
+    echo '##############################################################################'
 #     read -p "Do you want to continue? [y/n] " -n 1 -r
 #     debug 'INFO' 'Do you want to continue? [y/n]'
 #     if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
@@ -1073,61 +1085,6 @@ function make_img() {
         esac
       done
       debug 'WARNING' 'Overwrite confirmed by user'
-    fi
-
-  else
-
-    debug 'INFO' '-y selected by user. prompts are disabled'
-    echo '##############################################################################'
-    echo '# DISABLE PROMPTS SELECTED (-y), NO WARNINGS ABOUT DELETION!!!'
-    echo "# A backup will be created at $IMG_FILE"
-    echo "# $FSTYPE filesystem detected on root"
-    if [ "$FSTYPE" == 'btrfs' ]; then
-      echo "# ${#LOCAL_SUBVOLUMES[@]} btrfs volumes will be included"
-      echo "# btrfs volumes: ${LOCAL_SUBVOLUMES[@]}"
-    elif [ "$FSTYPE" == 'f2fs' ]; then
-      echo '# Autoexpand filesystem at boot not available for f2fs'
-    elif [ "$F2FS" = true ]; then
-      echo '# Converting filesystem into f2fs on img file'
-      echo '# Autoexpand filesystem at boot not available for f2fs'
-    fi
-    echo '# ----------------------------------------------------------------------------'
-    echo "# Write to logfile: $DEBUG"
-    echo "# Zoom speed requested: $ZOOM"
-    echo "# Autocalculate img root partition size: $AUTORESIZE_RUN"
-    echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
-    echo "# Use exclude.txt: $EXCLUDE_FILE"
-    echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MiB"
-    echo "# Estemated root usage: $(( $(df / -k --sync --output=used | tail -1) / 1024 ))MiB"
-    if [ "$AUTORESIZE_RUN" = true ]; then
-      echo "# Auto calculated size (root partition): $(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB"
-      echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
-    else
-      echo "# Manually added space: $(( ADDED_SPACE / 1024 / 1024 ))MiB"
-      echo "# Total img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB with $(( ADDED_SPACE / 1024 / 1024 ))MiB extra space included."
-      if [ "$AUTORESIZE_WARNING" = true ]; then
-        echo '# ----------------------------------------------------------------------------'
-        echo -e "! ${Red}WARNING!!! Manually added space is smaller than calculated recommended minimum${NC}"
-        echo -e "! ${Red}This does NOT mean the backup WILL fail, but CAN fail due to lack of space"${NC}
-        echo -e "! ${Red}Consider using the -a option or manually adding more space${NC}"
-        echo -e "# ${Yellow}Requested root size:            ${Red}$(( TOTAL / 1024 / 1024 ))MiB${NC}"
-        echo -e "# ${Yellow}Calculated recommended minimum: ${Red}$(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB${NC}"
-      fi
-    fi
-    if [ "$F2FS" = true ]; then
-      echo '# ----------------------------------------------------------------------------'
-      echo -e "! ${Yellow}WARNING!!! --f2fs option selected. f2fs filesystem will be created on img file${NC}"
-      echo -e "! ${Yellow}This option is only for CONVERTING existing filesystem into f2fs on img file${NC}"
-      echo -e "! ${Yeelow}This option is NOT needed for normal backups from f2fs on root${NC}"
-      echo '# Only tested for Raspberry pi OS'
-      echo '# ----------------------------------------------------------------------------'
-    fi
-    if [ "$ZOOM" = false ]; then
-      echo -e "!! ${Red}PRESS CTRL+C WITHIN 5s TO CANCEL!${NC}"
-      echo '##############################################################################'
-      sleep 6
-      debug 'INFO' '6 seconds passed, user did not stop operation'
-      debug 'BREAK'
     fi
   fi
 
@@ -1975,7 +1932,7 @@ debug 'INFO' "Script started with: $STARTLINE"
 
 # Make sure absolute path is used on img file
 if ! [[ "$IMG_FILE" =~ ^[/|.] ]]; then
-  debug 'INFO' 'Direct path not provided for img file, adding pwd to variable'
+  debug 'INFO' 'Absolute path not provided for img file, adding pwd to variable'
   IMG_FILE="$(pwd)/$IMG_FILE"
 elif [[ "$IMG_FILE" =~ ^[.] ]]; then
   debug 'INFO' 'Path to img file starting with ".", removing dot adding pwd to variable'
