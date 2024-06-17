@@ -130,20 +130,30 @@ EXCLUDE_FILE=false
 AUTOEXPAND=true
 AUTORESIZE_RUN=false
 UPDATE=false
-LOG_FILE="$(dirname "$0")/shrink-backup.log"
+LOG_FILE="$(dirname $0)/shrink-backup.log"
 AUTORESIZE_WARNING=false
 ZOOM=false
 LOOPRUN=false
 RSYNC_DELETE='--delete'
 F2FS=false
-STARTLINE="$0 $*"
+#STARTLINE="$0 $*" # will produce doubble // if script is in $PATH
+STARTLINE="$(dirname $0)/$(basename $0) $*" # will produce absolute path if script is in $PATH
+#STARTLINE="$(realpath $0) $*" # same as bove, but will ALWYAS prodice absolute path
 
-# Colors
-Red='\033[0;31m'
-Blue='\033[0;34m'
-Green='\033[0;32m'
-Yellow='\033[0;33m'
-NC='\033[0m' # Text Reset - No colors
+# If no TTY is available (for example running custom command in webmin)
+if [ -t 0 ]; then
+  TTY_AVAILABILITY='/dev/tty'
+
+  # Colors
+  Red='\033[0;31m'
+  Blue='\033[0;34m'
+  Green='\033[0;32m'
+  #Yellow='\033[0;33m'
+  Yellow='\033[0;93m' # high intensity yellow
+  NC='\033[0m' # Text Reset - No colors
+else
+  TTY_AVAILABILITY='/dev/null'
+fi
 
 # Function to display help information
 help() {
@@ -213,6 +223,21 @@ while true; do
     --) break;;
     *) shift;;
   esac
+done
+
+# Process the non-option arguments, checks/fixes if the imagefile comes before the options
+while [ "$#" -gt 0 ];
+do
+  if [[ "$1" =~ ^- ]]; then
+    shift
+  elif [ -n "$IMG_FILE" ]; then
+    ADDED_SPACE="$1"
+    break
+  else
+    IMG_FILE="$1"
+    ADDED_SPACE="$2"
+    break
+  fi
 done
 
 # Check if script is run as root
@@ -993,7 +1018,7 @@ function make_img() {
       echo -e "# ${Blue}Total img size: ${Green}$(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB${NC}"
     else
       echo -e "# ${Blue}Manually added space: ${Green}$(( ADDED_SPACE / 1024 / 1024 ))MiB${NC}"
-      echo -e "# ${Blue}Total img size: ${Green}$(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB ${Blue}with ${Green}$(( ADDED_SPACE / 1024 / 1024 ))${Blue}MiB extra space included.${NC}"
+      echo -e "# ${Blue}Total img size: ${Green}$(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB ${Blue}with ${Green}$(( ADDED_SPACE / 1024 / 1024 ))MiB ${Blue}extra space included.${NC}"
       if [ "$AUTORESIZE_WARNING" = true ]; then
         echo '# ----------------------------------------------------------------------------'
         echo -e "! ${Yellow}WARNING!!! Manually added space is smaller than calculated recommended minimum${NC}"
@@ -1948,26 +1973,13 @@ fi
 
 debug 'INFO' "Script started with: $STARTLINE"
 
-# Process the non-option arguments, checks/fixes if the imagefile comes before the options
-while [ "$#" -gt 0 ];
-do
-  if [[ "$1" =~ ^- ]]; then
-    shift
-  elif [ -n "$IMG_FILE" ]; then
-    ADDED_SPACE="$1"
-    break
-  else
-    IMG_FILE="$1"
-    ADDED_SPACE="$2"
-    break
-  fi
-done
-
-# Make sure direct path is used on img file
-if ! [[ "$IMG_FILE" =~ ^/ ]]; then
+# Make sure absolute path is used on img file
+if ! [[ "$IMG_FILE" =~ ^[/|.] ]]; then
   debug 'INFO' 'Direct path not provided for img file, adding pwd to variable'
-  #IMG_FILE="$(dirname $0)/$IMG_FILE"
   IMG_FILE="$(pwd)/$IMG_FILE"
+elif [[ "$IMG_FILE" =~ ^[.] ]]; then
+  debug 'INFO' 'Path to img file starting with ".", removing dot adding pwd to variable'
+  IMG_FILE="$(pwd)${IMG_FILE:1}"
 fi
 
 # Set zoom type
@@ -2080,13 +2092,6 @@ if [ "$FSTYPE" == 'f2fs' ] || [ "$F2FS" = true ]; then
   fi
   debug 'INFO' 'f2fs filesystem or conversion to f2fs requested, disabling autoexpansion'
   AUTOEXPAND=false
-fi
-
-# If no TTY is available (for example running custom command in webmin)
-if [ -t 0 ]; then
-  TTY_AVAILABILITY='/dev/tty'
-else
-  TTY_AVAILABILITY='/dev/null'
 fi
 
 # Enter variables into logfile
