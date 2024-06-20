@@ -28,12 +28,12 @@ function cleanup() {
       0) debug 'DEBUG' 'Cleanup function called with exit 0';;
       4) debug 'WARNING' 'Script aborted by user early, cleanup exit 4';;
       5) debug 'WARNING' 'Script aborted by user later, cleanup exit 5';;
-      10) echo -e '\n## Script stopped by user...'; debug 'WARNING' 'Script stopped by user with ctrl+c, cleanup exit 10';;
-      *) echo '## Cleanup function called with non zero exit code, something went wrong!!!'; debug 'ERROR' "Cleanup function called with non zero exit code: exit $exit_code";;
+      10) echo -e "\n${Yellow}!! Script stopped by user...${NC}"; debug 'WARNING' 'Script stopped by user with ctrl+c, cleanup exit 10';;
+      *) echo -e "${Yellow}!! Cleanup function called with non zero exit code, something went wrong!!!${NC}"; debug 'ERROR' "Cleanup function called with non zero exit code: exit $exit_code";;
     esac
 
-    echo '## Exiting and cleaning up...'
-    echo '## Please stand by...'
+    echo -e "## ${Blue}Exiting and cleaning up...${NC}"
+    echo -e "## ${Blue}Please stand by...${NC}"
 
     if [ -n "$BOOT_PATH" ] && [ -n "$TMP_DIR" ] && grep -qs "${TMP_DIR}${BOOT_PATH} " /proc/mounts; then
       # Loop until the mount point is not busy
@@ -41,7 +41,7 @@ function cleanup() {
         # Check if the mount point is still busy
         if ! umount "${TMP_DIR}${BOOT_PATH}" && [ -n "$BOOT_PATH" ] && [ -n "$TMP_DIR" ] && grep -qs "${TMP_DIR}${BOOT_PATH} " /proc/mounts; then
           # If it is, sleep for a few seconds and try again
-          echo "## ${TMP_DIR}${BOOT_PATH} is busy, retrying in 5 seconds"
+          echo -e "!! ${Green}${TMP_DIR}${BOOT_PATH} ${Yellow}is busy, retrying in 5 seconds...${NC}"
           debug 'DEBUG' "${TMP_DIR}${BOOT_PATH} is busy, retrying in 5 seconds"
           sleep 5
         else
@@ -55,7 +55,7 @@ function cleanup() {
     if [ -n "$TMP_DIR" ] && grep -qs "${TMP_DIR}/home " /proc/mounts; then
       while true; do
         if ! umount "${TMP_DIR}/home" && [ -n "$TMP_DIR" ] && grep -qs "${TMP_DIR}/home " /proc/mounts; then
-          echo "## ${TMP_DIR}/home is busy, retrying in 5 seconds"
+          echo -e "!! ${Green}${TMP_DIR}/home ${Yellow}is busy, retrying in 5 seconds...${NC}"
           debug 'DEBUG' "${TMP_DIR}/home is busy, retrying in 5 seconds"
           sleep 5
         else
@@ -68,7 +68,7 @@ function cleanup() {
     if [ -n "$TMP_DIR" ] && grep -qs "$TMP_DIR " /proc/mounts; then
       while true; do
         if ! umount "${TMP_DIR}" && [ -n "$TMP_DIR" ] && grep -qs "$TMP_DIR " /proc/mounts; then
-          echo "## ${TMP_DIR} is busy, retrying in 5 seconds"
+          echo -e "!! ${Green}${TMP_DIR} ${Yellow}is busy, retrying in 5 seconds...${NC}"
           debug 'DEBUG' "${TMP_DIR} is busy, retrying in 5 seconds"
           sleep 5
         else
@@ -81,7 +81,7 @@ function cleanup() {
     if losetup "$LOOP" &>/dev/null; then
       while true; do
         if ! losetup -d "$LOOP"; then
-          echo "## ${LOOP} is busy, retrying in 5 seconds"
+          echo -e "!! ${Green}${LOOP} ${Yellow}is busy, retrying in 5 seconds${NC}"
           debug 'DEBUG' "${LOOP} is busy, retrying in 5 seconds"
           sleep 5
         else
@@ -103,8 +103,8 @@ function cleanup() {
       rm "$tmp_file"
     fi
 
-    echo '## Done.'
-    echo "## Elapsed time: $(date -d@$SECONDS -u +%M.%S)"
+    echo -e "## ${Green}Done.${NC}"
+    echo -e "## ${Blue}Elapsed time: ${Green}$(date -d@$SECONDS -u +%M.%S)${NC}"
     debug 'INFO' "Elapsed time: $(date -d@$SECONDS -u +%M.%S)"
     debug 'DEBUG' 'Exiting script'
     if [ "$DEBUG" = true ]; then
@@ -242,7 +242,7 @@ done
 
 # Check if script is run as root
 if [ "$EUID" != 0 ]; then
-  echo -e "${Red}THIS SCRIPT MUST BE RUN AS ROOT! (WITH SUDO)${NC}"
+  echo -e "${Red}!! THIS SCRIPT MUST BE RUN AS ROOT! (WITH SUDO)${NC}"
   help
 fi
 
@@ -270,21 +270,21 @@ function debug() {
 # Function to loop the img file and exit
 function looprun() {
   if [ "$ADDED_SPACE" -ne 0 ]; then
-    echo -e "## ${Red}WARNING!${NC} You have requested to add ${ADDED_SPACE}MiB to the img file"
+    echo -e "!! ${Red}WARNING! ${Yellow}You have requested to add ${Green}${ADDED_SPACE}MiB ${Yellow}to the img file (NOT partition)"
     read -p "Do you want to continue with the truncate operation? [y/n] " -n 1 -r
     debug 'INFO' 'Do you want to continue with the truncate operation? [y/n]'
     if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
       echo ''
-      echo -e "${Red}## Aborting...${NC}"
+      echo -e "${Red}!! Aborting...${NC}"
       exit 4
     fi
     echo ''
     debug 'INFO' 'Y or y pressed to confirm'
-    echo "## Truncating file by adding ${ADDED_SPACE}MiB"
+    echo -e "## ${Blue}Truncating file by adding ${Green}${ADDED_SPACE}MiB${NC}"
     $SLEEPING
     #truncate -s +$(( ADDED_SPACE * 1024 * 1024 )) "$IMG_FILE"
     if ! output=$(truncate -s +$(( ADDED_SPACE * 1024 * 1024 )) "$IMG_FILE" 2>&1); then
-      echo -e "$output\n!! TRUNCATE FAILED!!!"
+      echo -e "${Yellow}$output\n${Red}!! TRUNCATE FAILED!!!${NC}"
       debug 'BREAK'
       debug 'ERROR' "TRUNCATE FAILED:\n$output\n------------------------------------------------------------------------------"
       exit 1
@@ -292,14 +292,13 @@ function looprun() {
   fi
 
   debug 'INFO' 'Running function: do_loop'
-  $SLEEPING
   do_loop
 
-  echo "## $IMG_FILE is looped to $LOOP"
+  echo -e "## ${Green}$IMG_FILE ${Blue}is looped to ${Green}$LOOP${NC}"
   echo '##############################################################################'
   echo -e "${Green}$(lsblk $LOOP)${NC}"
   echo '##############################################################################'
-  echo '## Done.'
+  echo -e "## ${Green}Done.${NC}"
 
   debug 'DEBUG' 'Exiting script, exit 2'
   if [ "$DEBUG" = true ]; then
@@ -468,6 +467,7 @@ function get_img_variables() {
   IMG_SIZE=$(ls -l "$IMG_FILE" | awk '{print $5}')
   debug 'DEBUG' "IMG_SIZE=$IMG_SIZE bytes"
 
+  # Boot partition exists
   if grep -q 'boot' /etc/fstab; then
     debug 'INFO' 'Separate boot partition detected'
 
@@ -504,6 +504,7 @@ function get_img_variables() {
       debug 'DEBUG' "IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
     fi
 
+  # No boot partition exists
   else
     debug 'INFO' 'No boot partition detected'
     # I have no idea why, but if I do not put this sleep here, IMG_DEV_ROOT_PATH does not get set
@@ -517,7 +518,7 @@ function get_img_variables() {
   if [ "$FSTYPE" = 'btrfs' ]; then
     # Check for temp directory and create if needed
     if ! [ -d "$TMP_DIR" ]; then
-      echo '## Creating temp directory...'
+      echo -e "## ${Blue}Creating temp directory...${NC}"
       $SLEEPING
       debug 'INFO' 'Creating temp directory'
       debug 'DEBUG' "Running: mktemp -d -t backup-XXX"
@@ -550,6 +551,7 @@ return 0
 # Function for shared variables
 function set_img_variables() {
 
+  # Boot partition exists
   if grep -q 'boot' /etc/fstab; then
     debug 'INFO' 'Separate boot partition detected'
 
@@ -592,6 +594,7 @@ function set_img_variables() {
       debug 'DEBUG' "IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
     fi
 
+  # No boot partition exists
   else
     debug 'INFO' 'No boot partition detected'
     # I have no idea why, but if I do not put this sleep here, IMG_DEV_ROOT_PATH does not get set
@@ -613,7 +616,7 @@ function do_loop() {
     debug 'DEBUG' "LOOP=$LOOP"
   fi
 
-  echo '## Looping img file...'
+  echo -e "## ${Blue}Looping img file...${NC}"
   $SLEEPING
   debug 'DEBUG' "Running: losetup -P $LOOP $IMG_FILE"
   if ! output=$(losetup -P "$LOOP" "$IMG_FILE" 2>&1); then
@@ -632,7 +635,7 @@ function do_mount() {
 
   # Check for temp directory and create if needed
   if ! [ -d "$TMP_DIR" ]; then
-    echo '## Creating temp directory...'
+    echo -e "## ${Blue}Creating temp directory...${NC}"
     $SLEEPING
     debug 'INFO' 'Creating temp directory'
     debug 'DEBUG' "Running: mktemp -d -t backup-XXX"
@@ -644,7 +647,7 @@ function do_mount() {
 
   # ext4 & f2fs
   if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ] || [ "$F2FS" = true ]; then
-    echo '## Mounting img root partition...'
+    echo -e "## ${Blue}Mounting img root partition...${NC}"
     $SLEEPING
     debug 'INFO' 'Mounting root partition from loop'
     debug 'DEBUG' "Running: mount $IMG_DEV_ROOT_PATH $TMP_DIR"
@@ -658,7 +661,7 @@ function do_mount() {
   # btrfs
   elif [ "$FSTYPE" == 'btrfs' ]; then
     declare -a fstab=( $(cat /etc/fstab | grep '/ ') )
-    echo "## Mounting root subvolume..."
+    echo -e "## ${Blue}Mounting root subvolume...${NC}"
     debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH $TMP_DIR"
     if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
       echo -e "${Yellow}$output\n${Red}!! ROOT SUBVOLUME MOUNT FAILED!!!${NC}"
@@ -677,7 +680,7 @@ function do_mount() {
           debug 'DEBUG' "Running: mkdir -p ${TMP_DIR}${fstab[1]}"
           mkdir -p "${TMP_DIR}${fstab[1]}"
         fi
-        echo "## Mounting subvolume: $subvol_path"
+        echo -e "## ${Blue}Mounting subvolume: ${Green}$subvol_path${NC}"
         debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH ${TMP_DIR}${fstab[1]}"
         if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" ${TMP_DIR}${fstab[1]} 2>&1); then
           echo -e "${Yellow}$output\n${Red}!! SUBVOLUME MOUNT FAILED!!!${NC}"
@@ -700,11 +703,11 @@ function do_mount() {
   #if [ $(lsblk | grep -c 'boot') -ne 0 ]; then
   if [ -n "$BOOT_PATH" ]; then
     if ! lsblk | grep -q 'boot'; then
-      echo "${Red}!! BOOT PARTITION NOT MOUNTED ON SYSTEM, PLEASE MOUNT BOOT PARTITION AND RE-RUN THE SCRIPT!!!${NC}"
+      echo -e "${Red}!! BOOT PARTITION NOT MOUNTED ON SYSTEM, PLEASE MOUNT BOOT PARTITION AND RE-RUN THE SCRIPT!!!${NC}"
       debug 'ERROR' 'BOOT PARTITION NOT MOUNTED ON SYSTEM, PLEASE MOUNT BOOT PARTITION AND RE-RUN THE SCRIPT!!!'
       exit 1
     fi
-    echo '## Mounting img boot partition...'
+    echo -e "## ${Blue}Mounting img boot partition...${NC}"
     $SLEEPING
     debug 'INFO' 'Separate boot partition detected, mounting boot inside root'
     if ! [ -d ${TMP_DIR}${BOOT_PATH} ]; then
@@ -742,7 +745,7 @@ function do_e2fsck() {
 
   # Final check of filesystem
   if [ "$*" = 'final' ]; then
-    echo '## Finalizing filesystem...'
+    echo -e "## ${Blue}Finalizing filesystem...${NC}"
     $SLEEPING
 
     output=$(e2fsck -p -f -v "$IMG_DEV_ROOT_PATH" 2>&1)
@@ -753,7 +756,7 @@ function do_e2fsck() {
 
     # Remounting if autoexpansion is requested
     if [ "$AUTOEXPAND" = true ]; then
-      echo '## Remounting for autoexpansion...'
+      echo -e "## ${Blue}Remounting for autoexpansion...${NC}"
       debug 'INFO' 'Remounting for autoexpansion function'
       debug 'INFO' 'Running function: do_mount'
       $SLEEPING
@@ -762,7 +765,7 @@ function do_e2fsck() {
 
   else
     # Normal check
-    echo '## Checking img filesystem...'
+    echo -e "## ${Blue}Checking img filesystem...${NC}"
     $SLEEPING
 
     output=$(e2fsck -p -f "$IMG_DEV_ROOT_PATH" 2>&1)
@@ -806,17 +809,17 @@ function do_resize() {
   # Expanding
   if [ "$*" = 'expand' ]; then
 
-    echo '## Expanding img filesystem...'
+    echo -e "## ${Blue}Expanding img filesystem...${NC}"
     $SLEEPING
 
     # Removing loop for tuncate to take effect
-    echo '## Removing loop...'
+    echo -e "## ${Blue}Removing loop...${NC}"
     $SLEEPING
     debug 'INFO' 'Removing loop for truncate to take effect'
     debug 'DEBUG' "Running: losetup -d $LOOP"
     losetup -d "$LOOP"
 
-    echo "## Resizing image file..."
+    echo -e "## ${Blue}Resizing image file...${NC}"
     $SLEEPING
     debug 'INFO' "Using truncate to resize img file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
     debug 'DEBUG' "Running: truncate --size=$TRUNCATE_TOTAL $IMG_FILE"
@@ -832,7 +835,7 @@ function do_resize() {
     debug 'INFO' 'Running function: do_loop'
     do_loop
 
-    echo '## Removing partition...'
+    echo -e "## ${Blue}Removing partition...${NC}"
     $SLEEPING
     #debug 'INFO' 'Using sfdisk to remove root partition'
     debug 'INFO' 'Using parted to remove root partition'
@@ -851,7 +854,7 @@ function do_resize() {
       exit 1
     fi
 
-    echo '## Recreating partition...'
+    echo -e "## ${Blue}Recreating partition...${NC}"
     $SLEEPING
     debug 'INFO' 'Using parted to recreate root partition'
     debug 'DEBUG' "Running: parted -s -a none $LOOP unit B mkpart primary ext4 $IMG_ROOT_START 100%"
@@ -862,7 +865,7 @@ function do_resize() {
       exit 1
     fi
 
-    echo '## Resizing filesystem...'
+    echo -e "## ${Blue}Resizing filesystem...${NC}"
     $SLEEPING
     debug 'INFO' 'Using resize2fs to expand filesystem'
     debug 'BREAK'
@@ -883,7 +886,7 @@ function do_resize() {
   # Shrinking
   elif [ "$*" = 'shrink' ]; then
 
-    echo '## Shrinking filesystem...'
+    echo -e "## ${Blue}Shrinking filesystem...${NC}"
     $SLEEPING
     debug 'INFO' 'Using resize2fs to shrink filesystem'
     debug 'BREAK'
@@ -896,7 +899,7 @@ function do_resize() {
     fi
     debug 'DEBUG' "$output\n------------------------------------------------------------------------------"
 
-    echo '## Shrinking partition...'
+    echo -e "## ${Blue}Shrinking partition...${NC}"
     $SLEEPING
     debug 'INFO' 'Using parted to shrink partition'
     debug 'BREAK'
@@ -912,7 +915,7 @@ function do_resize() {
     fi
     debug 'DEBUG' "$output\n------------------------------------------------------------------------------"
 
-    echo '## Shrinking img file...'
+    echo -e "## ${Blue}Shrinking img file...${NC}"
     $SLEEPING
     debug 'INFO' "Using truncate to shrink img file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
     debug 'DEBUG' "Running: truncate --size=$TRUNCATE_TOTAL $IMG_FILE"
@@ -937,7 +940,7 @@ return 0
 # Function to rsync to img file
 function do_rsync() {
 
-  echo '## Backing up files...'
+  echo -e "## ${Blue}Backing up files...${NC}"
   $SLEEPING
   IMG_PATH=$(dirname "$IMG_FILE")
   debug 'DEBUG' "Backing up to ${IMG_PATH}${IMG_FILE}"
@@ -972,8 +975,8 @@ function do_rsync() {
       debug 'WARNING' 'rsync code 23, some files vanished before they could be transferred (code 24) at main.c'
     fi
   fi
-  echo '## Rsync done...'
-  echo '## Please stand by...'
+  echo -e "## ${Green}Rsync done...${NC}"
+  echo -e "## ${Blue}Please stand by...${NC}"
   output=$(tail -16 "$tmp_file")
   debug 'BREAK'
   debug 'DEBUG' "Rsync report:\n$output\n------------------------------------------------------------------------------"
@@ -1063,8 +1066,8 @@ function make_img() {
       read -n 1 -r -p '## Do you want to continue? [y/n] ' input
       case $input in
         [Yy]) echo -e '\n'; break;;
-        [Nn]) echo -e "\n!! ${Red}Aborting...${NC}"; exit 4;;
-        *) echo -e "\n!! ${Yellow}ERROR, please enter 'y/Y' or 'n/N'${NC}"; debug 'WARNING' "ERROR, please enter 'y/Y' or 'n/N'";;
+        [Nn]) echo -e "\n${Red}!! Aborting...${NC}"; exit 4;;
+        *) echo -e "\n!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y/Y' ${Yellow}or ${Green}'n/N'${NC}"; debug 'WARNING' "ERROR, please enter 'y/Y' or 'n/N'";;
       esac
     done
     debug 'INFO' 'Y or y pressed to confirm'
@@ -1073,15 +1076,15 @@ function make_img() {
     if test -f "$IMG_FILE"; then
       debug 'WARNING' "$IMG_FILE ALREADY EXISTS!"
       echo -e "!! ${Red}WARNING!!! WARNING!!! WARNING!!!${NC}"
-      echo -e "!! ${Red}$IMG_FILE${NC}"
-      echo -e "!! ${Red}FILE ALREADY EXISTS!!!${NC}"
+      echo -e "!! ${Green}$IMG_FILE${NC}"
+      echo -e "!! ${Yellow}FILE ALREADY EXISTS!!!${NC}"
       debug 'WARNING' 'Do you want to overwrite? [y/n]'
       while true; do
         read -n 1 -r -p '!! Do you want to overwrite? [y/n] ' input
         case $input in
           [Yy]) echo -e '\n'; break;;
-          [Nn]) echo -e "\n!! ${Red}Aborting...${NC}"; exit 4;;
-          *) echo -e "\n!! ${Yellow}ERROR, please enter 'y/Y' or 'n/N'${NC}"; debug 'WARNING' "ERROR, please enter 'y/Y' or 'n/N'";;
+          [Nn]) echo -e "\n${Red}!! Aborting...${NC}"; exit 4;;
+          *) echo -e "\n!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y/Y' ${Yellow}or ${Green}'n/N'${NC}"; debug 'WARNING' "ERROR, please enter 'y/Y' or 'n/N'";;
         esac
       done
       debug 'WARNING' 'Overwrite confirmed by user'
@@ -1097,7 +1100,7 @@ function make_img() {
   fi
 
   # Create and dd bootsector
-  echo '## Creating bootsector...'
+  echo -e "## ${Blue}Creating bootsector...${NC}"
   $SLEEPING
   debug 'INFO' 'Using dd to create bootsector'
   #if ! output=$(dd bs=512 count=$LOCAL_DDBOOTSECTOR if="$LOCAL_DEV_PATH" of="$IMG_FILE" conv=noerror,sync status=progress 2>&1 | tee "$TTY_AVAILABILITY"); then
@@ -1114,7 +1117,7 @@ function make_img() {
   $SLEEPING
 
   # Truncate file to correct size
-  echo "## Resizing img file..."
+  echo -e "## ${Blue}Resizing img file...${NC}"
   $SLEEPING
   debug 'INFO' "Using truncate to resize img file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
   debug 'DEBUG' "Running: truncate --size=$TRUNCATE_TOTAL $IMG_FILE"
@@ -1135,65 +1138,63 @@ function make_img() {
   set_img_variables
 
   # Remove partition
-  echo '## Removing root partition...'
+  echo -e "## ${Blue}Removing root partition...${NC}"
   $SLEEPING
 
   # GPT
   if [ $PARTITION_TABLE == 'gpt' ]; then
-    echo '## GPT partition table detected, sgdisk needed, checking for application...'
+    echo -e "## ${Green}GPT partition table detected, ${Yellow}sgdisk needed, ${Blue}checking for application...${NC}"
     $SLEEPING
     if [[ ! -f $(which sgdisk 2>&1) ]]; then
-      echo '## sgdisk is NOT installed...'
+      echo -e "!! ${Yellow}sgdisk is NOT installed...${NC}"
       debug 'INFO' 'sgdisk not available on system'
       read -p "Do you want to try to install gdisk? [y/n] " -n 1 -r
       debug 'INFO' 'Do you want to try to install gdisk? [y/n]'
       if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
         echo ''
-        echo '## Aborting...'
+        echo -e "${Red}!! Aborting...${NC}"
         exit 5
       fi
       echo ''
       debug 'INFO' 'Y or y pressed to confirm'
       if [[ -f $(which apt 2>&1) ]]; then
-        echo '## apt found, trying to install gdisk...'
+        echo -e "!! ${Green}apt found, ${Blue}trying to install gdisk...${NC}"
         read -p "Do you want to use apt to install gdisk? [y/n] " -n 1 -r
         debug 'INFO' 'Do you want to use apt to install gdisk? [y/n]'
         if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
           echo ''
-          echo '## Aborting...'
+          echo -e "${Red}!! Aborting...${NC}"
           exit 5
         fi
         echo ''
         debug 'INFO' 'Y or y pressed to confirm'
         debug 'DEBUG' 'Running: apt update -y && apt upgrade -y && apt install gdisk -y'
-        $SLEEPING
         apt update -y && apt upgrade -y && apt install gdisk -y
       elif [[ -f $(which pacman 2>&1) ]]; then
-        echo '## pacman found, trying to install gdisk...'
+        echo -e "## ${Green}pacman found, ${Blue}trying to install gdisk...${NC}"
         read -p "Do you want to use pacman to install gptfdisk? (will do -Syu first) [y/n] " -n 1 -r
-        debug 'INFO' 'Do you want to use apt to install gptfdisk? (will do -Syu first) [y/n]'
+        debug 'INFO' 'Do you want to use pacman to install gptfdisk? (will do -Syu first) [y/n]'
         if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
           echo ''
-          echo '## Aborting...'
+          echo -e "${Red}!! Aborting...${NC}"
           exit 5
         fi
         echo ''
         debug 'INFO' 'Y or y pressed to confirm'
         debug 'DEBUG' 'Running: pacman -Syu && pacman -S gptfdisk'
-        $SLEEPING
         pacman -Syu && pacman -S gptfdisk
       else
-        echo '## Installing gdisk failed, please install gdisk manually and retry script...'
+        echo -e "${Red}!! Error! ${Yellow}Installing gdisk failed! ${Green}Please install gdisk manually and retry script...${NC}"
         debug 'ERROR' 'Installing gdisk failed, aborting exit 1'
-        echo '## Aborting...'
+        echo -e "${Red}!! Aborting...${NC}"
         exit 1
       fi
-      echo '## gdisk installed successfully, resuming backup...'
+      echo -e "## ${Green}gdisk installed successfully, ${Blue}resuming backup...${NC}"
       debug 'INFO' 'gdisk installed successfully'
       $SLEEPING
 
     else
-      echo '## sgdisk is available, resuming backup...'
+      echo -e "## ${Green}sgdisk is available, ${Blue}resuming backup...${NC}"
       debug 'INFO' 'sgdisk is available on system'
       $SLEEPING
     fi
@@ -1230,7 +1231,7 @@ function make_img() {
   $SLEEPING
 
   # Recreate partition
-  echo '## Recreating root partition...'
+  echo -e "## ${Blue}Recreating root partition...${NC}"
   $SLEEPING
   debug 'INFO' 'Using parted to recreate root partition'
 
@@ -1269,7 +1270,7 @@ function make_img() {
   $SLEEPING
 
   # Format filesystem
-  echo '## Formatting filesystem...'
+  echo -e "## ${Blue}Formatting filesystem...${NC}"
   debug 'INFO' 'Formatting filesystem'
   $SLEEPING
   LABEL=$(lsblk -o label "$LOCAL_DEV_ROOT_PATH" | tail -1)
@@ -1278,27 +1279,25 @@ function make_img() {
 
   # Convert to f2fs
   if [ "$F2FS" = true ]; then
-    echo '## --f2fs option selected, mkfs.f2fs is needed, checking if installed...'
+    echo -e "## ${Green}--f2fs option selected, mkfs.f2fs is needed, ${Blue}checking if installed...${NC}"
     $SLEEPING
     if [[ ! -f $(which mkfs.f2fs 2>&1) ]]; then
-      echo '## mkfs.f2fs is NOT installed...'
+      echo -e "!! ${Yellow}mkfs.f2fs is NOT installed...${NC}"
       debug 'INFO' 'mkfs.f2fs (f2fs-tools) not available on system'
       read -p "Do you want to use apt to install f2fs-tools? [y/n] " -n 1 -r
       debug 'INFO' 'Do you want to try to install f2fs-tools? [y/n]'
       if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
         echo ''
-        echo '## Aborting...'
+        echo -e "${Red}!! Aborting...${NC}"
         exit 5
       fi
       echo ''
       debug 'INFO' 'Y or y pressed to confirm'
       debug 'DEBUG' 'Running: apt update -y && apt upgrade -y && apt install f2fs-tools -y'
-      $SLEEPING
       apt update -y && apt upgrade -y && apt install f2fs-tools -y
-      $SLEEPING
 
     else
-      echo '## mkfs.f2fs is available, resuming backup...'
+      echo -e "## ${Green}mkfs.f2fs is available, ${Blue}resuming backup...${NC}"
       debug 'INFO' 'mkfs.f2fs is available on system'
       $SLEEPING
     fi
@@ -1368,7 +1367,7 @@ function make_img() {
 
     # Check for temp directory and create if needed
     if ! [ -d "$TMP_DIR" ]; then
-      echo '## Creating temp directory...'
+      echo -e "## ${Blue}Creating temp directory...${NC}"
       $SLEEPING
       debug 'INFO' 'Creating temp directory'
       debug 'DEBUG' "Running: mktemp -d -t backup-XXX"
@@ -1376,9 +1375,9 @@ function make_img() {
       debug 'DEBUG' "TMP_DIR=$TMP_DIR"
     fi
 
-    echo '## Creating btrfs subvolumes...'
+    echo -e "## ${Blue}Creating btrfs subvolumes...${NC}"
     debug 'INFO' 'Creating btrfs subvolumes'
-    debug 'DEBUG' "Running: mount -o compress=zstd $IMG_DEV_ROOT_PATH $TMP_DIR"
+    debug 'DEBUG' "Running: mount -o noatime,compress=zstd $IMG_DEV_ROOT_PATH $TMP_DIR"
     if ! output=$(mount -o noatime,compress=zstd "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
       echo -e "${Yellow}$output\n${Red}!! ROOT MOUNT FAILED!!!${NC}"
       debug 'BREAK'
@@ -1391,7 +1390,7 @@ function make_img() {
     for ((i = 0; i < ${#LOCAL_SUBVOLUMES[@]}; i++)); do
       subvol_path="${LOCAL_SUBVOLUMES[i]}"
       if [[ "$subvol_path" == '@'* ]]; then
-        echo "## Creating subvolume: $subvol_path"
+        echo -e "## ${Blue}Creating subvolume: ${Green}$subvol_path${NC}"
         debug 'DEBUG' "Running: btrfs subvolume create ${TMP_DIR}/${subvol_path}"
         if ! output=$(btrfs subvolume create "$TMP_DIR"/"$subvol_path" 2>&1); then
           echo -e "${Yellow}$output\n${Red}!! CREATE SUBVOLUME FAILED!!!${NC}"
@@ -1403,7 +1402,7 @@ function make_img() {
       $SLEEPING
     done
 
-    echo '## Mounting root...'
+    echo -e "## ${Blue}Mounting root...${NC}"
     debug 'INFO' 'Unmounting btrfs filesystem & mounting root subvolume'
     debug 'DEBUG' "Running: umount $TMP_DIR"
     umount "$TMP_DIR"
@@ -1421,14 +1420,15 @@ function make_img() {
     $SLEEPING
 
     # Create nested volumes/snapshots
+    echo -e "## ${Blue}Creating nested volumes if existing...${NC}"
     debug 'INFO' 'Creating nested volumes/snapshots'
+    $SLEEPING
     for ((i = 0; i < ${#LOCAL_SUBVOLUMES[@]}; i++)); do
       subvol_path="${LOCAL_SUBVOLUMES[i]}"
       if [[ "$subvol_path" != '@'* ]]; then
         debug 'DEBUG' "Running: mkdir -p $TMP_DIR/$(dirname $subvol_path)"
         mkdir -p $TMP_DIR/$(dirname $subvol_path)
-
-        echo "## Creating volume: $subvol_path"
+        echo -e "## ${Blue}Creating volume: ${Green}$subvol_path${NC}"
         debug 'DEBUG' "Running: btrfs subvolume create ${TMP_DIR}/${subvol_path}"
         if ! output=$(btrfs subvolume create "$TMP_DIR"/"$subvol_path" 2>&1); then
           echo -e "${Yellow}$output\n${Red}!! CREATE VOLUME FAILED!!!${NC}"
@@ -1440,10 +1440,10 @@ function make_img() {
       $SLEEPING
     done
 
-    echo '## Mounting img btrfs volumes...'
+    echo -e "## ${Blue}Mounting img btrfs volumes...${NC}"
     debug 'INFO' 'Mounting volumes'
-    $SLEEPING
     partprobe "$LOOP"
+    $SLEEPING
 
     for ((i = 0; i < ${#LOCAL_SUBVOLUMES[@]}; i++)); do
       subvol_path="${LOCAL_SUBVOLUMES[i]}"
@@ -1451,7 +1451,7 @@ function make_img() {
         declare -a fstab=( $(cat /etc/fstab | grep "$subvol_path") )
         debug 'DEBUG' "Running: mkdir -p ${TMP_DIR}${fstab[1]}"
         mkdir -p ${TMP_DIR}${fstab[1]}
-        echo "## Mounting subvolume: $subvol_path"
+        echo -e "## ${Blue}Mounting subvolume: ${Green}$subvol_path${NC}"
         debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH ${TMP_DIR}${fstab[1]}"
         if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" ${TMP_DIR}${fstab[1]} 2>&1); then
           echo -e "${Yellow}$output\n${Red}!! VOLUME MOUNT FAILED!!!${NC}"
@@ -1463,7 +1463,7 @@ function make_img() {
       $SLEEPING
     done
 
-    echo '## Mounting boot...'
+    echo -e "## ${Blue}Mounting boot...${NC}"
     debug 'DEBUG' "Running: mount $IMG_DEV_BOOT_PATH ${TMP_DIR}${BOOT_PATH}"
     mkdir -p ${TMP_DIR}${BOOT_PATH}
     if ! output=$(mount "$IMG_DEV_BOOT_PATH" "${TMP_DIR}${BOOT_PATH}" 2>&1); then
@@ -1482,13 +1482,18 @@ function make_img() {
 
   # Editing fstab and cmdline.txt on img file for f2fs conversion
   if [ "$F2FS" = true ]; then
-    echo '## Editing img configurations for f2fs...'
+    echo -e "## ${Blue}Editing img configurations for f2fs...${NC}"
+    $SLEEPING
+    echo -e "## ${Blue}Backups will be created: ${Green}/etc/fstab.shrink-backup.bak ${Blue}& ${Green}${BOOT_PATH}/cmdline.txt.shrink-backup.bak${NC}"
     debug 'INFO' 'Configuring fstab and cmdline.txt on img file for f2fs'
+    $SLEEPING
 
-    # fstab
+    # backups
     debug 'INFO' 'Backing up fstab & cmdline.txt into fstab.shrink-backup.bak & cmdline.shrink-backup.bak on img'
     cp ${TMP_DIR}/etc/fstab ${TMP_DIR}/etc/fstab.shrink-backup.bak
     cp ${TMP_DIR}${BOOT_PATH}/cmdline.txt ${TMP_DIR}${BOOT_PATH}/cmdline.txt.shrink-backup.bak
+
+    # fstab
     debug 'DEBUG' "Old root line in fstab=$(cat ${TMP_DIR}/etc/fstab | grep ' / ')"
     fstab_options=$(cat ${TMP_DIR}/etc/fstab | grep ' / ' | awk '{print $4}')
     debug 'DEBUG' "Running: sed -i -e \"/${LOCAL_ROOT_PARTUUID}/s/ext4/f2fs/\" -e \"/${LOCAL_ROOT_PARTUUID}/s/${fstab_options}/${fstab_options},discard/\" ${TMP_DIR}/etc/fstab"
@@ -1518,7 +1523,7 @@ function do_backup() {
 
   # Making sure img file exists
   if ! [ -f "$IMG_FILE" ]; then
-    echo "## ERROR. $IMG_FILE does not exist!"
+    echo -e "${Red}!! ERROR! ${Green}$IMG_FILE ${Yellow}does not exist!"
     debug 'ERROR' "$IMG_FILE does not exist, exit 1"
     exit 1
   fi
@@ -1617,8 +1622,8 @@ function do_backup() {
       read -n 1 -r -p '## Do you want to continue? [y/n] ' input
       case $input in
         [Yy]) echo -e '\n'; break;;
-        [Nn]) echo -e "\n!! ${Red}Aborting...${NC}"; exit 4;;
-        *) echo -e "\n!! ${Yellow}ERROR, please enter 'y/Y' or 'n/N'${NC}"; debug 'WARNING' "ERROR, please enter 'y/Y' or 'n/N'";;
+        [Nn]) echo -e "\n${Red}!! Aborting...${NC}"; exit 4;;
+        *) echo -e "\n!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y/Y' ${Yellow}or ${Green}'n/N'${NC}"; debug 'WARNING' "ERROR, please enter 'y/Y' or 'n/N'";;
       esac
     done
     debug 'INFO' 'Y or y pressed to confirm'
@@ -1705,7 +1710,7 @@ EOF
     ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service
   fi
 
-  echo '## Manjaro filesystem autoresizing at boot...'
+  echo -e "## ${Green}Manjaro filesystem autoresizing at boot...${NC}"
   debug 'INFO' 'Manjaro filesystem autoresizing at boot'
   $SLEEPING
 return 0
@@ -1719,7 +1724,7 @@ function autoexpansion_armbian() {
     debug 'DEBUG' "Enabling systemd service by creating symlink: ln -s /lib/systemd/system/armbian-resize-filesystem.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/armbian-resize-filesystem.service"
     ln -s /lib/systemd/system/armbian-resize-filesystem.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/armbian-resize-filesystem.service
   fi
-  echo '## Armbian filesystem autoresizing at boot...'
+  echo -e "## ${Green}Armbian filesystem autoresizing at boot...${NC}"
   debug 'INFO' 'Armbian filesystem autoresizing at boot'
   $SLEEPING
 return 0
@@ -1778,7 +1783,7 @@ EOF2
   debug 'DEBUG' 'Making expand-fs.sh executable'
   chmod +x ${TMP_DIR}/expand-fs.sh
 
-  echo '## Raspberry pi filesystem autoresizing at boot...'
+  echo -e "## ${Green}Raspberry pi filesystem autoresizing at boot...${NC}"
   debug 'INFO' 'Raspberry pi filesystem autoresizing at boot'
   $SLEEPING
 return 0
@@ -1836,7 +1841,7 @@ EOF2
   debug 'DEBUG' 'Making /expand-fs.sh executable'
   chmod +x ${TMP_DIR}/expand-fs.sh
 
-  echo '## ArchLinuxArm filesystem autoresizing at boot...'
+  echo -e "## ${Green}ArchLinuxArm filesystem autoresizing at boot...${NC}"
   debug 'INFO' 'ArchLinuxArm filesystem autoresizing at boot'
   $SLEEPING
 return 0
@@ -1850,27 +1855,30 @@ function print_result() {
   declare -i AFTER_SIZE=$(ls -l "$IMG_FILE" | cut -d ' ' -f 5)
   AFTER_SIZE=$(( AFTER_SIZE / 1024 / 1024 ))
 
+  # New backup
   if [ "$UPDATE" != true ]; then
     echo -e "## ${Green}Backup done.${NC}"
     echo '##############################################################################'
-    echo "## Write to logfile: $DEBUG"
-    echo "## Autoexpand filesystem at boot: $AUTOEXPAND"
-    echo "## Use exclude.txt: $EXCLUDE_FILE"
+    echo -e "## ${Blue}Write to logfile: ${Green}$DEBUG${NC}"
+    echo -e "## ${Blue}Autoexpand filesystem at boot: ${Green}$AUTOEXPAND${NC}"
+    echo -e "## ${Blue}Use exclude.txt: ${Green}$EXCLUDE_FILE"
     if [ "$AUTORESIZE_RUN" = true ]; then
-      echo "## $IMG_FILE is ${AFTER_SIZE}MiB with a root partition of $(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB."
+      echo -e "## ${Green}$IMG_FILE ${Blue}is ${Green}${AFTER_SIZE}MiB ${Blue}with a ${Green}root partition ${Blue}of ${Green}$(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB${NC}"
       debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MiB with a root partition of $(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB"
     else
-      echo "## $IMG_FILE is ${AFTER_SIZE}MiB with $(( ADDED_SPACE / 1024 / 1024 ))MiB extra space included."
-      debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MiB with $(( ADDED_SPACE / 1024 / 1024 ))MiB extra space included"
+      echo -e "## ${Green}$IMG_FILE ${Blue}is ${Green}${AFTER_SIZE}MiB ${Blue}with ${Green}$(( ADDED_SPACE / 1024 / 1024 ))MiB [extra space] ${Blue}included${NC}"
+      debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MiB with $(( ADDED_SPACE / 1024 / 1024 ))MiB [extra space] included"
     fi
     debug 'INFO' 'Img file created'
+
+  # Updated backup
   else
     echo -e "## ${Green}Backup done.${NC}"
     echo '##############################################################################'
-    echo "## Write to logfile: $DEBUG"
-    echo "## Autoexpand filesystem at boot: $AUTOEXPAND"
-    echo "## Use exclude.txt: $EXCLUDE_FILE"
-    echo "## $IMG_FILE is ${AFTER_SIZE}MiB"
+    echo -e "## ${Blue}Write to logfile: ${Green}$DEBUG${NC}"
+    echo -e "## ${Blue}Autoexpand filesystem at boot: ${Green}$AUTOEXPAND${NC}"
+    echo -e "## ${Blue}Use exclude.txt: ${Green}$EXCLUDE_FILE${NC}"
+    echo -e "## ${Green}$IMG_FILE ${Blue}is ${Green}${AFTER_SIZE}MiB${NC}"
     debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MiB"
     debug 'INFO' 'Img file updated'
   fi
@@ -1887,7 +1895,7 @@ return 0
 
 # Check if debugging is requested
 if [ "$DEBUG" = true ]; then
-  echo "## Debugging requested, writing to log file $LOG_FILE"
+  echo -e "## ${Blue}Debugging requested, writing to log file: ${Green}$LOG_FILE${NC}"
   debug 'INFO' "Debugging requested, writing to log file $LOG_FILE"
 fi
 
@@ -1905,18 +1913,18 @@ fi
 # Set zoom type
 if [ "$ZOOM" = false ]; then
   SLEEPING='sleep 1'
-  echo '## Zoom speed NOT requested...'
+  echo -e "## ${Blue}Zoom speed NOT requested...${NC}"
   debug 'INFO' "Zoom speed NOT requested, setting SLEEPING=$SLEEPING | ZOOM=$ZOOM"
   $SLEEPING
 else
   SLEEPING=''
-  echo '## Zoom speed requested...'
+  echo -e "## ${Blue}Zoom speed requested...${NC}"
   debug 'INFO' "Zoom speed requested, setting SLEEPING to empty variable | ZOOM=$ZOOM"
 fi
 
 # Check if the image file has the correct extension
 if [[ "$IMG_FILE" != *.img ]]; then
-  echo 'ERROR! File must have .img extension'
+  echo -e "${Red}!! ERROR! ${Yellow}File must have ${Green}.img ${Yellow}extension${NC}"
   debug 'ERROR' 'File must have .img extension, exit 3'
   exit 3
 fi
@@ -1952,11 +1960,11 @@ if ! [[ "$ADDED_SPACE" =~ $RE ]]; then
   while ! [[ "$ADDED_SPACE" =~ $RE ]]
   do
     if [ "$COUNTER" -gt 0 ]; then
-      echo 'ERROR!'
+      echo -e "!! ${Red}ERROR!${NC}"
       debug 'INFO' 'ERROR'
     fi
-    echo 'Added space must be a whole number'
-    echo 'How much space in MiB should be added?'
+    echo -e "!! ${Yellow}Added space must be a whole number${NC}"
+    echo -e "## ${Yellow}How much space in MiB should be added?${NC}"
     debug 'INFO' 'Added space must be a whole number'
     debug 'INFO' 'How much space in MiB should be added?'
     read ADDED_SPACE
@@ -1973,7 +1981,7 @@ if [ "$LOOPRUN" = true ]; then
   looprun
 fi
 
-echo '## Scanning filesystem and calculating...'
+echo -e "## ${Blue}Scanning filesystem and calculating...${NC}"
 
 # Check what filesystem root is using and set LOCAL_DEV_PATH & PARTITION_TABLE
 FSTYPE=$(lsblk -lo mountpoint,fstype | grep '/ ' | awk '{print $2}')
@@ -1991,22 +1999,22 @@ PARTITION_TABLE=$(parted "$LOCAL_DEV_PATH" print | grep -i 'Partition Table' | a
 
 if [ "$FSTYPE" == 'f2fs' ] || [ "$F2FS" = true ]; then
   if [ "$FSTYPE" == 'f2fs' ] && [ "$F2FS" = true ]; then
-    echo 'ERROR! --f2fs selected on f2fs root filesystem, conversion not needed'
+    echo -e "${Red}!! ERROR! ${Green}--f2fs ${Yellow}selected on f2fs root filesystem, conversion not needed${NC}"
     debug 'ERROR' '--f2fs selected on f2fs root filesystem, conversion not needed, exit 3'
     exit 3
   elif [ "$F2FS" = true ] && [ "$UPDATE" = true ]; then
-    echo 'ERROR! --f2fs selected in combination with -U, conversion not possible'
-    echo 'Create new img to enable f2fs conversion'
+    echo -e "${Red}!! ERROR! ${Green}--f2fs ${Yellow}selected in combination with -U, conversion not possible${NC}"
+    echo -e "${Yellow}!! Create new img to enable ${Green}f2fs conversion${NC}"
     debug 'ERROR' '--f2fs selected in combination with -U, conversion not possible, exit 3'
     exit 3
   elif [ "$FSTYPE" == 'f2fs' ] && [ "$UPDATE" = true ] && [ "$AUTORESIZE_RUN" = true ]; then
-    echo 'ERROR! -U selected in combination with -a , operation not supported'
-    echo 'Only creation of new img backups support operations with -a when using f2fs on root'
+    echo -e "${Red}!! ERROR! ${Green}-U selected in combination with -a, ${Yellow}operation not supported${NC}"
+    echo -e "${Yellow}!! Only creation of new img backups support ${Green}operations with -a when using f2fs on root${NC}"
     debug 'ERROR' '-U selected in combination with -a, operation not supported, exit 3'
     exit 3
   elif [ "$FSTYPE" == 'f2fs' ] && [ "$UPDATE" = true ] && [ "$ADDED_SPACE" -ne 0 ]; then
-    echo 'ERROR! -U selected in combination with [extra space], operation not supported'
-    echo 'Only creation of new img backups support operations with [extra space] when using f2fs on root'
+    echo -e "${Red}!! ERROR! ${Green}-U selected in combination with [extra space], ${Yellow}operation not supported${NC}"
+    echo -e "${Yellow}!! Only creation of new img backups support ${Green}operations with [extra space] when using f2fs on root${NC}"
     debug 'ERROR' '-U selected in combination with [extra space], operation not supported, exit 3'
     exit 3
   fi
@@ -2034,7 +2042,7 @@ fi
 if [ "$EXCLUDE_FILE" = true ]; then
   debug 'INFO' "-f selected by user, using $(dirname $0)/exclude.txt"
   if ! [ -f $(dirname "$0")/exclude.txt ]; then
-    echo 'ERROR! exclude.txt is not present in script directory!'
+    echo -e "${Red}!! ERROR! ${Green}-f selected but exclude.txt ${Yellow}is not present in script directory!${NC}"
     debug 'ERROR' 'exclude.txt does not exist in script directory, exit 3'
     exit 3
   fi
@@ -2055,35 +2063,35 @@ fi
 
 # Check if autoexpansion is requested and run required function
 if [ "$AUTOEXPAND" = true ]; then
-  echo '## Enabling fs-autoexpand...'
+  echo -e "## ${Blue}Enabling fs-autoexpand...${NC}"
   debug 'INFO' 'Checking OS for autoexpand function'
   $SLEEPING
   if grep -qsi 'manjaro' /etc/os-release; then
-    echo '## Manjaro OS detected...'
+    echo -e "## ${Green}Manjaro OS detected...${NC}"
     debug 'INFO' 'Manjaro OS detected'
     debug 'INFO' 'Running function: autoexpansion_manjaro'
     $SLEEPING
     autoexpansion_manjaro
   elif [ -e /etc/armbian-release ] || grep -qsi 'armbian' /etc/os-release; then
-    echo '## Armbian OS detected...'
+    echo -e "## ${Green}Armbian OS detected...${NC}"
     debug 'INFO' 'Armbian OS detected'
     debug 'INFO' 'Running function: autoexpansion_armbian'
     $SLEEPING
     autoexpansion_armbian
   elif [ -e /etc/apt/sources.list.d/raspi.list ]; then
-    echo '## Raspberry pi detected...'
+    echo -e "## ${Green}Raspberry pi detected...${NC}"
     debug 'INFO' 'Raspberry pi detected'
     debug 'INFO' 'Running function: autoexpansion_rpi'
     $SLEEPING
     autoexpansion_rpi
   elif grep -qsi 'archlinuxarm' /etc/os-release; then
-    echo '## ArchLinuxArm detected...'
+    echo -e "## ${Green}ArchLinuxArm detected...${NC}"
     debug 'INFO' 'ArchLinuxArm detected'
     debug 'INFO' 'Running function: autoexpansion_arch'
     $SLEEPING
     autoexpansion_arch
   else
-    echo '## No autoexpand option available for this OS...'
+    echo -e "!! ${Yellow}No autoexpand option available for this OS...${NC}"
     debug 'WARNING' 'No autoexpand option available for this OS'
     AUTOEXPAND='failed'
     $SLEEPING
