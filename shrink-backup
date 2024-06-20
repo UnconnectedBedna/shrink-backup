@@ -995,7 +995,7 @@ function make_img() {
   echo '##############################################################################'
   if [ "$PROMPTS" = false ]; then
     debug 'INFO' '-y selected by user. prompts are disabled'
-    echo -e "# ${Yellow}DISABLE PROMPTS SELECTED (-y), NO WARNINGS ABOUT DELETION!!!${NC}"
+    echo -e "# ${Yellow}DISABLE PROMPTS SELECTED (${Green}-y${Yellow}), }NO WARNINGS ABOUT DELETION!!!${NC}"
   fi
   echo -e "# ${Blue}A backup will be created at ${Green}$IMG_FILE${NC}"
   echo -e "# ${Green}$FSTYPE ${Blue}filesystem detected on root${NC}"
@@ -1003,10 +1003,10 @@ function make_img() {
     echo -e "# ${Green}${#LOCAL_SUBVOLUMES[@]} ${Blue}btrfs volumes will be included${NC}"
     echo -e "# ${Blue}btrfs volumes: ${Green}${LOCAL_SUBVOLUMES[@]}${NC}"
   elif [ "$FSTYPE" == 'f2fs' ]; then
-    echo -e "# ${Yellow}Autoexpand filesystem at boot not available for f2fs${NC}"
+    echo -e "# ${Yellow}Autoexpand filesystem at boot not available for ${Green}f2fs${NC}"
   elif [ "$F2FS" = true ]; then
-    echo -e "# ${Yellow}Converting filesystem into f2fs on img file${NC}"
-    echo -e "# ${Yellow}Autoexpand filesystem at boot not available for f2fs${NC}"
+    echo -e "# ${Yellow}Converting filesystem into ${Green}f2fs ${Yellow}on img file${NC}"
+    echo -e "# ${Yellow}Autoexpand filesystem at boot not available for ${Green}f2fs${NC}"
   fi
   echo '# ----------------------------------------------------------------------------'
   echo -e "# ${Blue}Write to logfile: ${Green}$DEBUG${NC}"
@@ -1021,7 +1021,7 @@ function make_img() {
     echo -e "# ${Blue}Total img size: ${Green}$(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB${NC}"
   else
     echo -e "# ${Blue}Manually added space: ${Green}$(( ADDED_SPACE / 1024 / 1024 ))MiB${NC}"
-    echo -e "# ${Blue}Total img size: ${Green}$(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB ${Blue}with ${Green}$(( ADDED_SPACE / 1024 / 1024 ))MiB ${Blue}extra space included.${NC}"
+    echo -e "# ${Blue}Total img size: ${Green}$(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB ${Blue}with ${Green}$(( ADDED_SPACE / 1024 / 1024 ))MiB ${Blue}[extra space] included.${NC}"
     if [ "$AUTORESIZE_WARNING" = true ]; then
       echo '# ----------------------------------------------------------------------------'
       echo -e "! ${Yellow}WARNING!!! Manually added space is smaller than calculated recommended minimum${NC}"
@@ -1561,46 +1561,57 @@ function do_backup() {
   fi
 
   # Display information
-  if [ "$PROMPTS" = true ]; then
-    echo '##############################################################################'
-    echo "# Updating $IMG_FILE"
-    echo "# $FSTYPE filesystem detected on root"
-    if [ "$FSTYPE" == 'btrfs' ]; then
-      echo '# btrfs filesystem detected on root'
-      echo "# ${#LOCAL_SUBVOLUMES[@]} btrfs volumes will be included"
-      echo "# btrfs volumes: ${LOCAL_SUBVOLUMES[@]}"
-    elif [ "$FSTYPE" == 'f2fs' ]; then
-      echo '# Autoexpand filesystem at boot not available for f2fs'
-      echo '# Resize operations not available for f2fs'
-    fi
-    if [ "$RSYNC_DELETE" = '--delete-before' ]; then
-      echo '# --fix option selected, rsync will delete files on img before copy'
-      debug 'DEBUG' '--fix option selected by user, rsync deleting files before copy'
-    fi
-    echo '# ----------------------------------------------------------------------------'
-    echo "# Write to logfile: $DEBUG"
-    echo "# Zoom speed requested: $ZOOM"
-    echo "# Autocalculate img root partition size: $AUTORESIZE_RUN"
-    echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
-    echo "# Use exclude.txt: $EXCLUDE_FILE"
-    echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MiB"
-    if [ "$AUTORESIZE_RUN" = true ]; then
-      echo "# Auto calculated size (root partition): $(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB"
-      echo "# Old img size: $(( IMG_SIZE / 1024 / 1024 ))MiB"
-      echo "# New img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
-      echo "# Difference: $DIFFERENCE"
-    elif [ "$ADDED_SPACE" -ne 0 ]; then
-      echo "# Estemated root usage: $(( $(df / -k --sync --output=used | tail -1) / 1024 ))MiB"
-      echo "# Old img size: $(( IMG_SIZE / 1024 / 1024 ))MiB"
-      echo "# New img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
-      echo "# Difference: $(( ADDED_SPACE / 1024 / 1024 ))MiB"
-    else
-      echo "# Estemated root usage: $(( $(df / -k --sync --output=used | tail -1) / 1024 ))MiB"
-      echo "# Total img size: $(( IMG_SIZE / 1024 / 1024 ))MiB"
-    fi
-    echo '##############################################################################'
+  echo '##############################################################################'
+  if [ "$PROMPTS" = false ]; then
+    debug 'INFO' '-y selected by user. prompts are disabled'
+    echo -e "# ${Yellow}DISABLE PROMPTS SELECTED (${Green}-y${Yellow}), }NO WARNINGS ABOUT DELETION!!!${NC}"
+  fi
+  echo -e "# ${Blue}Updating ${Green}$IMG_FILE${NC}"
+  echo -e "# ${Green}$FSTYPE ${Blue}filesystem detected on root${NC}"
+  if [ "$FSTYPE" == 'btrfs' ]; then
+    echo -e "# ${Green}${#LOCAL_SUBVOLUMES[@]} ${Blue}btrfs volumes will be included${NC}"
+    echo -e "# ${Blue}btrfs volumes: ${Green}${LOCAL_SUBVOLUMES[@]}${NC}"
+  elif [ "$FSTYPE" == 'f2fs' ]; then
+    echo -e "# ${Yellow}Autoexpand filesystem at boot not available for ${Green}f2fs${NC}"
+    echo -e "# ${Yellow}Resize operations not available for ${Green}f2fs${NC}"
+  fi
+  if [ "$RSYNC_DELETE" = '--delete-before' ]; then
+    echo -e "# ${Green}--fix ${Blue}option selected, rsync will delete files on img before copy${NC}"
+    debug 'DEBUG' '--fix option selected by user, rsync deleting files before copy'
+  fi
+  echo '# ----------------------------------------------------------------------------'
+  echo -e "# ${Blue}Write to logfile: ${Green}$DEBUG${NC}"
+  echo -e "# ${Blue}Zoom speed requested: ${Green}$ZOOM${NC}"
+  echo -e "# ${Blue}Autocalculate img root partition size: ${Green}$AUTORESIZE_RUN${NC}"
+  echo -e "# ${Blue}Autoexpand filesystem at boot: ${Green}$AUTOEXPAND${NC}"
+  echo -e "# ${Blue}Use exclude.txt: ${Green}$EXCLUDE_FILE${NC}"
+  echo -e "# ${Blue}Bootsector size: ${Green}$(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MiB${NC}"
+  if [ "$AUTORESIZE_RUN" = true ]; then
+    echo -e "# ${Blue}Auto calculated size (root partition): ${Green}$(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB${NC}"
+    echo -e "# ${Blue}Old img size: ${Green}$(( IMG_SIZE / 1024 / 1024 ))MiB${NC}"
+    echo -e "# ${Blue}New img size: ${Green}$(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB${NC}"
+    echo -e "# ${Blue}Difference: ${Green}$DIFFERENCE${NC}"
+  elif [ "$ADDED_SPACE" -ne 0 ]; then
+    echo -e "# ${Blue}Estemated root usage: ${Green}$(( $(df / -k --sync --output=used | tail -1) / 1024 ))MiB${NC}"
+    echo -e "# ${Blue}Old img size: ${Green}$(( IMG_SIZE / 1024 / 1024 ))MiB${NC}"
+    echo -e "# ${Blue}New img size: ${Green}$(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB${NC}"
+    echo -e "# ${Blue}Difference: ${Green}$(( ADDED_SPACE / 1024 / 1024 ))MiB${NC}"
+  else
+    echo -e "# ${Blue}Estemated root usage: ${Green}$(( $(df / -k --sync --output=used | tail -1) / 1024 ))MiB${NC}"
+    echo -e "# ${Blue}Total img size: ${Green}$(( IMG_SIZE / 1024 / 1024 ))MiB${NC}"
+  fi
+  echo '##############################################################################'
 
-    # Confirm with user input
+  # Disabled prompts
+  if [ "$PROMPTS" = false ] && [ "$ZOOM" = false ]; then
+    echo -e "!! ${Red}PRESS CTRL+C WITHIN 5s TO CANCEL!${NC}"
+    echo '##############################################################################'
+    sleep 6
+    debug 'INFO' '6 seconds passed, user did not stop operation'
+    debug 'BREAK'
+
+  # Confirm with user input
+  else
     debug 'INFO' 'Do you want to continue? [y/n]'
     while true; do
       read -n 1 -r -p '## Do you want to continue? [y/n] ' input
@@ -1612,53 +1623,6 @@ function do_backup() {
     done
     debug 'INFO' 'Y or y pressed to confirm'
     debug 'BREAK'
-
-  else
-
-    echo '##############################################################################'
-    echo '# DISABLE PROMPTS SELECTED'
-    echo "# Updating $IMG_FILE"
-    echo "# $FSTYPE filesystem detected on root"
-    if [ "$FSTYPE" == 'btrfs' ]; then
-      echo '# btrfs filesystem detected on root'
-      echo "# ${#LOCAL_SUBVOLUMES[@]} btrfs volumes will be included"
-      echo "# btrfs volumes: ${LOCAL_SUBVOLUMES[@]}"
-    elif [ "$FSTYPE" == 'f2fs' ]; then
-      echo '# Autoexpand filesystem at boot not available for f2fs'
-      echo '# Resize operations not available for f2fs'
-    fi
-    if [ "$RSYNC_DELETE" = '--delete-before' ]; then
-      echo '# --fix option selected, rsync will delete files on img before copy'
-      debug 'DEBUG' '--fix option selected by user, rsync deleting files before copy'
-    fi
-    echo '# ----------------------------------------------------------------------------'
-    echo "# Write to logfile: $DEBUG"
-    echo "# Zoom speed requested: $ZOOM"
-    echo "# Autocalculate img root partition size: $AUTORESIZE_RUN"
-    echo "# Autoexpand filesystem at boot: $AUTOEXPAND"
-    echo "# Use exclude.txt: $EXCLUDE_FILE"
-    echo "# Bootsector size: $(( LOCAL_BOOTSECTOR / 1024 / 1024 ))MiB"
-    if [ "$AUTORESIZE_RUN" = true ]; then
-      echo "# Auto calculated size (root partition): $(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB"
-      echo "# Old img size: $(( IMG_SIZE / 1024 / 1024 ))MiB"
-      echo "# New img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
-      echo "# Difference: $DIFFERENCE"
-    elif [ "$ADDED_SPACE" -ne 0 ]; then
-      echo "# Estemated root usage: $(( $(df / -k --sync --output=used | tail -1) / 1024 ))MiB"
-      echo "# Old img size: $(( IMG_SIZE / 1024 / 1024 ))MiB"
-      echo "# New img size: $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
-      echo "# Difference: $(( ADDED_SPACE / 1024 / 1024 ))MiB"
-    else
-      echo "# Estemated root usage: $(( $(df / -k --sync --output=used | tail -1) / 1024 ))MiB"
-      echo "# Total img size: $(( IMG_SIZE / 1024 / 1024 ))MiB"
-    fi
-    if [ "$ZOOM" = false ]; then
-      echo -e "!! ${Red}PRESS CTRL+C WITHIN 5s TO CANCEL!${NC}"
-      echo '##############################################################################'
-      sleep 6
-      debug 'INFO' '6 seconds passed, user did not stop operation'
-      debug 'BREAK'
-    fi
   fi
 
   # Resizing if needed
@@ -1686,7 +1650,6 @@ function do_backup() {
 
     else
       debug 'INFO' 'Img root partition is <=256MiB smaller or <=512MiB bigger compared to auto calculated size, not resizing'
-      $SLEEPING
     fi
   fi
 
