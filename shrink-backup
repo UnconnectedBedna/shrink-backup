@@ -322,7 +322,7 @@ exit 2
 function get_dev_variables() {
 
   # Run get_btrfs_variables and then exit THIS function
-  if [ "$FSTYPE" = 'btrfs' ] && [ "$AUTORESIZE_RUN" = false ] && [ "$ADDED_SPACE" -eq 0 ]; then
+  if [ "$FSTYPE" == 'btrfs' ] && [ "$AUTORESIZE_RUN" = false ] && [ "$ADDED_SPACE" -eq 0 ]; then
     debug 'INFO' 'Running function: get_btrfs_variables'
     get_btrfs_variables
     return 0
@@ -451,7 +451,7 @@ function get_btrfs_variables() {
   fi
   debug 'DEBUG' "Running: btrfs subvolume list / | awk '{print \$9}'"
   #LOCAL_SUBVOLUMES=( $(sudo btrfs subvolume list / | awk '{print $2,$9}') )
-  declare -a LOCAL_SUBVOLUMES=( $(btrfs subvolume list / | awk '{print $9}') )
+  declare -ag LOCAL_SUBVOLUMES=( $(btrfs subvolume list / | awk '{print $9}') )
   #local_subvolumes_count=$(( ${#LOCAL_SUBVOLUMES[@]} / 2 ))
   debug 'DEBUG' "LOCAL_SUBVOLUMES=$(echo ${LOCAL_SUBVOLUMES[@]})"
   if [ "$EXCLUDE_FILE" = true ]; then
@@ -462,7 +462,7 @@ function get_btrfs_variables() {
         unset LOCAL_SUBVOLUMES["$i"]
       fi
     done
-    debug 'DEBUG' "After filtering, LOCAL_SUBVOLUMES=$(echo ${LOCAL_SUBVOLUMES[@]})"
+    debug 'DEBUG' "After filtering: LOCAL_SUBVOLUMES=$(echo ${LOCAL_SUBVOLUMES[@]})"
   fi
 return 0
 }
@@ -1019,8 +1019,8 @@ function make_img() {
   echo -e "# ${IWhite}A backup will be created at ${Green}$IMG_FILE ${Purple}$(printf "%+$(( COLS - 30 - $(echo ${IMG_FILE} | wc -m ) ))s" '#')"
   echo -e "# ${Green}$FSTYPE ${IWhite}filesystem detected on root ${Purple}$(printf "%+$(( COLS - 30 - $(echo ${FSTYPE} | wc -m ) ))s" '#')"
   if [ "$FSTYPE" == 'btrfs' ]; then
-    echo -e "# ${Green}${#LOCAL_SUBVOLUMES[@]} ${IWhite}btrfs volumes will be included"
-    echo -e "${Purple}# ${IWhite}btrfs volumes: ${Green}${LOCAL_SUBVOLUMES[@]}"
+    echo -e "# ${Green}${#LOCAL_SUBVOLUMES[@]} ${IWhite}btrfs volumes will be included ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${#LOCAL_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
+    echo -e "${Purple}# ${IWhite}btrfs volumes: ${Green}${LOCAL_SUBVOLUMES[@]} ${Purple}$(printf "%+$(( COLS - 17 - $(echo ${LOCAL_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
   elif [ "$FSTYPE" == 'f2fs' ]; then
     echo -e "# ${Yellow}Autoexpand filesystem at boot not available for ${Green}f2fs ${Purple}$(printf "%+$(( COLS - 54 ))s" '#')"
   elif [ "$F2FS" = true ]; then
@@ -2026,7 +2026,8 @@ fi
 echo -e "${White}## ${IWhite}Scanning filesystem and calculating..."
 
 # Check what filesystem root is using and set LOCAL_DEV_PATH & PARTITION_TABLE
-FSTYPE=$(lsblk -lo mountpoint,fstype | grep '/ ' | awk '{print $2}')
+#FSTYPE=$(lsblk -lo mountpoint,fstype | grep '/ ' | awk '{print $2}')
+FSTYPE="$(mount | grep ' / ' | awk '{print $5}')"
 debug 'INFO' "$FSTYPE root filesystem detected"
 debug 'DEBUG' "FSTYPE=$FSTYPE"
 if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
