@@ -25,8 +25,7 @@ Or if you find a bug or think something is missing in the script, please file a 
 **Don't forget to ensure the script is executable.**
 
 **To restore a backup, simply "burn" the img file to a device using your favorite method.**<br>
-When booting up a restored image with autoresize active, **please wait until the the reboot sequence has occured.**<br>
-The login prompt may very well become visible before the autoresize function has rebooted.
+When booting up a restored image with autoresize active, **please wait until the the reboot sequence has occured.** The login prompt may very well become visible before the autoresize function has rebooted.
 
 <hr>
 
@@ -73,7 +72,8 @@ sudo shrink-backup -l --loop /path/to/backup.img 1024 (write to log file, expand
 
 #### `-t` (exclude.txt)
 The folder where the img file is created will **ALWAYS be excluded in the backup.**<br>
-If `-t` option is selected, `exclude.txt` **MUST exist** (but can be empty) within the **directory where the script is located** or the script will exit with an error.<br>
+If `-t` option is selected, `exclude.txt` **MUST exist** (but can be empty) within the **directory where the script is located** or the script will exit with an error.
+
 Use one directory per line in `exclude.txt`.<br>
 `/directory/*` = create directory but exclude content.<br>
 `/directory` = exclude the directory completely.
@@ -105,33 +105,43 @@ When used in combination with `-y` **warnings will also be bypassed! PLEASE use 
 <br>
 
 #### `--fix` (Broken pipe)
-Add `--fix` to your options if a backup fails during `rsync` with a "broken pipe" error. You can also _manually add_ `[extra space]` instead of using `-a` to solve this.<br>
-The reason it happens is because `rsync` normally deletes files during the backup, not creating a file-list > removing files from img before starting to copy.<br>
-So if you have removed and added new data on the system you backup from, there is a risk `rsync` tries to copy the new data before deleting data from the img.<br>
-Using `--fix` makes `rsync` create a file-list and delete the files before backup. This also means the backup takes a little longer.<br>
-Having a "broken pipe" error during backup has in my experience never broken an img backup after either using `--fix` (can be used in combination with `-a`) or adding `[extra space]` while updating the backup with `-U`.
+Add `--fix` to your options if a backup fails during `rsync` with a "broken pipe" error. You can also _manually add_ `[extra space]` instead of using `-a` to solve this.
 
 **Example:** `sudo shrink-backup -Ua --fix /path/to/backup.img`
+
+The reason it happens is because `rsync` normally deletes files during the backup, not creating a file-list > removing files from img before starting to copy.<br>
+So if you have removed and added new data on the system you backup from, there is a risk `rsync` tries to copy the new data before deleting data from the img, hence completely filling the img.
+
+Using `--fix` makes `rsync` create a file-list and delete data **before** starting to transfer new data. This also means the backup takes a little longer.<br>
+Having a "broken pipe" error during backup has in my experience never broken an img backup after either using `--fix` (can be used in combination with `-a`) or adding `[extra space]` while updating the backup with `-U`.
 <br>
 <br>
 
 #### `--loop` (Loop img file)
-Use `--loop` to loop an img file to your `/dev`.<br>
-If used in combination with `[extra space]` the amount in MiB will be added to the **IMG FILE** NOT any partition.<br>
-With this you can run for example run `sudo gparted /dev/loop0` (if you have a graphical interface) to manually manage the img partitions in a graphical interface.<br>
-If you added `[extra space]` this will then show up as unpartitioned space at the end of the device.<br>
-This functionality works on any linux system, just use the script on any img file anywhere available to the computer.<br>
-To remove the loop: `sudo losetup -d /dev/loop0`, change `loop0` to the correct `dev` it got looped to. `lsblk /dev/loop*` if you forgot the location after using `--mount`
+Use `--loop` to loop an img file to your `/dev`.
 
 **Example:** `sudo shrink-backup --loop /path/to/backup.img`
+
+If used in combination with `[extra space]` the amount in MiB will be added to the **IMG FILE** NOT any partition.<br>
+With this you can for example run `sudo gparted /dev/loop0` (if you have a graphical interface) to manually manage the img partitions in a graphical interface with `gparted`.<br>
+If you added `[extra space]` this will then show up as unpartitioned space at the end of the device.
+
+**Example:** `sudo shrink-backup --loop /path/to/backup.img 1024`
+
+This functionality works on any linux system, just use the script on any img file anywhere available to the computer.
+
+To remove the loop: `sudo losetup -d /dev/loop0`, change `loop0` to the correct `dev` it got looped to.<br>
+To remind yourself: `lsblk /dev/loop*` if you forgot the location after using `--mount`
 <br>
 <br>
 
 #### `--f2fs` (Convert `ext4` into `f2fs` on img file)
-ONLY use this for **CONVERTING** filesystem on img file, **if you already have `f2fs` on your root, do not use this option,** the script will detect what filesystem is used on `root` and act accordingly.
-Only supported with new backups, not when using `-U`.<br>
-Autoexpansion at boot is not supported for `f2fs` (there is no way of resizing a mounted `f2fs` filesystem, unlike `ext4`) so resizing root partition have to be made manually after writing img to sd-card.<br>
-Resize operations (when updating backup with `-U`) is not available for `f2fs` as of now.
+ONLY use this for **CONVERTING** filesystem on img file, **if you already have `f2fs` on your root, do not use this option.**<br>
+The script will detect what filesystem is used on `root` and act accordingly.<br>
+Only supported with new backups, not when using `-U`.
+
+Autoexpansion at boot is not supported for `f2fs` (there is no way of resizing a mounted `f2fs` filesystem, unlike with `ext4`) so resizing root partition have to be made manually after writing img to sd-card.<br>
+Resize operations (when updating backup with `-U`) is not available for `f2fs` _as of now_.
 
 The script will make backups of `fstab` & `cmdline.txt` into `fstab.shrink-backup.bak` & `cmdline.txt.shrink-backup.bak` on the img.<br>
 It will then change from `ext4` to `f2fs` in `fstab` & `cmdline.txt` and add `discard` to the options on the `root` partition in `fstab`.
@@ -141,8 +151,10 @@ Please read information about [`f2fs`](#f2fs) further down.
 <br>
 
 ### Info
-**Rsync WILL cross filesystem boundries, so make sure you exclude external drives unless you want them included in the backup.**<br>
-**Not excluding other partitions will copy the data to the img `root` partition, not create more partitions,** so make sure to **_manually add_ `[extra space]`** if you do this.<br>
+**Rsync WILL cross filesystem boundries, so make sure you exclude external drives unless you want them included in the backup.**
+
+**Not excluding other partitions will copy the data to the img `root` partition, not create more partitions,** so make sure to **_manually add_ `[extra space]`** if you do this.
+
 The script will **ONLY** look at your `root` partition when calculating sizes.
 <br>
 <br>
@@ -166,8 +178,9 @@ To create a backup img using recomended size, use the `-a` option and the path t
 
 **Example:** `sudo shrink-backup -a /path/to/backup.img`
 
-Theoretically the script should work on any device as long as root filesystem is `ext4`, [`f2fs`](#f2fs) or **experimental** [`btrfs`](#btrfs). But IMHO is best applied on ARM hardware.<br>
-Since the script uses `lsblk` to crosscheck with `/etc/fstab` to figure out where the root resides it does not matter what device it is on.<br>
+Theoretically the script should work on any device as long as root filesystem is `ext4`, [`f2fs`](#f2fs) or **experimental** [`btrfs`](#btrfs).<br>
+Since the script uses `lsblk` to crosscheck with `/etc/fstab` to figure out where `root` resides it does not matter what device it is on.
+
 Even if you forget to disable autoexpansion on a non supported OS, the backup will not fail, it will just skip creating the autoresize scripts. :)
 <br>
 <br>
@@ -191,7 +204,8 @@ Added space is added on top of `df` reported "used space", not the size of the p
 
 The script can be instructed to set the img size by requesting recomended minimum size from `e2fsck` or `du` (`e2fsck` does not work on `f2fs` f.ex) by using the `-a` option.<br>
 This is not the absolute smallest size you can achieve but is the "safest" way to create a "smallest possible" img file.<br>
-If you do not increase the size of the filesystem you are backing up from too much, you can most likely keep it updated with the update function (`-U`) of the script.<br>
+If you do not increase the size of the filesystem you are backing up from too much, you can most likely keep it updated with the update function (`-U`) of the script.
+
 By using `-a` in combination with `-U` the script will resize the img file if needed (not supported on [`f2fs`](#f2fs)).<br>
 Please see [`--fix`](#--fix-broken-pipe) and [image update](#image-update) sections for more information.
 <br>
@@ -214,9 +228,11 @@ If you are like me, doing a lot of testing, rewriting the sd-card multiple times
 
 **Disclaimer!**<br>
 Because of how filesystems work, `df` is never a true representation of what will actually fit in a created img file.<br>
-Each file, no matter the size, will take up one block of the filesystem, so if you have a LOT of very small files (running `docker` f.ex) the "0 added space method" might fail during rsync. Increase the 0 a little bit and retry.<br>
+Each file, no matter the size, will take up one block of the filesystem, so if you have a LOT of very small files (running `docker` f.ex) the "0 added space method" might fail during rsync. Increase the 0 a little bit and retry.
+
 This also means you have VERY little free space on the img file after creation.<br>
-If the filesystem you back up from increases in size, an update (`-U`) of the img file might fail.<br>
+If the filesystem you back up from increases in size, an update (`-U`) of the img file might fail.
+
 By using `-a` in combination with `-U` the script will resize the img file if needed.<br>
 Using combination `-Ua` on an img that has become overfilled works, if not add `--fix` and retry.<br>
 Please see [`--fix`](#--fix-broken-pipe) and [Image update](#image-update) sections for more information.
@@ -245,7 +261,8 @@ To update an existing img file simply use the `-U` option and the path to the im
 <br>
 
 ### Resizing img file when updating
-If `-a` is used in combination with `-U`, the script will compare the root partition on the img file to the size `resize2fs` recommends as minimum (or `du` calculations depending on filesystem).<br>
+If `-a` is used in combination with `-U`, the script will compare the root partition on the img file to the size `resize2fs` recommends as minimum (or `du` calculations depending on filesystem).
+
 The **img file** `root` **partition** needs to be **>=256MB smaller** than `resize2fs` (or `du` calculations) recommended minimum to be expanded.<br>
 The **img file** `root` **partition** needs to be **>=512MB bigger** than `resize2fs` (or `du` calculations) recommended minimum to be shrunk.<br>
 This is to protect from unessesary resizing operations most likely not needed.
@@ -257,9 +274,11 @@ Only expansion is possible with this method.
 
 ## f2fs
 The script will detect `f2fs` on `root` automatically and act accordingly.<br>
-**Do NOT USE [`--f2fs`](#--fix-broken-pipe) unless you are converting from a `ext4` filesystem (on your system) into `f2fs` on the img file.**<br>
+**Do NOT USE [`--f2fs`](#--fix-broken-pipe) unless you are converting from a `ext4` filesystem (on your system) into `f2fs` on the img file.**
+
 Autoexpansion at boot is not possible with `f2fs`. User will have to manually expand img to cover entire storage media (f.ex sd-card) when restoring.<br>
-Resizing of img `root` partition while updating img (`-U`) is not possible with `f2fs`. User will have to create a new backup if img runs out of space.
+Resizing of img `root` partition while updating img (`-U`) is not possible with `f2fs` _as of now_. User will have to create a new backup if img runs out of space.<br>
+This is something I am planning to implement further down the line.
 
 <hr>
 
