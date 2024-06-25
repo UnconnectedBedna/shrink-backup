@@ -1,6 +1,8 @@
-# shrink-backup is a very fast utility for backing up your SBC:s into minimal bootable img files for easy restore with autoexpansion at boot
+# shrink-backup
 
 _I made this script because I wanted a universal method of backing up my SBC:s into small img files as fast as possible (with rsync), indepentent of what os is in use._
+
+shrink-backup is a very fast utility for backing up your SBC:s into minimal bootable img files for easy restore with autoexpansion at boot.
 
 Autoexpansion tested on **Raspberry Pi** os (bookworm and older), **Armbian**, **Manjaro-arm**, **DietPi** & **ArchLinuxARM** for rpi with `ext4` or [`f2fs`](#f2fs) root partition.<br>
 (Also **experimental** [`btrfs`](#btrfs) functionality, please read further down)<br>
