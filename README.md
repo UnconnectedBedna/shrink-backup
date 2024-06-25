@@ -15,7 +15,8 @@ Full support for usage inside [webmin](https://webmin.com/) (including "custom c
 
 **Can back up any device as long as filesystem on root is `ext4`** or **[`f2fs`](#f2fs)** (experimental [`btrfs`](#btrfs))<br>
 Default device that will be backed up is determined by scanning what disk-device `root` resides on.<br>
-This means that **if** `boot` is a partition, that partition must be on the **same device as `root`**.<br>
+This means that **if** `boot` is a partition, that partition must be on the **same device as `root`**.
+
 Backing up/restoring, to/from: usb-stick `/dev/sdX` with Raspberry pi os has been tested and works. Ie, writing an sd-card img to a usb-stick and vice versa works.
 
 **Ultra-fast incremental backups to existing img files.** 
