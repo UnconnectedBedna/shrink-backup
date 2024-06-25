@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # shrink-backup
-# version 1.0.1-beta
+# version 1.1
 # backup tool for backing up and updating .img files with autoexpansion on various operating systems
 #
 #    Copyright (c) 2024, Marcus Johansson
@@ -16,7 +16,7 @@
 function cleanup() {
   # exit 0 = cleanup after script
   # exit 1 = later/normal error
-  # exit 2 = help & looprun
+  # exit 2 = help, version & looprun
   # exit 3 = early/clean error
   # exit 4 = abort early
   # exit 5 = abort later
@@ -160,6 +160,23 @@ else
   TTY_AVAILABILITY='/dev/null'
 fi
 
+# Print version and exit
+version() {
+  echo -e "${Purple}#########################################################################
+#                                                                       #
+# ${Green}shrink-backup version 1.1                                             ${Purple}#
+#                                                                       #
+# ${IWhite}Copyright (c) 2024, Marcus Johansson                                  ${Purple}#
+# ${White}https://github.com/UnconnectedBedna/shrink-backup                     ${Purple}#
+# ${White}All rights reserved.                                                  ${Purple}#
+#                                                                       #
+# ${White}This source code is licensed under the BSD-style license found in the ${Purple}#
+# ${White}LICENSE file in the root directory of this source tree.               ${Purple}#
+#                                                                       #
+#########################################################################"
+exit 2
+}
+
 # Function to display help information
 help() {
   local help
@@ -190,6 +207,7 @@ Usage: ${Green}sudo $(basename "$0") [-Uatyelzh] [--fix] [--loop] [--f2fs] image
                   Only works on new img file, not in combination with -U
                   Will make backups of fstab & cmdline.txt to: fstab.shrink-backup.bak & cmdline.txt.shrink-backup.bak
                   Then change ext4 to f2fs in both files and add discard to options on root partition in fstab
+  ${Green}--version     ${IWhite}Print version and exit
   ${Green}-h --help     ${IWhite}Show this help snippet
 $BREAK
 Examples:
@@ -206,7 +224,7 @@ EOM
 }
 
 # Parse command-line options
-options=$(getopt -o Uatyelzh --long help,fix,f2fs,loop: -- "$@")
+options=$(getopt -o Uatyelzh --long help,fix,f2fs,version,loop: -- "$@")
 [ $? -eq 0 ] || {
     echo -e "${Red}Incorrect options provided"
     help
@@ -214,6 +232,8 @@ options=$(getopt -o Uatyelzh --long help,fix,f2fs,loop: -- "$@")
 eval set -- "$options"
 while true; do
   case "$1" in
+    -h|--help) help; break;;
+    --version) version; break;;
     -U) UPDATE=true; shift;;
     -a) AUTORESIZE_RUN=true; shift;;
     -t) EXCLUDE_FILE=true; shift;;
@@ -221,7 +241,6 @@ while true; do
     -e) AUTOEXPAND=false; shift;;
     -l) DEBUG=true; shift;;
     -z) ZOOM=true; shift;;
-    -h|--help) help; break;;
     --fix) RSYNC_DELETE='--delete-before'; shift;;
     --f2fs) F2FS=true; shift;;
     --loop) LOOPRUN=true; IMG_FILE="$2"; shift 2;;
@@ -287,7 +306,6 @@ function looprun() {
     debug 'INFO' 'Y or y pressed to confirm'
     echo -e "${White}## ${IWhite}Truncating file by adding ${Green}${ADDED_SPACE}MiB"
     $SLEEPING
-    #truncate -s +$(( ADDED_SPACE * 1024 * 1024 )) "$IMG_FILE"
     if ! output=$(truncate -s +$(( ADDED_SPACE * 1024 * 1024 )) "$IMG_FILE" 2>&1); then
       echo -e "${Yellow}$output\n${Red}!! TRUNCATE FAILED!!!"
       debug 'BREAK'
@@ -356,21 +374,12 @@ function get_dev_variables() {
 
   # Collect information about partition sizes
   #if [ "$UPDATE" = false ] || [ "$ADDED_SPACE" -ne 0 ] || [ "$AUTORESIZE_RUN" = true ]; then
-#     debug 'INFO' 'Calculating size for dd to cover bootsector in blocks (512B block size) and adding 256 blocks to overlap into root (only used in img creation)'
-#     debug 'DEBUG' "Running: fdisk -lo start "$LOCAL_DEV_PATH" | tail -1"
-#     LOCAL_ROOT_START=$(fdisk -lo start "$LOCAL_DEV_PATH" | tail -1 | awk '{print $1}') # blocks, 512B block size
-#     LOCAL_BOOTSECTOR=$(( LOCAL_ROOT_START - 1 )) # blocks, to set the actual bootsector
-#     LOCAL_DDBOOTSECTOR=$(( LOCAL_BOOTSECTOR + 256 )) # blocks, adding 256 extra to cover root filesystem
-#     debug 'DEBUG' "LOCAL_ROOT_START=$LOCAL_ROOT_START blocks | LOCAL_BOOTSECTOR=$LOCAL_BOOTSECTOR blocks | LOCAL_DDBOOTSECTOR=$LOCAL_DDBOOTSECTOR blocks"
-#     LOCAL_ROOT_START=$(( LOCAL_ROOT_START * 512 )) # bytes
-#     LOCAL_BOOTSECTOR=$(( LOCAL_BOOTSECTOR * 512 )) # bytes
-#     debug 'DEBUG' "LOCAL_ROOT_START=$LOCAL_ROOT_START bytes | LOCAL_BOOTSECTOR=$LOCAL_BOOTSECTOR bytes"
     debug 'INFO' 'Calculating size for dd to cover bootsector and adding 5MiB (5242880 bytes) to overlap into root (only used in img creation)'
+    #LOCAL_BOOTSECTOR=$(lsblk --bytes -o size "$LOCAL_DEV_BOOT_PATH" | tail -1) # bytes, can not be used, will be 0 if no boot partition exists
     LOCAL_ROOT_START=$(fdisk -lo device,start "$LOCAL_DEV_PATH" | grep "$LOCAL_DEV_ROOT_PATH" | awk '{print $2}') # 512B blocks
     LOCAL_BOOTSECTOR=$(( LOCAL_ROOT_START - 1 )) # blocks, to set the actual bootsector, needed in case no boot partition exists
     LOCAL_ROOT_START=$(( LOCAL_ROOT_START * 512 )) # bytes
     LOCAL_BOOTSECTOR=$(( LOCAL_BOOTSECTOR * 512 )) # bytes
-    #LOCAL_BOOTSECTOR=$(lsblk --bytes -o size "$LOCAL_DEV_BOOT_PATH" | tail -1) # bytes, can not be used, will be 0 if no boot partition exists
     LOCAL_DDBOOTSECTOR=$(( (LOCAL_BOOTSECTOR + 5242880) / 512 )) # 512B blocks, 5242880 = 5MiB in bytes
     debug 'DEBUG' "LOCAL_ROOT_START=$LOCAL_ROOT_START bytes | LOCAL_BOOTSECTOR=$LOCAL_BOOTSECTOR bytes | LOCAL_DDBOOTSECTOR=$LOCAL_DDBOOTSECTOR 4k blocks"
   #fi
@@ -386,11 +395,10 @@ function get_dev_variables() {
       LOCAL_AUTORESIZE_MIN=$(( LOCAL_AUTORESIZE_MIN * BLOCKSIZE )) # bytes
       debug 'DEBUG' "LOCAL_AUTORESIZE_MIN=${LOCAL_AUTORESIZE_MIN} bytes"
     elif [ "$FSTYPE" == 'f2fs' ]; then
-      #debug 'INFO' 'f2fs filesystem detected, using du (+512MiB) instead to calculate recommended root size'
-      #LOCAL_AUTORESIZE_MIN=$(du -xsb / | awk '{print $1}') # bytes
-      #LOCAL_AUTORESIZE_MIN=$(( LOCAL_AUTORESIZE_MIN + 536870912 )) # adding 512MiB
-      debug 'INFO' 'f2fs filesystem detected, using df (+512MiB) to set recommended root size'
       # Method 2, using "used space" straight up
+      debug 'INFO' 'f2fs filesystem detected, using df (+512MiB) to set recommended root size'
+      #debug 'INFO' 'f2fs filesystem detected, using du (+512MiB) instead to calculate recommended root size'
+      #LOCAL_AUTORESIZE_MIN=$(du -xsb / | awk '{print $1}') # du version in bytes
       LOCAL_AUTORESIZE_DF=$(df / -k --sync --output=used | tail -1) # 1k blocks
       LOCAL_AUTORESIZE_MIN=$(( LOCAL_AUTORESIZE_DF * 1024 )) # bytes
       LOCAL_AUTORESIZE_MIN=$(( LOCAL_AUTORESIZE_MIN + 536870912 )) # adding 512MiB
@@ -484,11 +492,10 @@ function get_img_variables() {
     if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
       # I have no idea why, but if I do not put this sleep here, IMG_DEV_BOOT_PATH does not get set
       sleep 2
-      #pause 'Press [Enter] key to continue...'
       IMG_DEV_BOOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
       IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
       debug 'DEBUG' "IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
-      # Sleep was not enough, might have to do with slow network if img file is on a network share
+      # 2s sleep is sometimes not enough, might have to do with slow network if img file is on a network share
       if ! [ -e "$IMG_DEV_BOOT_PATH" ] || ! [ -e "$IMG_DEV_ROOT_PATH" ]; then
         for (( i=1; i<=3; i++ )); do
           echo -e "${Yellow}!! ${Yellow}LOOP paths can not be set, retrying in 5 seconds..."
@@ -568,11 +575,10 @@ function set_img_variables() {
     if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
       # I have no idea why, but if I do not put this sleep here, IMG_DEV_BOOT_PATH does not get set
       sleep 2
-      #pause 'Press [Enter] key to continue...'
       IMG_DEV_BOOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
       IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
       debug 'DEBUG' "IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
-      # Sleep was not enough, might have to do with slow network if img file is on a network share
+      # 2s sleep is sometimes not enough, might have to do with slow network if img file is on a network share
       if ! [ -e "$IMG_DEV_BOOT_PATH" ] || ! [ -e "$IMG_DEV_ROOT_PATH" ]; then
         for (( i=1; i<=3; i++ )); do
           echo -e "${Yellow}!! ${Yellow}LOOP paths can not be set, retrying in 5 seconds..."
@@ -1006,16 +1012,12 @@ function make_img() {
   get_dev_variables
 
   # Display information
-#  echo ''
-  #echo -e "${Purple}##############################################################################"
-  #echo -e "${Purple}"
-  #printf "%${COLS}s\n" | tr " " "#"
   echo -e "${Purple}$BREAK"
   if [ "$PROMPTS" = false ]; then
     debug 'INFO' '-y selected by user. prompts are disabled'
     echo -e "# ${Yellow}DISABLE PROMPTS SELECTED (${Green}-y${Yellow}), NO WARNINGS ABOUT DELETION!!! ${Purple}$(printf "%+$(( COLS - 63 ))s" '#')"
   fi
-  #echo -e "${Purple}# ${IWhite}A backup will be created at ${Green}$IMG_FILE $(while [ $x -lt $(( COLS - 31 - $(echo ${IMG_FILE} | wc -m ) )) ]; do echo -n ' '; let x=$x+1; done; echo)${Purple}#"
+  #echo -e "# ${IWhite}A backup will be created at ${Green}$IMG_FILE $(while [ $x -lt $(( COLS - 31 - $(echo ${IMG_FILE} | wc -m ) )) ]; do echo -n ' '; let x=$x+1; done; echo)${Purple}#"
   echo -e "# ${IWhite}A backup will be created at ${Green}$IMG_FILE ${Purple}$(printf "%+$(( COLS - 30 - $(echo ${IMG_FILE} | wc -m ) ))s" '#')"
   echo -e "# ${Green}$FSTYPE ${IWhite}filesystem detected on root ${Purple}$(printf "%+$(( COLS - 30 - $(echo ${FSTYPE} | wc -m ) ))s" '#')"
   if [ "$FSTYPE" == 'btrfs' ]; then
@@ -1132,9 +1134,7 @@ function make_img() {
   fi
   $SLEEPING
   debug 'INFO' 'Using dd to create bootsector'
-  #if ! output=$(dd bs=512 count=$LOCAL_DDBOOTSECTOR if="$LOCAL_DEV_PATH" of="$IMG_FILE" conv=noerror,sync status=progress 2>&1 | tee "$TTY_AVAILABILITY"); then
   if ! output=$(dd bs=512 count=$LOCAL_DDBOOTSECTOR if="$LOCAL_DEV_PATH" of="$IMG_FILE" conv=noerror,sync status=progress 2>&1 | tee "$TTY_AVAILABILITY"); then
-  #if ! output=$(dd bs=512 count=$LOCAL_DDBOOTSECTOR if="$LOCAL_DEV_PATH" of="$IMG_FILE" conv=noerror,sync status=progress 2>&1 | exec &> >(tee >(test -z /dev/tty && /dev/null) >&2)); then
     echo -e "${Yellow}$output\n${Red}!! DD TO LOCAL_BOOTSECTOR FAILED!!!"
     debug 'BREAK'
     debug 'ERROR' "DD TO LOCAL_BOOTSECTOR FAILED:\n$output\n------------------------------------------------------------------------------"
@@ -1642,7 +1642,7 @@ function do_backup() {
     print_temp="$(( $(df / -k --sync --output=used | tail -1) / 1024 ))"
     echo -e "# ${IWhite}Estemated root usage: ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 27 - $(echo ${print_temp} | wc -m ) ))s" '#')"
     print_temp="$(( IMG_SIZE / 1024 / 1024 ))"
-    echo -e "# ${IWhite}Total img size: ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 22 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+    echo -e "# ${IWhite}Total img size: ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 21 - $(echo ${print_temp} | wc -m ) ))s" '#')"
   fi
   echo -e "${Purple}${BREAK}${IWhite}"
 
