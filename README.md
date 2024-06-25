@@ -139,7 +139,7 @@ To remind yourself: `lsblk /dev/loop*` if you forgot the location after using `-
 <br>
 
 #### `--f2fs` (Convert `ext4` into `f2fs` on img file)
-ONLY use this for **CONVERTING** filesystem on img file, **if you already have `f2fs` on your root, do not use this option.**<br>
+ONLY use this for **CONVERTING** filesystem into img file, **if you already have `f2fs` on your root, do not use this option.**<br>
 The script will detect what filesystem is used on `root` and act accordingly.<br>
 Only supported with new backups, not when using `-U`.
 
