@@ -8,7 +8,7 @@ Autoexpansion tested on **Raspberry Pi** os (bookworm and older), **Armbian**, *
 (Also **experimental** [`btrfs`](#btrfs) functionality, please read further down)<br>
 Full support for usage inside [webmin](https://webmin.com/) (including "custom command" button). Thank you to [iliajie](https://github.com/iliajie) for helping out. ❤️
 
-**Latest release:** [shrink-backup.v1.0.0](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v1.0.0/shrink-backup.v1.0.0.tar.gz)<br>
+**Latest release:** [shrink-backup.v1.1](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v1.1/shrink-backup.v1.1.tar.gz)<br>
 [**Testing branch:**](https://github.com/UnconnectedBedna/shrink-backup/tree/testing) If you want to have the absolute latest version. There might be bugs.
 
 **Very fast restore thanks to minimal size of img file.**
@@ -61,6 +61,7 @@ Usage: sudo shrink-backup [-Uatyelhz] [--fix] [--loop] [--f2fs] imagefile.img [e
                   Only works on new img file, not in combination with -U
                   Will make backups of fstab & cmdline.txt to: fstab.shrink-backup.bak & cmdline.txt.shrink-backup.bak
                   Then change ext4 to f2fs in both files and add discard to options on root partition in fstab
+  --version     Print version and exit
   -h --help     Show this help snippet
 ########################################################################
 Examples:
