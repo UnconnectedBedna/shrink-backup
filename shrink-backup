@@ -1174,7 +1174,8 @@ function make_img() {
   if [ $PARTITION_TABLE == 'gpt' ]; then
     echo -e "${White}## ${Green}GPT partition table detected, ${Yellow}sgdisk needed, ${IWhite}checking for application..."
     $SLEEPING
-    if [[ ! -f $(which sgdisk 2>&1) ]]; then
+    #if [[ ! -f $(which sgdisk 2>&1) ]]; then
+    if ! command -v sgdisk > /dev/null 2>&1; then
       echo -e "${Yellow}!! sgdisk is NOT installed..."
       debug 'INFO' 'sgdisk not available on system'
       read -p "Do you want to try to install gdisk? [y/n] " -n 1 -r
@@ -1186,10 +1187,11 @@ function make_img() {
       fi
       echo ''
       debug 'INFO' 'Y or y pressed to confirm'
-      if [[ -f $(which apt 2>&1) ]]; then
+      #if [[ -f $(which apt 2>&1) ]]; then
+      if command -v apt > /dev/null 2>&1; then
         echo -e "${White}## ${Green}apt found, ${IWhite}trying to install gdisk..."
-        read -p "Do you want to use apt to install gdisk? [y/n] " -n 1 -r
-        debug 'INFO' 'Do you want to use apt to install gdisk? [y/n]'
+        read -p "Do you want to use apt to install gdisk? (will upgrade system) [y/n] " -n 1 -r
+        debug 'INFO' 'Do you want to use apt to install gdisk? (will upgrade system) [y/n]'
         if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
           echo ''
           echo -e "${Red}!! Aborting..."
@@ -1199,7 +1201,8 @@ function make_img() {
         debug 'INFO' 'Y or y pressed to confirm'
         debug 'DEBUG' 'Running: apt update -y && apt upgrade -y && apt install gdisk -y'
         apt update -y && apt upgrade -y && apt install gdisk -y
-      elif [[ -f $(which pacman 2>&1) ]]; then
+      #elif [[ -f $(which pacman 2>&1) ]]; then
+      elif command -v pacman > /dev/null 2>&1; then
         echo -e "${White}## ${Green}pacman found, ${IWhite}trying to install gdisk..."
         read -p "Do you want to use pacman to install gptfdisk? (will do -Syu first) [y/n] " -n 1 -r
         debug 'INFO' 'Do you want to use pacman to install gptfdisk? (will do -Syu first) [y/n]'
@@ -1310,11 +1313,12 @@ function make_img() {
   if [ "$F2FS" = true ]; then
     echo -e "${White}## ${Green}--f2fs option selected, mkfs.f2fs is needed, ${IWhite}checking if installed..."
     $SLEEPING
-    if [[ ! -f $(which mkfs.f2fs 2>&1) ]]; then
+    #if [[ ! -f $(which mkfs.f2fs 2>&1) ]]; then
+    if ! command -v mkfs.f2fs > /dev/null 2>&1; then
       echo -e "${Yellow}!! mkfs.f2fs is NOT installed..."
       debug 'INFO' 'mkfs.f2fs (f2fs-tools) not available on system'
-      read -p "Do you want to use apt to install f2fs-tools? [y/n] " -n 1 -r
-      debug 'INFO' 'Do you want to try to install f2fs-tools? [y/n]'
+      read -p "Do you want to use apt to install f2fs-tools? (will upgrade system) [y/n] " -n 1 -r
+      debug 'INFO' 'Do you want to try to install f2fs-tools? (will upgrade system) [y/n]'
       if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
         echo ''
         echo -e "${Red}!! Aborting..."
