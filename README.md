@@ -160,7 +160,9 @@ Please read information about [`f2fs`](#f2fs) further down.
 ### Info
 **Rsync WILL cross filesystem boundries, so make sure you exclude external drives unless you want them included in the backup.**
 
-**Not excluding other partitions will copy the data to the img `root` partition, not create more partitions,** so make sure to **_manually add_ `[extra space]`** if you do this.
+The script will **ONLY** create `boot` (if exits) and `root` partitions on the img file.<br>
+**Not excluding other partitions will copy the data to the img `root` partition, not create more partitions,** so make sure to **_manually add_ `[extra space]`** if you do this.<br>
+Experimental [`btrfs`](#btrfs) is an exception to this.
 
 The script will **ONLY** look at your `root` partition when calculating sizes.
 <br>
