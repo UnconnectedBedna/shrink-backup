@@ -4,6 +4,9 @@ _I made this script because I wanted a universal method of backing up my SBC:s i
 
 shrink-backup is a very fast utility for backing up your SBC:s into minimal bootable img files for easy restore with autoexpansion at boot.
 
+Supports backing up `boot` & `root` partitions, data from other partitions will be written to `root` if not excluded ([`btrfs`](#btrfs) excluded, all subvolumes will be created).<br>
+Please see [`Info`](#info) section.
+
 Autoexpansion tested on **Raspberry Pi** os (bookworm and older), **Armbian**, **Manjaro-arm**, **DietPi** & **ArchLinuxARM** for rpi with `ext4` or [`f2fs`](#f2fs) root partition.<br>
 (Also **experimental** [`btrfs`](#btrfs) functionality, please read further down)<br>
 Full support for usage inside [webmin](https://webmin.com/) (including "custom command" button). Thank you to [iliajie](https://github.com/iliajie) for helping out. ❤️
