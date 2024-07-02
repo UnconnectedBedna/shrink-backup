@@ -278,7 +278,7 @@ Only expansion is possible with this method.
 
 ## f2fs
 The script will detect `f2fs` on `root` automatically and act accordingly.<br>
-**Do NOT USE [`--f2fs`](#--fix-broken-pipe) unless you are converting from a `ext4` filesystem (on your system) into `f2fs` on the img file.**
+**Do NOT USE [`--f2fs`](#--f2fs-Convert-ext4-into-f2fs-on-img-file) unless you are converting from a `ext4` filesystem (on your system) into `f2fs` on the img file.**
 
 Autoexpansion at boot is not possible with `f2fs`. User will have to manually expand img to cover entire storage media (f.ex sd-card) when restoring.<br>
 Resizing of img `root` partition while updating img (`-U`) is not possible with `f2fs` _as of now_. User will have to create a new backup if img runs out of space.<br>
