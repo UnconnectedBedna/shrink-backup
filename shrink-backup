@@ -40,7 +40,7 @@ function cleanup() {
       while true; do
         # Check if the mount point is still busy
         if ! umount "${TMP_DIR}${BOOT_PATH}" && [ -n "$BOOT_PATH" ] && [ -n "$TMP_DIR" ] && grep -qs "${TMP_DIR}${BOOT_PATH} " /proc/mounts; then
-          # If it is, sleep for a few seconds and try again
+          # If it is, sleep for 5 seconds and try again
           echo -e "${Yellow}!! ${Green}${TMP_DIR}${BOOT_PATH} ${Yellow}is busy, retrying in 5 seconds..."
           debug 'DEBUG' "${TMP_DIR}${BOOT_PATH} is busy, retrying in 5 seconds"
           sleep 5
@@ -89,8 +89,6 @@ function cleanup() {
           break
         fi
       done
-      #debug 'DEBUG' "Removing loop in cleanup function: losetup -d $LOOP"
-      #losetup -d "$LOOP"
     fi
 
     if [ -d "$TMP_DIR" ]; then
@@ -177,7 +175,7 @@ version() {
 exit 2
 }
 
-# Function to display help information
+# Function to display help information and exit
 help() {
   local help
   read -r -d '' help << EOM
@@ -286,7 +284,7 @@ function debug() {
       fi
     fi
   fi
-  return 0
+return 0
 }
 
 
@@ -352,18 +350,17 @@ function get_dev_variables() {
   if grep -q 'boot' /etc/fstab; then
     debug 'INFO' 'Separate boot partition detected'
     LOCAL_DEV_BOOT_PATH=$(lsblk -lpo mountpoint,path | grep 'boot' | awk '{print $2}')
-    LOCAL_DEV_ROOT_PATH=$(mount | grep '/ ' | awk '{print $1}')
+    LOCAL_DEV_ROOT_PATH=$(mount | grep ' / ' | awk '{print $1}')
     debug 'DEBUG' "LOCAL_DEV_BOOT_PATH=$LOCAL_DEV_BOOT_PATH | LOCAL_DEV_ROOT_PATH=$LOCAL_DEV_ROOT_PATH"
     LOCAL_BOOT_UUID=$(lsblk -o uuid "$LOCAL_DEV_BOOT_PATH" | tail -1)
     LOCAL_ROOT_UUID=$(lsblk -o uuid "$LOCAL_DEV_ROOT_PATH" | tail -1)
     LOCAL_ROOT_PARTUUID=$(lsblk -o partuuid "$LOCAL_DEV_ROOT_PATH" | tail -1)
     debug 'DEBUG' "LOCAL_BOOT_UUID=$LOCAL_BOOT_UUID | LOCAL_ROOT_UUID=$LOCAL_ROOT_UUID | LOCAL_ROOT_PARTUUID=$LOCAL_ROOT_PARTUUID"
-    BOOT_PATH=$(cat /etc/fstab | grep '/boot' | awk '{print $2}')
+    BOOT_PATH=$(cat /etc/fstab | grep 'boot' | awk '{print $2}')
     debug 'DEBUG' "BOOT_PATH=$BOOT_PATH"
   else
     debug 'INFO' 'No boot partition detected'
-    #LOCAL_DEV_ROOT_PATH=$(lsblk -lpo mountpoint,path | grep '/ ' | awk '{print $2}')
-    LOCAL_DEV_ROOT_PATH=$(mount | grep '/ ' | awk '{print $1}')
+    LOCAL_DEV_ROOT_PATH=$(mount | grep ' / ' | awk '{print $1}')
     debug 'DEBUG' "LOCAL_DEV_ROOT_PATH=$LOCAL_DEV_ROOT_PATH"
     LOCAL_ROOT_UUID=$(lsblk -o uuid "$LOCAL_DEV_ROOT_PATH" | tail -1)
     LOCAL_ROOT_PARTUUID=$(lsblk -o partuuid "$LOCAL_DEV_ROOT_PATH" | tail -1)
@@ -447,7 +444,7 @@ return 0
 # Function to gather btrfs information
 function get_btrfs_variables() {
 
-  BOOT_PATH=$(cat /etc/fstab | grep '/boot' | awk '{print $2}')
+  BOOT_PATH=$(cat /etc/fstab | grep 'boot' | awk '{print $2}')
   debug 'DEBUG' "BOOT_PATH=$BOOT_PATH"
 
   if [ "$AUTORESIZE_RUN" = true ]; then
@@ -486,7 +483,6 @@ function get_img_variables() {
 
   # Boot partition exists
   if grep -q 'boot' /etc/fstab; then
-    debug 'INFO' 'Separate boot partition detected'
 
     # ext4 & f2fs
     if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
@@ -543,7 +539,7 @@ function get_img_variables() {
     fi
     $SLEEPING
     partprobe "$LOOP"
-    declare -a fstab=( $(cat /etc/fstab | grep '/ ') )
+    declare -a fstab=( $(cat /etc/fstab | grep ' / ') )
     debug 'INFO' 'Mounting root to find subvolumes'
     debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH $TMP_DIR"
     if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
@@ -675,7 +671,7 @@ function do_mount() {
 
   # btrfs
   elif [ "$FSTYPE" == 'btrfs' ]; then
-    declare -a fstab=( $(cat /etc/fstab | grep '/ ') )
+    declare -a fstab=( $(cat /etc/fstab | grep ' / ') )
     echo -e "${White}## ${IWhite}Mounting root subvolume..."
     debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH $TMP_DIR"
     if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
@@ -714,10 +710,9 @@ function do_mount() {
     done
   fi
 
-  # Checking if boot partition exists and if true, mount boot
-  #if [ $(lsblk | grep -c 'boot') -ne 0 ]; then
+  # Mount boot partition if exists
   if [ -n "$BOOT_PATH" ]; then
-    if ! lsblk | grep -q 'boot'; then
+    if ! mount | grep -q 'boot'; then
       echo -e "${Red}!! BOOT PARTITION NOT MOUNTED ON SYSTEM, PLEASE MOUNT BOOT PARTITION AND RE-RUN THE SCRIPT!!!"
       debug 'ERROR' 'BOOT PARTITION NOT MOUNTED ON SYSTEM, PLEASE MOUNT BOOT PARTITION AND RE-RUN THE SCRIPT!!!'
       exit 1
@@ -827,7 +822,7 @@ function do_resize() {
     echo -e "${White}## ${IWhite}Expanding img filesystem..."
     $SLEEPING
 
-    # Removing loop for tuncate to take effect
+    # Removing loop for truncate to take effect
     echo -e "${White}## ${IWhite}Removing loop..."
     $SLEEPING
     debug 'INFO' 'Removing loop for truncate to take effect'
@@ -1280,7 +1275,7 @@ function make_img() {
 
   # ext4 & f2fs on root
   elif [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
-    debug 'DEBUG' "Running: parted -s -a none $LOOP unit B mkpart primary $FSTYPE $LOCAL_ROOT_START 100%"
+    debug 'DEBUG' "Running: parted -s -a none $LOOP unit B mkpart primary $LOCAL_ROOT_START 100%"
     #if ! output=$(parted -s -a none "$LOOP" unit B mkpart primary "$FSTYPE" "$LOCAL_ROOT_START" 100% 2>&1); then
     if ! output=$(parted -s -a none "$LOOP" unit B mkpart primary "$LOCAL_ROOT_START" 100% 2>&1); then
       echo -e "${Yellow}$output\n${Red}!! PARTED FAILED!!!"
@@ -1442,7 +1437,7 @@ function make_img() {
     $SLEEPING
     partprobe "$LOOP"
     #fstab=( $(cat /etc/fstab | grep "${LOCAL_SUBVOLUMES[0]}") )
-    declare -a fstab=( $(cat /etc/fstab | grep '/ ') )
+    declare -a fstab=( $(cat /etc/fstab | grep ' / ') )
     debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH $TMP_DIR"
     if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
       echo -e "${Yellow}$output\n${Red}!! ROOT SUBVOLUME MOUNT FAILED!!!"
@@ -1808,10 +1803,10 @@ EOF
   debug 'DEBUG' "Creating expansion script ${TMP_DIR}/expand-fs.sh"
   cat << EOF2 > "${TMP_DIR}/expand-fs.sh"
 #!/usr/bin/bash
-LOCAL_DEV_PTUUID=\$(lsblk -lpo mountpoint,ptuuid | grep '/ ' | awk '{print \$2}')
+LOCAL_DEV_PTUUID=\$(lsblk -lpo mountpoint,ptuuid | grep ' / ' | awk '{print \$2}')
 LOCAL_DEV_PATH=\$(lsblk -lpo ptuuid,type,path | grep "\$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print \$3}')
 LOCAL_ROOT_PARTN=\$(parted -sm "\$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
-LOCAL_DEV_ROOT_PATH=\$(lsblk -lpo mountpoint,path | grep '/ ' | awk '{print \$2}')
+LOCAL_DEV_ROOT_PATH=\$(lsblk -lpo mountpoint,path | grep ' / ' | awk '{print \$2}')
 LOCAL_ROOT_START=\$(fdisk -lo start "\$LOCAL_DEV_PATH" | tail -1 | awk '{print \$1}') # blocks, 512B block size
 LOCAL_ROOT_START=\$(( LOCAL_ROOT_START * 512 )) # bytes
 
@@ -1867,10 +1862,10 @@ EOF
   debug 'DEBUG' 'Creating expansion script ${TMP_DIR}/expand-fs.sh'
   cat << EOF2 > "${TMP_DIR}/expand-fs.sh"
 #!/usr/bin/bash
-LOCAL_DEV_PTUUID=\$(lsblk -lpo mountpoint,ptuuid | grep '/ ' | awk '{print \$2}')
+LOCAL_DEV_PTUUID=\$(lsblk -lpo mountpoint,ptuuid | grep ' / ' | awk '{print \$2}')
 LOCAL_DEV_PATH=\$(lsblk -lpo ptuuid,type,path | grep "\$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print \$3}')
 LOCAL_ROOT_PARTN=\$(parted -sm "\$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
-LOCAL_DEV_ROOT_PATH=\$(lsblk -lpo mountpoint,path | grep '/ ' | awk '{print \$2}')
+LOCAL_DEV_ROOT_PATH=\$(lsblk -lpo mountpoint,path | grep ' / ' | awk '{print \$2}')
 LOCAL_ROOT_START=\$(fdisk -lo start "\$LOCAL_DEV_PATH" | tail -1 | awk '{print \$1}') # blocks, 512B block size
 LOCAL_ROOT_START=\$(( LOCAL_ROOT_START * 512 )) # bytes
 
@@ -2030,14 +2025,14 @@ fi
 echo -e "${White}## ${IWhite}Scanning filesystem and calculating..."
 
 # Check what filesystem root is using and set LOCAL_DEV_PATH & PARTITION_TABLE
-#FSTYPE=$(lsblk -lo mountpoint,fstype | grep '/ ' | awk '{print $2}')
+#FSTYPE=$(lsblk -lo mountpoint,fstype | grep ' / ' | awk '{print $2}')
 FSTYPE="$(mount | grep ' / ' | awk '{print $5}')"
 debug 'INFO' "$FSTYPE root filesystem detected"
 debug 'DEBUG' "FSTYPE=$FSTYPE"
 if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
-  LOCAL_DEV_PTUUID=$(lsblk -lpo mountpoint,ptuuid | grep '/ ' | awk '{print $2}')
+  LOCAL_DEV_PTUUID=$(lsblk -lpo mountpoint,ptuuid | grep ' / ' | awk '{print $2}')
 else
-  LOCAL_DEV_PTUUID=$(lsblk -lpo fsroots,ptuuid | grep '/ ' | awk '{print $2}')
+  LOCAL_DEV_PTUUID=$(lsblk -lpo fsroots,ptuuid | grep ' / ' | awk '{print $2}')
 fi
 LOCAL_DEV_PATH=$(lsblk -lpo ptuuid,type,path | grep "$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print $3}')
 debug 'DEBUG' "LOCAL_DEV_PTUUID=$LOCAL_DEV_PTUUID | LOCAL_DEV_PATH=$LOCAL_DEV_PATH"
