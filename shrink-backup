@@ -349,12 +349,13 @@ function get_dev_variables() {
   # Check if separate boot and root partition exists and set variables accordingly
   if grep -q 'boot' /etc/fstab; then
     debug 'INFO' 'Separate boot partition detected'
-    LOCAL_DEV_BOOT_PATH=$(lsblk -lpo mountpoint,path | grep 'boot' | awk '{print $2}')
+    #LOCAL_DEV_BOOT_PATH=$(lsblk -lpo mountpoint,path | grep 'boot' | awk '{print $2}')
+    LOCAL_DEV_BOOT_PATH=$(mount | grep 'boot' | awk '{print $1}')
     LOCAL_DEV_ROOT_PATH=$(mount | grep ' / ' | awk '{print $1}')
     debug 'DEBUG' "LOCAL_DEV_BOOT_PATH=$LOCAL_DEV_BOOT_PATH | LOCAL_DEV_ROOT_PATH=$LOCAL_DEV_ROOT_PATH"
-    LOCAL_BOOT_UUID=$(lsblk -o uuid "$LOCAL_DEV_BOOT_PATH" | tail -1)
-    LOCAL_ROOT_UUID=$(lsblk -o uuid "$LOCAL_DEV_ROOT_PATH" | tail -1)
-    LOCAL_ROOT_PARTUUID=$(lsblk -o partuuid "$LOCAL_DEV_ROOT_PATH" | tail -1)
+    LOCAL_BOOT_UUID=$(lsblk -no uuid "$LOCAL_DEV_BOOT_PATH")
+    LOCAL_ROOT_UUID=$(lsblk -no uuid "$LOCAL_DEV_ROOT_PATH")
+    LOCAL_ROOT_PARTUUID=$(lsblk -no partuuid "$LOCAL_DEV_ROOT_PATH")
     debug 'DEBUG' "LOCAL_BOOT_UUID=$LOCAL_BOOT_UUID | LOCAL_ROOT_UUID=$LOCAL_ROOT_UUID | LOCAL_ROOT_PARTUUID=$LOCAL_ROOT_PARTUUID"
     BOOT_PATH=$(cat /etc/fstab | grep 'boot' | awk '{print $2}')
     debug 'DEBUG' "BOOT_PATH=$BOOT_PATH"
@@ -362,8 +363,8 @@ function get_dev_variables() {
     debug 'INFO' 'No boot partition detected'
     LOCAL_DEV_ROOT_PATH=$(mount | grep ' / ' | awk '{print $1}')
     debug 'DEBUG' "LOCAL_DEV_ROOT_PATH=$LOCAL_DEV_ROOT_PATH"
-    LOCAL_ROOT_UUID=$(lsblk -o uuid "$LOCAL_DEV_ROOT_PATH" | tail -1)
-    LOCAL_ROOT_PARTUUID=$(lsblk -o partuuid "$LOCAL_DEV_ROOT_PATH" | tail -1)
+    LOCAL_ROOT_UUID=$(lsblk -no uuid "$LOCAL_DEV_ROOT_PATH")
+    LOCAL_ROOT_PARTUUID=$(lsblk -no partuuid "$LOCAL_DEV_ROOT_PATH")
     debug 'DEBUG' "LOCAL_ROOT_UUID=$LOCAL_ROOT_UUID | LOCAL_ROOT_PARTUUID=$LOCAL_ROOT_PARTUUID"
   fi
   LOCAL_ROOT_PARTN=$(parted -sm "$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
@@ -372,7 +373,7 @@ function get_dev_variables() {
   # Collect information about partition sizes
   #if [ "$UPDATE" = false ] || [ "$ADDED_SPACE" -ne 0 ] || [ "$AUTORESIZE_RUN" = true ]; then
     debug 'INFO' 'Calculating size for dd to cover bootsector and adding 5MiB (5242880 bytes) to overlap into root (only used in img creation)'
-    #LOCAL_BOOTSECTOR=$(lsblk --bytes -o size "$LOCAL_DEV_BOOT_PATH" | tail -1) # bytes, can not be used, will be 0 if no boot partition exists
+    #LOCAL_BOOTSECTOR=$(lsblk --bytes -no size "$LOCAL_DEV_BOOT_PATH") # bytes, can not be used, will be 0 if no boot partition exists
     LOCAL_ROOT_START=$(fdisk -lo device,start "$LOCAL_DEV_PATH" | grep "$LOCAL_DEV_ROOT_PATH" | awk '{print $2}') # 512B blocks
     LOCAL_BOOTSECTOR=$(( LOCAL_ROOT_START - 1 )) # blocks, to set the actual bootsector, needed in case no boot partition exists
     LOCAL_ROOT_START=$(( LOCAL_ROOT_START * 512 )) # bytes
@@ -488,8 +489,8 @@ function get_img_variables() {
     if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
       # I have no idea why, but if I do not put this sleep here, IMG_DEV_BOOT_PATH does not get set
       sleep 2
-      IMG_DEV_BOOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
-      IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
+      IMG_DEV_BOOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
+      IMG_DEV_ROOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
       debug 'DEBUG' "IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
       # 2s sleep is sometimes not enough, might have to do with slow network if img file is on a network share
       if ! [ -e "$IMG_DEV_BOOT_PATH" ] || ! [ -e "$IMG_DEV_ROOT_PATH" ]; then
@@ -498,8 +499,8 @@ function get_img_variables() {
           debug 'WARNING' 'LOOP paths can not be set, retrying in 5 seconds'
           debug 'WARNING' "IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
           sleep 5
-          IMG_DEV_BOOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
-          IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
+          IMG_DEV_BOOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
+          IMG_DEV_ROOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
           if [ -e "$IMG_DEV_BOOT_PATH" ] && [ -e "$IMG_DEV_ROOT_PATH" ]; then
             echo -e "${White}## ${Green}LOOP paths found, resuming backup..."
             debug 'INFO' "LOOP paths found, resuming backup"
@@ -522,7 +523,7 @@ function get_img_variables() {
     # I have no idea why, but if I do not put this sleep here, IMG_DEV_ROOT_PATH does not get set
     sleep 2
     #pause 'Press [Enter] key to continue...'
-    IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
+    IMG_DEV_ROOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
     debug 'DEBUG' "IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
   fi
 
@@ -571,8 +572,8 @@ function set_img_variables() {
     if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
       # I have no idea why, but if I do not put this sleep here, IMG_DEV_BOOT_PATH does not get set
       sleep 2
-      IMG_DEV_BOOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
-      IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
+      IMG_DEV_BOOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
+      IMG_DEV_ROOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
       debug 'DEBUG' "IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
       # 2s sleep is sometimes not enough, might have to do with slow network if img file is on a network share
       if ! [ -e "$IMG_DEV_BOOT_PATH" ] || ! [ -e "$IMG_DEV_ROOT_PATH" ]; then
@@ -581,8 +582,8 @@ function set_img_variables() {
           debug 'WARNING' 'LOOP paths can not be set, retrying in 5 seconds'
           debug 'WARNING' "IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
           sleep 5
-          IMG_DEV_BOOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
-          IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
+          IMG_DEV_BOOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
+          IMG_DEV_ROOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
           if [ -e "$IMG_DEV_BOOT_PATH" ] && [ -e "$IMG_DEV_ROOT_PATH" ]; then
             echo -e "${White}## ${Green}LOOP paths found, resuming backup..."
             debug 'INFO' "LOOP paths found, resuming backup"
@@ -611,7 +612,7 @@ function set_img_variables() {
     # I have no idea why, but if I do not put this sleep here, IMG_DEV_ROOT_PATH does not get set
     sleep 2
     #pause 'Press [Enter] key to continue...'
-    IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
+    IMG_DEV_ROOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
     debug 'DEBUG' "IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
   fi
 return 0
@@ -1300,8 +1301,8 @@ function make_img() {
   echo -e "${White}## ${IWhite}Formatting filesystem..."
   debug 'INFO' 'Formatting filesystem'
   $SLEEPING
-  LABEL=$(lsblk -o label "$LOCAL_DEV_ROOT_PATH" | tail -1)
-  UUID=$(lsblk -o uuid "$LOCAL_DEV_ROOT_PATH" | tail -1)
+  LABEL=$(lsblk -no label "$LOCAL_DEV_ROOT_PATH")
+  UUID=$(lsblk -no uuid "$LOCAL_DEV_ROOT_PATH")
   debug 'DEBUG' "LABEL=$LABEL | UUID=$UUID"
 
   # Convert to f2fs
@@ -1803,10 +1804,11 @@ EOF
   debug 'DEBUG' "Creating expansion script ${TMP_DIR}/expand-fs.sh"
   cat << EOF2 > "${TMP_DIR}/expand-fs.sh"
 #!/usr/bin/bash
-LOCAL_DEV_PTUUID=\$(lsblk -lpo mountpoint,ptuuid | grep ' / ' | awk '{print \$2}')
-LOCAL_DEV_PATH=\$(lsblk -lpo ptuuid,type,path | grep "\$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print \$3}')
+LOCAL_DEV_PTUUID=\$(lsblk -no mountpoint,ptuuid | grep '/ ' | awk '{print \$2}')
+LOCAL_DEV_PATH=\$(lsblk -no ptuuid,type,path | grep "\$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print \$3}')
 LOCAL_ROOT_PARTN=\$(parted -sm "\$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
-LOCAL_DEV_ROOT_PATH=\$(lsblk -lpo mountpoint,path | grep ' / ' | awk '{print \$2}')
+#LOCAL_DEV_ROOT_PATH=\$(lsblk -no mountpoint,path | grep '/ ' | awk '{print \$2}')
+LOCAL_DEV_ROOT_PATH=\$(mount | grep ' / ' | awk '{print \$1}')
 LOCAL_ROOT_START=\$(fdisk -lo start "\$LOCAL_DEV_PATH" | tail -1 | awk '{print \$1}') # blocks, 512B block size
 LOCAL_ROOT_START=\$(( LOCAL_ROOT_START * 512 )) # bytes
 
@@ -1862,10 +1864,11 @@ EOF
   debug 'DEBUG' 'Creating expansion script ${TMP_DIR}/expand-fs.sh'
   cat << EOF2 > "${TMP_DIR}/expand-fs.sh"
 #!/usr/bin/bash
-LOCAL_DEV_PTUUID=\$(lsblk -lpo mountpoint,ptuuid | grep ' / ' | awk '{print \$2}')
-LOCAL_DEV_PATH=\$(lsblk -lpo ptuuid,type,path | grep "\$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print \$3}')
+LOCAL_DEV_PTUUID=\$(lsblk -no mountpoint,ptuuid | grep '/ ' | awk '{print \$2}')
+LOCAL_DEV_PATH=\$(lsblk -no ptuuid,type,path | grep "\$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print \$3}')
 LOCAL_ROOT_PARTN=\$(parted -sm "\$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
-LOCAL_DEV_ROOT_PATH=\$(lsblk -lpo mountpoint,path | grep ' / ' | awk '{print \$2}')
+#LOCAL_DEV_ROOT_PATH=\$(lsblk -no mountpoint,path | grep '/ ' | awk '{print \$2}')
+LOCAL_DEV_ROOT_PATH=\$(mount | grep ' / ' | awk '{print \$1}')
 LOCAL_ROOT_START=\$(fdisk -lo start "\$LOCAL_DEV_PATH" | tail -1 | awk '{print \$1}') # blocks, 512B block size
 LOCAL_ROOT_START=\$(( LOCAL_ROOT_START * 512 )) # bytes
 
@@ -2025,16 +2028,15 @@ fi
 echo -e "${White}## ${IWhite}Scanning filesystem and calculating..."
 
 # Check what filesystem root is using and set LOCAL_DEV_PATH & PARTITION_TABLE
-#FSTYPE=$(lsblk -lo mountpoint,fstype | grep ' / ' | awk '{print $2}')
 FSTYPE="$(mount | grep ' / ' | awk '{print $5}')"
 debug 'INFO' "$FSTYPE root filesystem detected"
 debug 'DEBUG' "FSTYPE=$FSTYPE"
 if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
-  LOCAL_DEV_PTUUID=$(lsblk -lpo mountpoint,ptuuid | grep ' / ' | awk '{print $2}')
+  LOCAL_DEV_PTUUID=$(lsblk -no mountpoint,ptuuid | grep '/ ' | awk '{print $2}')
 else
-  LOCAL_DEV_PTUUID=$(lsblk -lpo fsroots,ptuuid | grep ' / ' | awk '{print $2}')
+  LOCAL_DEV_PTUUID=$(lsblk -no fsroots,ptuuid | grep '/ ' | awk '{print $2}')
 fi
-LOCAL_DEV_PATH=$(lsblk -lpo ptuuid,type,path | grep "$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print $3}')
+LOCAL_DEV_PATH=$(lsblk -no ptuuid,type,path | grep "$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print $3}')
 debug 'DEBUG' "LOCAL_DEV_PTUUID=$LOCAL_DEV_PTUUID | LOCAL_DEV_PATH=$LOCAL_DEV_PATH"
 PARTITION_TABLE=$(parted "$LOCAL_DEV_PATH" print | grep -i 'Partition Table' | awk '{print $3}')
 #PARTITION_TABLE=$(blkid "$LOCAL_DEV_PATH" | sed -n 's|^.*PTTYPE="\(\S\+\)".*|\1|p')
