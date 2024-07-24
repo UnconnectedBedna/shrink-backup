@@ -17,7 +17,7 @@ readonly TMP_DIR=$(mktemp -d)
 readonly INSTALLATION_DIR="/usr/local/sbin"
 
 pwd=$PWD
-trap "{ cd $PWD; rmdir $TMP_DIR &>/dev/null; }" SIGINT SIGTERM EXIT
+trap "{ cd $pwd; rmdir $TMP_DIR &>/dev/null; }" SIGINT SIGTERM EXIT
 cd $TMP_DIR
 
 echo "Installing $PACKAGE ..."
