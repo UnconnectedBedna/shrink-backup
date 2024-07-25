@@ -510,6 +510,12 @@ function get_img_variables() {
         done
       fi
 
+      if ! [ -e "$IMG_DEV_BOOT_PATH" ] || ! [ -e "$IMG_DEV_ROOT_PATH" ]; then
+        echo -e "${Red}!! LOOP PATHS CAN NOT BE SET!!!"
+        debug 'ERROR' 'LOOP PATHS CAN NOT BE SET'
+        exit 1
+      fi
+
     # btrfs (old method)
     else
       IMG_DEV_BOOT_PATH="${LOOP}p1"
@@ -2026,6 +2032,13 @@ if [ "$LOOPRUN" = true ]; then
 fi
 
 echo -e "${White}## ${IWhite}Scanning filesystem and calculating..."
+
+# Make sure boot is mounted if it exists in fstab
+if grep -q 'boot' /etc/fstab && ! mount | grep -q 'boot'; then
+  echo '!! Boot found in fstab but partition not mounted, please mount and retry script...'
+  debug 'ERROR' 'Boot found in fstab but partition not mounted, exit 3'
+  exit 3
+fi
 
 # Check what filesystem root is using and set LOCAL_DEV_PATH & PARTITION_TABLE
 FSTYPE="$(mount | grep ' / ' | awk '{print $5}')"
