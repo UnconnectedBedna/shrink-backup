@@ -2035,7 +2035,7 @@ echo -e "${White}## ${IWhite}Scanning filesystem and calculating..."
 
 # Make sure boot is mounted if it exists in fstab
 if grep -q 'boot' /etc/fstab && ! mount | grep -q 'boot'; then
-  echo -e "${Red}'!! Boot found in fstab but partition not mounted, please mount and retry script!!!'
+  echo -e "${Red}!! Boot found in fstab but partition not mounted, please mount and retry script!!!"
   debug 'ERROR' 'Boot found in fstab but partition not mounted, exit 3'
   exit 3
 fi
