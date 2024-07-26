@@ -720,8 +720,8 @@ function do_mount() {
   # Mount boot partition if exists
   if [ -n "$BOOT_PATH" ]; then
     if ! mount | grep -q 'boot'; then
-      echo -e "${Red}!! BOOT PARTITION NOT MOUNTED ON SYSTEM, PLEASE MOUNT BOOT PARTITION AND RE-RUN THE SCRIPT!!!"
-      debug 'ERROR' 'BOOT PARTITION NOT MOUNTED ON SYSTEM, PLEASE MOUNT BOOT PARTITION AND RE-RUN THE SCRIPT!!!'
+      echo -e "${Red}!! Boot found in fstab but partition not mounted, please mount and retry script!!!"
+      debug 'ERROR' 'Boot found in fstab but partition not mounted, exit 1'
       exit 1
     fi
     echo -e "${White}## ${IWhite}Mounting img boot partition..."
@@ -2035,7 +2035,7 @@ echo -e "${White}## ${IWhite}Scanning filesystem and calculating..."
 
 # Make sure boot is mounted if it exists in fstab
 if grep -q 'boot' /etc/fstab && ! mount | grep -q 'boot'; then
-  echo '!! Boot found in fstab but partition not mounted, please mount and retry script...'
+  echo -e "${Red}'!! Boot found in fstab but partition not mounted, please mount and retry script!!!'
   debug 'ERROR' 'Boot found in fstab but partition not mounted, exit 3'
   exit 3
 fi
