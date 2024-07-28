@@ -129,7 +129,13 @@ EXCLUDE_FILE=false
 AUTOEXPAND=true
 AUTORESIZE_RUN=false
 UPDATE=false
-LOG_FILE="$(dirname $0)/shrink-backup.log"
+if $INSTALL_METHOD='curl'; then
+  LOG_FILE='/var/log/shrink-backup.log'
+  EXCLUDE_FILE_LOCATION='/usr/local/etc/shrink-backup.conf'
+else
+  LOG_FILE="$(dirname $0)/shrink-backup.log"
+  EXCLUDE_FILE_LOCATION="$(dirname $0)/shrink-backup.conf"
+fi
 AUTORESIZE_WARNING=false
 ZOOM=false
 LOOPRUN=false
@@ -138,7 +144,6 @@ F2FS=false
 #STARTLINE="$0 $*" # will produce double // if script is in $PATH
 STARTLINE="$(dirname $0)/$(basename $0) $*" # will produce absolute path if script is in $PATH
 #STARTLINE="$(realpath $0) $*" # same as bove, but will ALWYAS produce absolute path
-#x=0
 COLS=85
 BREAK="$(printf "%${COLS}s" | tr " " "#")"
 
@@ -464,7 +469,8 @@ function get_btrfs_variables() {
   if [ "$EXCLUDE_FILE" = true ]; then
     debug 'INFO' 'Filtering out volumes from exclude.txt'
     for ((i = 0; i < ${#LOCAL_SUBVOLUMES[@]}; i++)); do
-      if $(echo "/${LOCAL_SUBVOLUMES[i]}" | grep -q -f "$(dirname $0)/exclude.txt"); then
+      #if $(echo "/${LOCAL_SUBVOLUMES[i]}" | grep -q -f "$(dirname $0)/exclude.txt"); then
+      if $(echo "/${LOCAL_SUBVOLUMES[i]}" | grep -q -f "$EXCLUDE_FILE_LOCATION"); then
         debug 'DEBUG' "Filtering out subvolume: ${LOCAL_SUBVOLUMES[i]}"
         unset LOCAL_SUBVOLUMES["$i"]
       fi
@@ -971,8 +977,10 @@ function do_rsync() {
   debug 'DEBUG' "tmp_file=$tmp_file"
 
   if [ "$EXCLUDE_FILE" = true ]; then
-    debug 'DEBUG' "Running: rsync -ahvHAX --exclude-from=$(dirname $0)/exclude.txt --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / $TMP_DIR"
-    rsync -ahvHAX --exclude-from=$(dirname "$0")/exclude.txt --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee "$TTY_AVAILABILITY"  > "$tmp_file"
+    #debug 'DEBUG' "Running: rsync -ahvHAX --exclude-from=$(dirname $0)/exclude.txt --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / $TMP_DIR"
+    debug 'DEBUG' "Running: rsync -ahvHAX --exclude-from="$EXCLUDE_FILE_LOCATION" --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / $TMP_DIR"
+    #rsync -ahvHAX --exclude-from=$(dirname "$0")/exclude.txt --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee "$TTY_AVAILABILITY"  > "$tmp_file"
+    rsync -ahvHAX --exclude-from="$EXCLUDE_FILE_LOCATION" --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee "$TTY_AVAILABILITY"  > "$tmp_file"
     # Get the exit status of rsync from PIPESTATUS
     if [ "${PIPESTATUS[0]}" -ne 0 ] && [ "${PIPESTATUS[0]}" -ne 23 ]; then # code 23 = rsync warning: some files vanished before they could be transferred (code 24) at main.c
       output=$(tail -16 "$tmp_file")
@@ -2098,14 +2106,22 @@ if [ "$DEBUG" = true ]; then
 fi
 
 # Check if usage of exclude.txt is requested
+# if [ "$EXCLUDE_FILE" = true ]; then
+#   debug 'INFO' "-f selected by user, using $(dirname $0)/exclude.txt"
+#   if ! [ -f $(dirname "$0")/exclude.txt ]; then
+#     echo -e "${Red}!! ERROR! ${Green}-f selected but exclude.txt ${Yellow}is not present in script directory!"
+#     debug 'ERROR' 'exclude.txt does not exist in script directory, exit 3'
+#     exit 3
+#   fi
+#   debug 'DEBUG' "$(dirname $0)/exclude.txt exists"
 if [ "$EXCLUDE_FILE" = true ]; then
-  debug 'INFO' "-f selected by user, using $(dirname $0)/exclude.txt"
-  if ! [ -f $(dirname "$0")/exclude.txt ]; then
-    echo -e "${Red}!! ERROR! ${Green}-f selected but exclude.txt ${Yellow}is not present in script directory!"
-    debug 'ERROR' 'exclude.txt does not exist in script directory, exit 3'
+  debug 'INFO' "-f selected by user, using $EXCLUDE_FILE_LOCATION"
+  if ! [ -f "$EXCLUDE_FILE_LOCATION" ]; then
+    echo -e "${Red}!! ERROR! ${Green}-f selected but shrink-backup.conf ${Yellow}does not exist!"
+    debug 'ERROR' 'shrink-backup.conf does not exist, exit 3'
     exit 3
   fi
-  debug 'DEBUG' "$(dirname $0)/exclude.txt exists"
+  debug 'DEBUG' "$EXCLUDE_FILE_LOCATION exists"
 else
   debug 'INFO' '-f NOT selected by user, using default exclude directories'
 fi
