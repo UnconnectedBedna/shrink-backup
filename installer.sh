@@ -11,12 +11,13 @@ set -uo pipefail
 readonly REPOSITORY="framps"
 readonly PACKAGE_FILE="shrink-backup"
 readonly LICENSE_FILE="LICENSE"
+readonly README_FILE="README.md"
 readonly DIR_LICENSE="/usr/share/doc/$PACKAGE_FILE"
 readonly DIR_EXE="/usr/local/sbin"
 readonly DIR_ETC="/usr/local/etc"
 readonly DOWNLOAD_REPOSITORY="https://raw.githubusercontent.com/$REPOSITORY/$PACKAGE_FILE/install"
-readonly FILES_2_DOWNLOAD=("$PACKAGE_FILE" "${PACKAGE_FILE}.conf" "$LICENSE_FILE")
-readonly FILES_2_STORE=("$DIR_EXE" "$DIR_ETC" "$DIR_LICENSE")
+readonly FILES_2_DOWNLOAD=("$PACKAGE_FILE" "${PACKAGE_FILE}.conf" "$LICENSE_FILE" "$README_FILE")
+readonly FILES_2_STORE=("$DIR_EXE" "$DIR_ETC" "$DIR_LICENSE" "$DIR_LICENSE")
 readonly TMP_DIR=$(mktemp -d)
 
 function cleanup() {
@@ -61,9 +62,11 @@ for (( i=0; i<${#FILES_2_DOWNLOAD[@]}; i++ )); do
 		(( $? )) && { echo "chmod of $sourceFile failed"; exit 1; }
 		sed --follow-symlinks -i -E "s/^(INSTALL_METHOD)=.+$/\1=\'curl\'/" "$sourceFile"
 		(( $? )) && { echo "sed of $sourceFile failed"; exit 1; }
-	elif [[ "$sourceFile" == "$LICENSE_FILE" ]]; then # create LICENSE directory
+	elif [[ ! -d "$DIR_LICENSE" ]] && [[ "$sourceFile" == "$LICENSE_FILE" || "$sourceFile" == "$README_FILE" ]] ; then # create LICENSE directory
 		sudo mkdir -p "$DIR_LICENSE"
 		(( $? )) && { echo "mkdir of $DIR_LICENSE failed"; exit 1; }
+		sudo chown root:root "${DIR_LICENSE}/.."
+		(( $? )) && { echo "chown of ${DIR_LICENSE}/.. failed"; exit 1; }
 	fi
 	sudo mv "${sourceFile}" "${targetDir}"
 	(( $? )) && { echo "mv of $sourceFile failed"; exit 1; }
