@@ -12,6 +12,8 @@
 #    LICENSE file in the root directory of this source tree.
 ##############################################################################
 
+INSTALL_METHOD=
+
 # Function to clean up resources on script exit or termination
 function cleanup() {
   # exit 0 = cleanup after script
