@@ -14,8 +14,8 @@ readonly PACKAGE="shrink-backup"
 readonly DIR_EXE="/usr/local/sbin"
 readonly DIR_ETC="/usr/local/etc"
 readonly DOWNLOAD_REPOSITORY="https://raw.githubusercontent.com/framps/$PACKAGE/install"
-readonly FILES_2_DOWNLOAD"$PACKAGE ${PACKAGE}.conf"
-readonly FILES_2_STORE="$DIR_EXE $DIR_ETC"
+readonly FILES_2_DOWNLOAD=("$PACKAGE" "${PACKAGE}.conf")
+readonly FILES_2_STORE=("$DIR_EXE" "$DIR_ETC")
 readonly TMP_DIR=$(mktemp -d)
 
 pwd=$PWD
@@ -24,17 +24,19 @@ cd $TMP_DIR
 
 echo "Installing $PACKAGE ..."
 
-for (( i=0; i<${#FILES_2_DOWNLOAD[@]}; i++) ); do
+for (( i=0; i<${#FILES_2_DOWNLOAD[@]}; i++ )); do
 
 	sourceFile=${FILES_2_DOWNLOAD[$i]}
 	targetDir=${FILES_2_STORE[$i]}
 
-	echo -n "Downloading $file from $DOWNLOAD_REPOSITORY/$sourceFile ... "
+	echo -n "Downloading $sourceFile from $DOWNLOAD_REPOSITORY/$sourceFile ... "
 	http_code=$(curl -w "%{http_code}" -L -s $DOWNLOAD_REPOSITORY/$sourceFile -o $sourceFile)
 	(( $? )) && { echo "Curl failed"; exit 1; }
 	[[ $http_code != 200 ]] && { echo "http request failed with $http_code"; exit 1; }
 	echo "done"
 	echo -n "Installing $sourceFile into $targetDir ... "
+	sudo chmod +x $file
+	(( $? )) && { echo "chmod failed"; exit 1; }
 	sudo mv $sourceFile $targetDir
 	(( $? )) && { echo "mv failed"; exit 1; }
 	echo "done"
