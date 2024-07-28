@@ -26,7 +26,7 @@ function cleanup() {
 	if (( $exitStatus > 0 )); then
 		echo "Installation of $PACKAGE_FILE failed with rc $exitStatus"
 	else
-		echo "$PACKAGE_FILE usccessfully installed"
+		echo "$PACKAGE_FILE successfully installed"
 	fi
 	exit $exitStatus
 }
@@ -59,7 +59,7 @@ for (( i=0; i<${#FILES_2_DOWNLOAD[@]}; i++ )); do
 	if [[ "$sourceFile" == "$PACKAGE_FILE" ]]; then # existing executable bit in github is not reflected by curl
 		sudo chmod +x "$sourceFile"
 		(( $? )) && { echo "chmod of $sourceFile failed"; exit 1; }
-		sed --follow-symlinks -i "s/INSTALL_METHOD=/INSTALL_METHOD=\"curl\"/" "$sourceFile"
+		sed --follow-symlinks -i -E "s/^(INSTALL_METHOD=).+$/\1=\'curl\'/" "$sourceFile"
 		(( $? )) && { echo "sed of $sourceFile failed"; exit 1; }
 	elif [[ "$sourceFile" == "$LICENSE_FILE" ]]; then # create LICENSE directory
 		sudo mkdir -p "$DIR_LICENSE"

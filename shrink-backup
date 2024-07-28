@@ -12,8 +12,6 @@
 #    LICENSE file in the root directory of this source tree.
 ##############################################################################
 
-INSTALL_METHOD=
-
 # Function to clean up resources on script exit or termination
 function cleanup() {
   # exit 0 = cleanup after script
@@ -126,6 +124,7 @@ function pause() {
 #pause 'Press [Enter] key to continue...'
 
 # Set default values for script options
+INSTALL_METHOD='default'
 PROMPTS=true
 DEBUG=false
 EXCLUDE_FILE=false
