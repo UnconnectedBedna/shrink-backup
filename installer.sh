@@ -3,12 +3,12 @@
 # Simple installer for shrink-backup
 #
 # Command to use to install shrink-backup:
-#	   curl https://raw.githubusercontent.com/UnconnectedBedna/shrink-backup/master/install | sudo bash
+#	   curl https://raw.githubusercontent.com/UnconnectedBedna/shrink-backup/main/installer.sh | sudo bash
 #
 
 set -uo pipefail
 
-# Has to be updatedwhen PR is accepted
+# Has to be updated when PR is accepted
 readonly REPOSITORY="framps" # UnconnectedBedna
 readonly BRANCH="install" # testing
 
