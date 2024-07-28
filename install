@@ -10,19 +10,28 @@
 
 set -uo pipefail
 
-readonly PACKAGE="shrink-backup"
+readonly PACKAGE_FILE="shrink-backup"
+readonly LICENSE_FILE="LICENSE"
+readonly DIR_LICENSE="/usr/share/doc/$PACKAGE_FILE"
 readonly DIR_EXE="/usr/local/sbin"
 readonly DIR_ETC="/usr/local/etc"
-readonly DOWNLOAD_REPOSITORY="https://raw.githubusercontent.com/framps/$PACKAGE/install"
-readonly FILES_2_DOWNLOAD=("$PACKAGE" "${PACKAGE}.conf")
-readonly FILES_2_STORE=("$DIR_EXE" "$DIR_ETC")
+readonly DOWNLOAD_REPOSITORY="https://raw.githubusercontent.com/framps/$PACKAGE_FILE/install"
+readonly FILES_2_DOWNLOAD=("$PACKAGE_FILE" "${PACKAGE_FILE}.conf" "$LICENSE_FILE")
+readonly FILES_2_STORE=("$DIR_EXE" "$DIR_ETC" "$DIR_LICENSE")
 readonly TMP_DIR=$(mktemp -d)
 
+function cleanup() {
+	local exitStatus=$?
+	cd $pwd
+	rmdir $TMP_DIR &>/dev/null
+	exit $exitStatus
+}
+
 pwd=$PWD
-trap "{ cd $pwd; rmdir $TMP_DIR &>/dev/null; }" SIGINT SIGTERM EXIT
+trap "cleanup" SIGINT SIGTERM EXIT
 cd $TMP_DIR
 
-echo "Installing $PACKAGE ..."
+echo "Installing $PACKAGE_FILE ..."
 
 for (( i=0; i<${#FILES_2_DOWNLOAD[@]}; i++ )); do
 
@@ -35,12 +44,18 @@ for (( i=0; i<${#FILES_2_DOWNLOAD[@]}; i++ )); do
 	[[ $http_code != 200 ]] && { echo "http request failed with $http_code"; exit 1; }
 	echo "done"
 	echo -n "Installing $sourceFile into $targetDir ... "
-	sudo chmod +x $file
-	(( $? )) && { echo "chmod failed"; exit 1; }
-	sudo mv $sourceFile $targetDir
+	if [[ $sourceFile == $PACKAGE_FILE ]]; then # chmod only executable
+		sudo chmod +x $sourceFile
+		(( $? )) && { echo "chmod failed"; exit 1; }
+	elif [[ $sourceFile == $LICENSE_FILE ]]; then # create LICENSE directory
+		sudo mkdir -p $DIR_LICENSE
+		(( $? )) && { echo "mkdir failed"; exit 1; }
+	fi
+	sudo mv $sourceFile ${targetDir}x
 	(( $? )) && { echo "mv failed"; exit 1; }
 	echo "done"
 
 done
 
-echo "$PACKAGE installed"
+echo "$PACKAGE_FILE installed"
+exit 0
