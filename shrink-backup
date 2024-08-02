@@ -1171,7 +1171,7 @@ function make_img() {
   $SLEEPING
 
   # Loop img file
-  debug 'DEBUG' 'Running function: do_loop'
+  debug 'INFO' 'Running function: do_loop'
   do_loop
 
   # set img variables
@@ -1554,7 +1554,7 @@ function make_img() {
 
   # Final check of created img file
   if [ "$FSTYPE" == 'ext4' ] && [ "$F2FS" = false ]; then
-    debug 'INFO' "Running do_e2fsck 'final'"
+    debug 'INFO' "Running function: do_e2fsck 'final'"
     do_e2fsck 'final'
   fi
 
