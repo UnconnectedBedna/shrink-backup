@@ -391,7 +391,8 @@ function get_dev_variables() {
   # Set automated calculated size (get_btrfs_variables if btrfs filesystem)
   if [ "$AUTORESIZE_RUN" = true ] || [ "$UPDATE" = false ] || [ "$FSTYPE" == 'btrfs' ]; then
     debug 'INFO' 'Calculating recommended root size'
-    BLOCKSIZE=$(stat -f / | grep -i 'Block size' | awk '{print $3}') # bytes
+    #BLOCKSIZE=$(stat -f / | grep -i 'Block size' | awk '{print $3}') # bytes
+    BLOCKSIZE=$(stat -fc %s /) # bytes, so it works with other localisations
     debug 'DEBUG' "BLOCKSIZE=${BLOCKSIZE} bytes"
     if [ "$FSTYPE" == 'ext4' ]; then
       debug 'INFO' 'ext4 filesystem detected, using resize2fs to set recommended root size'
