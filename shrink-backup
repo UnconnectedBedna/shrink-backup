@@ -2059,7 +2059,7 @@ if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
 else
   LOCAL_DEV_PTUUID=$(lsblk -no fsroots,ptuuid | grep '/ ' | awk '{print $2}')
 fi
-LOCAL_DEV_PATH=$(lsblk -no ptuuid,type,path | grep "$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print $3}')
+LOCAL_DEV_PATH=$(lsblk -no ptuuid,type,path | grep "$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print $3}' | head -1)
 debug 'DEBUG' "LOCAL_DEV_PTUUID=$LOCAL_DEV_PTUUID | LOCAL_DEV_PATH=$LOCAL_DEV_PATH"
 PARTITION_TABLE=$(parted "$LOCAL_DEV_PATH" print | grep -i 'Partition Table' | awk '{print $3}')
 #PARTITION_TABLE=$(blkid "$LOCAL_DEV_PATH" | sed -n 's|^.*PTTYPE="\(\S\+\)".*|\1|p')
