@@ -129,7 +129,7 @@ EXCLUDE_FILE=false
 AUTOEXPAND=true
 AUTORESIZE_RUN=false
 UPDATE=false
-if [ $INSTALL_METHOD='curl' ]; then
+if [ $INSTALL_METHOD = 'curl' ]; then
   LOG_FILE='/var/log/shrink-backup.log'
   EXCLUDE_FILE_LOCATION='/usr/local/etc/shrink-backup.conf'
 else
