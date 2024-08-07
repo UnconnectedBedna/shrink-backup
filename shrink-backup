@@ -134,7 +134,7 @@ if [ "$INSTALL_METHOD" = 'curl' ]; then
   EXCLUDE_FILE_LOCATION='/usr/local/etc/shrink-backup.conf'
 else
   LOG_FILE="$(dirname $0)/shrink-backup.log"
-  EXCLUDE_FILE_LOCATION="$(dirname $0)/shrink-backup.conf"
+  EXCLUDE_FILE_LOCATION="$(dirname $0)/exclude.txt"
 fi
 AUTORESIZE_WARNING=false
 ZOOM=false
