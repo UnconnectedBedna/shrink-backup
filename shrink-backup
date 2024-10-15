@@ -117,7 +117,6 @@ trap "exit 10" SIGINT
 function pause() {
   read -p "$*"
 }
-
 # Uncomment the following line to enable the pause function
 #pause 'Press [Enter] key to continue...'
 
@@ -269,7 +268,7 @@ do
 done
 
 # Check if script is run as root
-if [ "$EUID" != 0 ]; then
+if [ "$EUID" -ne 0 ]; then
   echo -e "${Red}!! THIS SCRIPT MUST BE RUN AS ROOT! (WITH SUDO)"
   help
 fi
@@ -628,6 +627,22 @@ function set_img_variables() {
     #pause 'Press [Enter] key to continue...'
     IMG_DEV_ROOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
     debug 'DEBUG' "IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
+    # 2s sleep is sometimes not enough, might have to do with slow network if img file is on a network share
+    if ! [ -e "$IMG_DEV_ROOT_PATH" ]; then
+      for (( i=1; i<=3; i++ )); do
+        echo -e "${Yellow}!! ${Yellow}LOOP paths can not be set, retrying in 5 seconds..."
+        debug 'WARNING' 'LOOP paths can not be set, retrying in 5 seconds'
+        debug 'WARNING' "IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
+        sleep 5
+        IMG_DEV_ROOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
+        if [ -e "$IMG_DEV_ROOT_PATH" ]; then
+          echo -e "${White}## ${Green}LOOP paths found, resuming backup..."
+          debug 'INFO' "LOOP paths found, resuming backup"
+          debug 'DEBUG' "IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
+          break
+        fi
+      done
+    fi
   fi
 return 0
 }
