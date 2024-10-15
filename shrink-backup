@@ -643,6 +643,12 @@ function set_img_variables() {
         fi
       done
     fi
+    
+    if ! [ -e "$IMG_DEV_ROOT_PATH" ]; then
+      echo -e "${Red}!! LOOP PATHS CAN NOT BE SET!!!"
+      debug 'ERROR' 'LOOP PATHS CAN NOT BE SET'
+      exit 1
+    fi
   fi
 return 0
 }
