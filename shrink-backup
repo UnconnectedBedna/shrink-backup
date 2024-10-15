@@ -329,6 +329,7 @@ function looprun() {
   done
   echo -e "${Purple}##############################################################################"
   echo -e "${White}## ${Green}Done."
+  echo -e "${White}## ${IWhite}To remove loop type: ${Green}sudo losetup -d ${LOOP}"
 
   debug 'DEBUG' 'Exiting script, exit 2'
   if [ "$DEBUG" = true ]; then
@@ -384,7 +385,7 @@ function get_dev_variables() {
     LOCAL_ROOT_START=$(( LOCAL_ROOT_START * 512 )) # bytes
     LOCAL_BOOTSECTOR=$(( LOCAL_BOOTSECTOR * 512 )) # bytes
     LOCAL_DDBOOTSECTOR=$(( (LOCAL_BOOTSECTOR + 5242880) / 512 )) # 512B blocks, 5242880 = 5MiB in bytes
-    debug 'DEBUG' "LOCAL_ROOT_START=$LOCAL_ROOT_START bytes | LOCAL_BOOTSECTOR=$LOCAL_BOOTSECTOR bytes | LOCAL_DDBOOTSECTOR=$LOCAL_DDBOOTSECTOR 4k blocks"
+    debug 'DEBUG' "LOCAL_ROOT_START=$LOCAL_ROOT_START bytes | LOCAL_BOOTSECTOR=$LOCAL_BOOTSECTOR bytes | LOCAL_DDBOOTSECTOR=$LOCAL_DDBOOTSECTOR 512B blocks"
   #fi
 
   # Set automated calculated size (get_btrfs_variables if btrfs filesystem)
@@ -583,7 +584,6 @@ function set_img_variables() {
 
     # ext4 & f2fs
     if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
-      # I have no idea why, but if I do not put this sleep here, IMG_DEV_BOOT_PATH does not get set
       sleep 2
       IMG_DEV_BOOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
       IMG_DEV_ROOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
@@ -622,9 +622,7 @@ function set_img_variables() {
   # No boot partition exists
   else
     debug 'INFO' 'No boot partition detected'
-    # I have no idea why, but if I do not put this sleep here, IMG_DEV_ROOT_PATH does not get set
     sleep 2
-    #pause 'Press [Enter] key to continue...'
     IMG_DEV_ROOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
     debug 'DEBUG' "IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
     # 2s sleep is sometimes not enough, might have to do with slow network if img file is on a network share
@@ -643,7 +641,7 @@ function set_img_variables() {
         fi
       done
     fi
-    
+
     if ! [ -e "$IMG_DEV_ROOT_PATH" ]; then
       echo -e "${Red}!! LOOP PATHS CAN NOT BE SET!!!"
       debug 'ERROR' 'LOOP PATHS CAN NOT BE SET'
