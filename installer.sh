@@ -16,7 +16,7 @@ fi
 set -uo pipefail
 
 readonly REPOSITORY="UnconnectedBedna"
-readonly BRANCH="testing" # change to install after testing and creation of fork
+readonly BRANCH="testing" # change to install after testing and creation of branch
 
 readonly PACKAGE_FILE="shrink-backup"
 readonly EXCLUDE_FILE="exclude.txt"
@@ -38,7 +38,7 @@ function cleanup() {
     echo "Installation of $PACKAGE_FILE failed with rc $exitStatus"
   else
     echo "$PACKAGE_FILE successfully installed"
-    echo 'Script location: /usr/local/bin/shrink-backup'
+    echo 'Script location: /usr/local/sbin/shrink-backup'
     echo 'Exclude file locattion: /usr/local/etc/shrink-backup.conf'
     echo 'README location: /usr/share/doc/shrink-backup/README.md'
     echo 'LICENSE location: /usr/share/doc/shrink-backup/LICENSE'
