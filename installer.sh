@@ -38,6 +38,12 @@ function cleanup() {
     echo "Installation of $PACKAGE_FILE failed with rc $exitStatus"
   else
     echo "$PACKAGE_FILE successfully installed"
+    echo 'Script location: /usr/local/bin/shrink-backup'
+    echo 'Exclude file locattion: /usr/local/etc/shrink-backup.conf'
+    echo 'README location: /usr/share/doc/shrink-backup/README.md'
+    echo 'LICENSE location: /usr/share/doc/shrink-backup/LICENSE'
+    echo 'For help: shrink-backup --help'
+    echo 'Thank you for using shrink-backup'
   fi
   exit $exitStatus
 }
@@ -88,8 +94,10 @@ for (( i=0; i<${#FILES_2_DOWNLOAD[@]}; i++ )); do
 done
 
 # Renaming exclude.txt to shrink-backup.conf since it is now located in /usr/local/etc
+echo 'Renaming exclude.txt to shrink-backup.conf...'
 if [ -f ${DIR_ETC}/shrink-backup.conf ]; then
-  echo "${DIR_ETC}/shrink-backup.conf already exists"
+  echo 'WARNING!'
+  echo "${DIR_ETC}/shrink-backup.conf already exists!"
   while true; do
     read -n 1 -r -p '!! Do you want to overwrite? [y/n] ' input < /dev/tty
     case $input in
