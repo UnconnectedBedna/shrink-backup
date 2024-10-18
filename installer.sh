@@ -16,7 +16,7 @@ fi
 set -uo pipefail
 
 readonly REPOSITORY="UnconnectedBedna"
-readonly BRANCH="testing" # change to install after testing and creation of branch
+readonly BRANCH="main"
 
 readonly PACKAGE_FILE="shrink-backup"
 readonly EXCLUDE_FILE="exclude.txt"
