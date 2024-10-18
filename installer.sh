@@ -9,7 +9,7 @@
 
 # Check if script is run as root
 if [ "$EUID" -ne 0 ]; then
-  echo 'THIS SCRIPT MUST BE RUN AS ROOT! (WITH SUDO)'
+  echo 'THIS INSTALLER MUST BE RUN AS ROOT! (WITH SUDO)'
   exit
 fi
 
@@ -38,12 +38,13 @@ function cleanup() {
     echo "Installation of $PACKAGE_FILE failed with rc $exitStatus"
   else
     echo "$PACKAGE_FILE successfully installed"
+    echo '---------------------------------------------------------'
     echo 'Script location: /usr/local/sbin/shrink-backup'
     echo 'Exclude file locattion: /usr/local/etc/shrink-backup.conf'
     echo 'README location: /usr/share/doc/shrink-backup/README.md'
     echo 'LICENSE location: /usr/share/doc/shrink-backup/LICENSE'
     echo 'For help: shrink-backup --help'
-    echo 'Thank you for using shrink-backup'
+    echo 'Thank you for using shrink-backup!'
   fi
   exit $exitStatus
 }
@@ -66,13 +67,6 @@ for (( i=0; i<${#FILES_2_DOWNLOAD[@]}; i++ )); do
   [[ $http_code != 200 ]] && { echo "http request failed with $http_code"; exit 1; }
 
   echo "Installing $sourceFile into ${targetDir}..."
-  # we run bash as root, chown should not be needed
-  #chown root:root "${sourceFile}"
-  #(( $? )) && { echo "chown of $sourceFile failed"; exit 1; }
-
-  # I dont think all files should be 755
-  #chmod 755 "${sourceFile}"
-  #(( $? )) && { echo "chmod of $sourceFile failed"; exit 1; }
 
   # Existing execution bit in github is not reflected by curl
   if [[ "$sourceFile" == "$PACKAGE_FILE" ]]; then
@@ -84,9 +78,6 @@ for (( i=0; i<${#FILES_2_DOWNLOAD[@]}; i++ )); do
   elif [[ ! -d "$DIR_DOC" ]] && [[ "$sourceFile" == "$LICENSE_FILE" || "$sourceFile" == "$README_FILE" ]] ; then
     mkdir -p "$DIR_DOC"
     (( $? )) && { echo "mkdir of $DIR_DOC failed"; exit 1; }
-    # Again, we are running bash as sudo...
-    #chown root:root "${DIR_DOC}/.."
-    #(( $? )) && { echo "chown of ${DIR_SOC}/.. failed"; exit 1; }
   fi
   mv "$sourceFile" "$targetDir"
   (( $? )) && { echo "mv of $sourceFile failed"; exit 1; }
