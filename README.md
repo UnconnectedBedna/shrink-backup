@@ -167,7 +167,7 @@ The script will **ONLY** look at your `root` partition when calculating sizes.
 **Not excluding other mounts will copy that data to the img `root` partition, not create more partitions,** so make sure to **_manually add_ `[extra space]`** if you do this.  
 Experimental [`btrfs`](#btrfs) is an exception to this, all subvolumes will be created.
 
-See [[#`--loop` (Loop img file)|--loop]] for how to manually include more partitions in the img.
+See [--loop](#--loop-loop-img-file) for how to manually include more partitions in the img.
 <br>
 <br>
 
