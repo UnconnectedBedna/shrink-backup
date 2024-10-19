@@ -43,6 +43,7 @@ function cleanup() {
     echo -e 'Exclude file locattion: /usr/local/etc/shrink-backup.conf'
     echo -e 'README location:        /usr/share/doc/shrink-backup/README.md'
     echo -e 'LICENSE location:       /usr/share/doc/shrink-backup/LICENSE'
+    echo -e 'Log location:           /var/log/shrink-backup.log'
     echo 'For help: shrink-backup --help'
     echo 'Thank you for using shrink-backup!'
   fi
