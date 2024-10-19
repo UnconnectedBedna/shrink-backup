@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # shrink-backup
-# version 1.2-beta
-# backup tool for backing up and updating .img files with autoexpansion on various operating systems
+# Version 1.2
+# Backup tool for creating and updating .img files (with autoexpansion function) on various linux operating systems
 #
 #    Copyright (c) 2024, Marcus Johansson
 #    https://github.com/UnconnectedBedna/shrink-backup
@@ -168,7 +168,7 @@ fi
 version() {
   echo -e "${Purple}#########################################################################
 #                                                                       #
-# ${Green}shrink-backup version 1.1                                             ${Purple}#
+# ${Green}shrink-backup version 1.2                                             ${Purple}#
 #                                                                       #
 # ${IWhite}Copyright (c) 2024, Marcus Johansson                                  ${Purple}#
 # ${White}https://github.com/UnconnectedBedna/shrink-backup                     ${Purple}#
@@ -344,7 +344,7 @@ exit 2
 # Function to gather device information
 function get_dev_variables() {
 
-  # Run get_btrfs_variables and then exit THIS function
+  # Run get_btrfs_variables and then exit THIS function (added space = 0)
   if [ "$FSTYPE" == 'btrfs' ] && [ "$AUTORESIZE_RUN" = false ] && [ "$ADDED_SPACE" -eq 0 ]; then
     debug 'INFO' 'Running function: get_btrfs_variables'
     get_btrfs_variables
@@ -392,7 +392,6 @@ function get_dev_variables() {
   # Set automated calculated size (get_btrfs_variables if btrfs filesystem)
   if [ "$AUTORESIZE_RUN" = true ] || [ "$UPDATE" = false ] || [ "$FSTYPE" == 'btrfs' ]; then
     debug 'INFO' 'Calculating recommended root size'
-    #BLOCKSIZE=$(stat -f / | grep -i 'Block size' | awk '{print $3}') # bytes
     BLOCKSIZE=$(stat -fc %s /) # bytes, so it works with other localisations
     debug 'DEBUG' "BLOCKSIZE=${BLOCKSIZE} bytes"
     if [ "$FSTYPE" == 'ext4' ]; then
@@ -487,8 +486,8 @@ return 0
 # Function to gather image information
 function get_img_variables() {
 
-  debug 'DEBUG' "Running: ls -l $IMG_FILE | awk '{print \$5}'"
-  IMG_SIZE=$(ls -l "$IMG_FILE" | awk '{print $5}')
+  debug 'DEBUG' "Running: stat -c %s $IMG_FILE"
+  IMG_SIZE=$(stat -c %s "$IMG_FILE")
   debug 'DEBUG' "IMG_SIZE=$IMG_SIZE bytes"
 
   # Boot partition exists
@@ -496,7 +495,6 @@ function get_img_variables() {
 
     # ext4 & f2fs
     if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
-      # I have no idea why, but if I do not put this sleep here, IMG_DEV_BOOT_PATH does not get set
       sleep 2
       IMG_DEV_BOOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
       IMG_DEV_ROOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
@@ -951,7 +949,7 @@ function do_resize() {
     #debug 'DEBUG' "Running: parted -s -a none $LOOP unit B resizepart $IMG_ROOT_PARTN $TRUNCATE_TOTAL"
     debug 'DEBUG' "Running: printf 'Yes\\\n' | parted -a none $LOOP unit B resizepart $IMG_ROOT_PARTN $TRUNCATE_TOTAL ---pretend-input-tty"
 
-    #if ! output=$(parted -s -a none "$LOOP" unit B resizepart "$IMG_ROOT_PARTN" "$TRUNCATE_TOTAL" 2>&1); then # tested may 2024 and does not work, still asking for user confirmation even though --script is used
+    #if ! output=$(parted -s -a none "$LOOP" unit B resizepart "$IMG_ROOT_PARTN" "$TRUNCATE_TOTAL" 2>&1); then # tested may 2024 and does not work, still asking for user confirmation
     if ! output=$(printf 'Yes\n' | parted -a none "$LOOP" unit B resizepart "$IMG_ROOT_PARTN" "$TRUNCATE_TOTAL" ---pretend-input-tty 2>&1); then
       echo -e "${Yellow}$output\n${Red}!! PARTED FAILED!!!"
       debug 'BREAK'
@@ -998,9 +996,7 @@ function do_rsync() {
   debug 'DEBUG' "tmp_file=$tmp_file"
 
   if [ "$EXCLUDE_FILE" = true ]; then
-    #debug 'DEBUG' "Running: rsync -ahvHAX --exclude-from=$(dirname $0)/exclude.txt --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / $TMP_DIR"
     debug 'DEBUG' "Running: rsync -ahvHAX --exclude-from="$EXCLUDE_FILE_LOCATION" --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / $TMP_DIR"
-    #rsync -ahvHAX --exclude-from=$(dirname "$0")/exclude.txt --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee "$TTY_AVAILABILITY"  > "$tmp_file"
     rsync -ahvHAX --exclude-from="$EXCLUDE_FILE_LOCATION" --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee "$TTY_AVAILABILITY"  > "$tmp_file"
     # Get the exit status of rsync from PIPESTATUS
     if [ "${PIPESTATUS[0]}" -ne 0 ] && [ "${PIPESTATUS[0]}" -ne 23 ]; then # code 23 = rsync warning: some files vanished before they could be transferred (code 24) at main.c
@@ -1207,7 +1203,6 @@ function make_img() {
   if [ $PARTITION_TABLE == 'gpt' ]; then
     echo -e "${White}## ${Green}GPT partition table detected, ${Yellow}sgdisk needed, ${IWhite}checking for application..."
     $SLEEPING
-    #if [[ ! -f $(which sgdisk 2>&1) ]]; then
     if ! command -v sgdisk > /dev/null 2>&1; then
       echo -e "${Yellow}!! sgdisk is NOT installed..."
       debug 'INFO' 'sgdisk not available on system'
@@ -1220,7 +1215,6 @@ function make_img() {
       fi
       echo ''
       debug 'INFO' 'Y or y pressed to confirm'
-      #if [[ -f $(which apt 2>&1) ]]; then
       if command -v apt > /dev/null 2>&1; then
         echo -e "${White}## ${Green}apt found, ${IWhite}trying to install gdisk..."
         read -p "Do you want to use apt to install gdisk? (will upgrade system) [y/n] " -n 1 -r
@@ -1234,7 +1228,6 @@ function make_img() {
         debug 'INFO' 'Y or y pressed to confirm'
         debug 'DEBUG' 'Running: apt update -y && apt upgrade -y && apt install gdisk -y'
         apt update -y && apt upgrade -y && apt install gdisk -y
-      #elif [[ -f $(which pacman 2>&1) ]]; then
       elif command -v pacman > /dev/null 2>&1; then
         echo -e "${White}## ${Green}pacman found, ${IWhite}trying to install gdisk..."
         read -p "Do you want to use pacman to install gptfdisk? (will do -Syu first) [y/n] " -n 1 -r
@@ -1311,7 +1304,7 @@ function make_img() {
       exit 1
     fi
 
-  # ext4 & f2fs on root
+  # ext4 or f2fs on root
   elif [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
     debug 'DEBUG' "Running: parted -s -a none $LOOP unit B mkpart primary $LOCAL_ROOT_START 100%"
     #if ! output=$(parted -s -a none "$LOOP" unit B mkpart primary "$FSTYPE" "$LOCAL_ROOT_START" 100% 2>&1); then
@@ -1346,7 +1339,6 @@ function make_img() {
   if [ "$F2FS" = true ]; then
     echo -e "${White}## ${Green}--f2fs option selected, mkfs.f2fs is needed, ${IWhite}checking if installed..."
     $SLEEPING
-    #if [[ ! -f $(which mkfs.f2fs 2>&1) ]]; then
     if ! command -v mkfs.f2fs > /dev/null 2>&1; then
       echo -e "${Yellow}!! mkfs.f2fs is NOT installed..."
       debug 'INFO' 'mkfs.f2fs (f2fs-tools) not available on system'
@@ -1939,7 +1931,7 @@ return 0
 # Function to print result
 function print_result() {
 
-  declare -i AFTER_SIZE=$(ls -l "$IMG_FILE" | cut -d ' ' -f 5)
+  declare -i AFTER_SIZE=$(stat -c %s "$IMG_FILE")
   AFTER_SIZE=$(( AFTER_SIZE / 1024 / 1024 ))
 
   echo -e "${White}## ${Green}Backup done."
@@ -2138,19 +2130,11 @@ if [ "$DEBUG" = true ]; then
 fi
 
 # Check if usage of exclude.txt is requested
-# if [ "$EXCLUDE_FILE" = true ]; then
-#   debug 'INFO' "-f selected by user, using $(dirname $0)/exclude.txt"
-#   if ! [ -f $(dirname "$0")/exclude.txt ]; then
-#     echo -e "${Red}!! ERROR! ${Green}-f selected but exclude.txt ${Yellow}is not present in script directory!"
-#     debug 'ERROR' 'exclude.txt does not exist in script directory, exit 3'
-#     exit 3
-#   fi
-#   debug 'DEBUG' "$(dirname $0)/exclude.txt exists"
 if [ "$EXCLUDE_FILE" = true ]; then
   debug 'INFO' "-f selected by user, using $EXCLUDE_FILE_LOCATION"
   if ! [ -f "$EXCLUDE_FILE_LOCATION" ]; then
-    echo -e "${Red}!! ERROR! ${Green}-f selected but shrink-backup.conf ${Yellow}does not exist!"
-    debug 'ERROR' 'shrink-backup.conf does not exist, exit 3'
+    echo -e "${Red}!! ERROR! ${Green}-f selected but $EXCLUDE_FILE_LOCATION ${Yellow}does not exist!"
+    debug 'ERROR' "$EXCLUDE_FILE_LOCATION does not exist, exit 3"
     exit 3
   fi
   debug 'DEBUG' "$EXCLUDE_FILE_LOCATION exists"
