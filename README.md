@@ -4,31 +4,35 @@ _I made this script because I wanted a universal method of backing up my SBC:s i
 
 shrink-backup is a very fast utility for backing up your SBC:s into minimal bootable img files for easy restore with autoexpansion at boot.
 
-Autoexpansion tested on **Raspberry Pi** os (bookworm and older), **Armbian**, **Manjaro-arm**, **DietPi** & **ArchLinuxARM** for rpi with `ext4` or [`f2fs`](#f2fs) root partition.<br>
-(Also **experimental** [`btrfs`](#btrfs) functionality, please read further down)<br>
+Supports backing up `root` & `boot` (if existing) partitions. Data from other partitions will be written to `root` if not excluded (exception for [`btrfs`](#btrfs), all existing subvolumes in `/etc/fstab` will be created).  
+Please see [`Info`](#info) section.
+
+Autoexpansion tested on **Raspberry Pi** os (bookworm and older), **Armbian**, **Manjaro-arm**, **DietPi** & **ArchLinuxARM** for rpi with `ext4` or [`f2fs`](#f2fs) root partition.  
+(Also **experimental** [`btrfs`](#btrfs) functionality, please read further down)  
 Full support for usage inside [webmin](https://webmin.com/) (including "custom command" button). Thank you to [iliajie](https://github.com/iliajie) for helping out. ❤️
 
-**Latest release:** [shrink-backup.v1.1](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v1.1/shrink-backup.v1.1.tar.gz)<br>
-[**Testing branch:**](https://github.com/UnconnectedBedna/shrink-backup/tree/testing) If you want to have the absolute latest version. There might be bugs.
+**Latest release:** [shrink-backup.v1.2](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v1.2/shrink-backup.v1.2.tar.gz)  
+[**Testing branch:**](https://github.com/UnconnectedBedna/shrink-backup/tree/testing) If you want to use the absolute latest version. There might be bugs.
 
 **Very fast restore thanks to minimal size of img file.**
 
-**Can back up any device as long as filesystem on root is `ext4`** or **[`f2fs`](#f2fs)** (experimental [`btrfs`](#btrfs))<br>
-Default device that will be backed up is determined by scanning what disk-device `root` resides on.<br>
-This means that **if** `boot` is a partition, that partition must be on the **same device as `root`**.
+**Can back up any device as long as filesystem on root is `ext4`** or **[`f2fs`](#f2fs)** (experimental [`btrfs`](#btrfs))  
+Default device that will be backed up is determined by scanning what disk-device `root` resides on.  
+This means that **if** `boot` is a partition, that partition must be on the **same device and before the `root` partition**.  
+The script considers everything on the device before `root` as the bootsector.
 
 Backing up/restoring, to/from: usb-stick `/dev/sdX` with Raspberry pi os has been tested and works. Ie, writing an sd-card img to a usb-stick and vice versa works.
 
 **Ultra-fast incremental backups to existing img files.** 
 
-See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for a bit more information about usage.<br>
-[Ideas and feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) is always appreciated, whether it's positive or negative. Please just keep it civil. :)<br>
-Or if you find a bug or think something is missing in the script, please file a [Bug report or Feature request](https://github.com/UnconnectedBedna/shrink-backup/issues/new/choose)
+See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for information about installation methods, usage and examples.  
+[Ideas and feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) is always appreciated, whether it's positive or negative. Please just keep it civil. :)  
+If you find a bug or think something is missing in the script, please file a [Bug report or Feature request](https://github.com/UnconnectedBedna/shrink-backup/issues/new/choose)
 
 **Don't forget to ensure the script is executable.**
 
-**To restore a backup, simply "burn" the img file to a device using your favorite method.**<br>
-When booting up a restored image with autoresize active, **please wait until the the reboot sequence has occured.** The login prompt may very well become visible before the autoresize function has rebooted.
+**To restore a backup, simply "burn" the img file to a device using your favorite method.**  
+When booting up a restored image with autoresize active, **please wait until the the reboot sequence has occurred.** The login prompt _may_ very well become visible before the autoresize function has rebooted.
 
 <hr>
 
@@ -78,8 +82,8 @@ sudo shrink-backup -l --loop /path/to/backup.img 1024 (write to log file, expand
 The folder where the img file is created will **ALWAYS be excluded in the backup.**<br>
 If `-t` option is selected, `exclude.txt` **MUST exist** (but can be empty) within the **directory where the script is located** or the script will exit with an error.
 
-Use one directory per line in `exclude.txt`.<br>
-`/directory/*` = create directory but exclude content.<br>
+Use one directory per line in `exclude.txt`.  
+`/directory/*` = create directory but exclude content.  
 `/directory` = exclude the directory completely.
 
 If `-t` is **NOT** selected the following folders will be excluded:
@@ -96,14 +100,14 @@ If `-t` is **NOT** selected the following folders will be excluded:
 ```
 
 #### `-l` (Log file)
-Use `-l` to write debug info into `shrink-backup.log` file located in the same directory as the script.<br>
+Use `-l` to write debug info into `shrink-backup.log` file located in the same directory as the script.  
 Please provide this file if filing a [Bug report](https://github.com/UnconnectedBedna/shrink-backup/issues/new/choose)
 <br>
 <br>
 
 #### `-z` (Zoom speed)
-The `-z` "zoom" option simply removes the one second sleep at each prompt to give the user time to read.<br>
-By using the option, you save 15-25s when running the script.<br>
+The `-z` "zoom" option simply removes the one second sleep at each prompt to give the user time to read.  
+By using the option, you save 15-25s when running the script.  
 When used in combination with `-y` **warnings will also be bypassed! PLEASE use with care!**
 <br>
 <br>
@@ -113,10 +117,10 @@ Add `--fix` to your options if a backup fails during `rsync` with a "broken pipe
 
 **Example:** `sudo shrink-backup -Ua --fix /path/to/backup.img`
 
-The reason it happens is because `rsync` normally deletes files during the backup, not creating a file-list > removing files from img before starting to copy.<br>
+The reason it happens is because `rsync` normally deletes files during the backup, not creating a file-list > removing files from img before starting to copy.  
 So if you have removed and added new data on the system you backup from, there is a risk `rsync` tries to copy the new data before deleting data from the img, hence completely filling the img.
 
-Using `--fix` makes `rsync` create a file-list and delete data **before** starting to transfer new data. This also means the backup takes a little longer.<br>
+Using `--fix` makes `rsync` create a file-list and delete data **before** starting to transfer new data. This also means the backup takes a little longer.  
 Having a "broken pipe" error during backup has in my experience never broken an img backup after either using `--fix` (can be used in combination with `-a`) or adding `[extra space]` while updating the backup with `-U`.
 <br>
 <br>
@@ -126,28 +130,29 @@ Use `--loop` to loop an img file to your `/dev`.
 
 **Example:** `sudo shrink-backup --loop /path/to/backup.img`
 
-If used in combination with `[extra space]` the amount in MiB will be added to the **IMG FILE** NOT any partition.<br>
-With this you can for example run `sudo gparted /dev/loop0` (if you have a graphical interface) to manually manage the img partitions in a graphical interface with `gparted`.<br>
-If you added `[extra space]` this will then show up as unpartitioned space at the end of the device.
+If used in combination with `[extra space]` the amount in MiB will be added to the **IMG FILE** NOT any partition.  
+With this you can for example run `sudo gparted /dev/loop0` (if you have a graphical interface) to manually manage the img partitions in a graphical interface with `gparted`.  
+If you added `[extra space]` this will then show up as unpartitioned space at the end of the device where you can create partition(s) and manually copy data to by mounting the new loop partition that will become visible in `lsblk`.  
+If you do this, don't forget to create or update the img with `-e` (disable autoexpansion) first. Autoexpansion will not work since the space will be occupied by your manually managed partition.
 
 **Example:** `sudo shrink-backup --loop /path/to/backup.img 1024`
 
 This functionality works on any linux system, just use the script on any img file anywhere available to the computer.
 
-To remove the loop: `sudo losetup -d /dev/loop0`, change `loop0` to the correct `dev` it got looped to.<br>
+To remove the loop: `sudo losetup -d /dev/loop0`, change `loop0` to the correct `dev` it got looped to.  
 To remind yourself: `lsblk /dev/loop*` if you forgot the location after using `--mount`
 <br>
 <br>
 
 #### `--f2fs` (Convert `ext4` into `f2fs` on img file)
-ONLY use this for **CONVERTING** filesystem into img file, **if you already have `f2fs` on your root, do not use this option.**<br>
-The script will detect what filesystem is used on `root` and act accordingly.<br>
+ONLY use this for **CONVERTING** filesystem into img file, **if you already have `f2fs` on your root, do not use this option.**  
+The script will detect what filesystem is used on `root` and act accordingly.  
 Only supported with new backups, not when using `-U`.
 
-Autoexpansion at boot is not supported for `f2fs` (there is no way of resizing a mounted `f2fs` filesystem, unlike with `ext4`) so resizing root partition have to be made manually after writing img to sd-card.<br>
+Autoexpansion at boot is not supported for `f2fs` (there is no way of resizing a mounted `f2fs` filesystem, unlike with `ext4`) so resizing root partition have to be made manually after writing img to sd-card.  
 Resize operations (when updating backup with `-U`) is not available for `f2fs` _as of now_.
 
-The script will make backups of `fstab` & `cmdline.txt` into `fstab.shrink-backup.bak` & `cmdline.txt.shrink-backup.bak` on the img.<br>
+The script will make backups of `fstab` & `cmdline.txt` into `fstab.shrink-backup.bak` & `cmdline.txt.shrink-backup.bak` on the img.  
 It will then change from `ext4` to `f2fs` in `fstab` & `cmdline.txt` and add `discard` to the options on the `root` partition in `fstab`.
 
 Please read information about [`f2fs`](#f2fs) further down.
@@ -155,11 +160,14 @@ Please read information about [`f2fs`](#f2fs) further down.
 <br>
 
 ### Info
-**Rsync WILL cross filesystem boundries, so make sure you exclude external drives unless you want them included in the backup.**
+**Rsync WILL cross filesystem boundries, so make sure you [exclude](#-t-excludetxt) external mounts unless you want them included in the backup. (separate `/home` for example)**
 
-**Not excluding other partitions will copy the data to the img `root` partition, not create more partitions,** so make sure to **_manually add_ `[extra space]`** if you do this.
+The script will **ONLY** create `boot` (if exits) and `root` partitions on the img file.  
+The script will **ONLY** look at your `root` partition when calculating sizes.  
+**Not excluding other mounts will copy that data to the img `root` partition, not create more partitions,** so make sure to **_manually add_ `[extra space]`** if you do this.  
+Experimental [`btrfs`](#btrfs) is an exception to this, all subvolumes will be created.
 
-The script will **ONLY** look at your `root` partition when calculating sizes.
+See [--loop](#--loop-loop-img-file) for how to manually include more partitions in the img.
 <br>
 <br>
 
@@ -182,7 +190,7 @@ To create a backup img using recomended size, use the `-a` option and the path t
 
 **Example:** `sudo shrink-backup -a /path/to/backup.img`
 
-Theoretically the script should work on any device as long as root filesystem is `ext4`, [`f2fs`](#f2fs) or **experimental** [`btrfs`](#btrfs).<br>
+Theoretically the script should work on any device as long as root filesystem is `ext4`, [`f2fs`](#f2fs) or **experimental** [`btrfs`](#btrfs).  
 Since the script uses `lsblk` to crosscheck with `/etc/fstab` to figure out where `root` resides it does not matter what device it is on.
 
 Even if you forget to disable autoexpansion on a non supported OS, the backup will not fail, it will just skip creating the autoresize scripts. :)
@@ -206,11 +214,12 @@ Even if you forget to disable autoexpansion on a non supported OS, the backup wi
 
 Added space is added on top of `df` reported "used space", not the size of the partition. Added space is in MiB, so if you want to add 1G, add 1024.
 
-The script can be instructed to set the img size by requesting recomended minimum size from `e2fsck` or `du` (`e2fsck` does not work on `f2fs` f.ex) by using the `-a` option.<br>
-This is not the absolute smallest size you can achieve but is the "safest" way to create a "smallest possible" img file.<br>
+The script can be instructed to set the img size by requesting recomended minimum size from `e2fsck` or `du` (`e2fsck` does not work on `f2fs` f.ex) by using the `-a` option.  
+This is not the absolute smallest size you can achieve but is the "safest" way to create a "smallest possible" img file.  
 If you do not increase the size of the filesystem you are backing up from too much, you can most likely keep it updated with the update function (`-U`) of the script.
 
-By using `-a` in combination with `-U` the script will resize the img file if needed (not supported on [`f2fs`](#f2fs)).<br>
+By using `-a` in combination with `-U` the script will resize the img file if needed (not supported on [`f2fs`](#f2fs)).  
+Using combination `-Ua` on an img that has become overfilled works, if not add `--fix` and retry.  
 Please see [`--fix`](#--fix-broken-pipe) and [image update](#image-update) sections for more information.
 <br>
 <br>
@@ -221,7 +230,7 @@ To get the absolute smallest img file possible, do NOT use `-a` option, instead 
 
 **Example:** `sudo shrink-backup /path/to/backup.img 0`
 
-This will instruct the script to get the used space from `df` and adding 128MiB "*wiggle room*".<br>
+This will instruct the script to get the used space from `df` and adding 128MiB "*wiggle room*".  
 If you are like me, doing a lot of testing, rewriting the sd-card multiple times when experimenting, the extra time it takes each "burn" will add up pretty fast.
 
 **Example:**
@@ -230,15 +239,15 @@ If you are like me, doing a lot of testing, rewriting the sd-card multiple times
 -rw-r--r-- 1 root root 3.3G Jul 22 22:37 test0.img # file created with 0
 ```
 
-**Disclaimer!**<br>
-Because of how filesystems work, `df` is never a true representation of what will actually fit in a created img file.<br>
+**Disclaimer!**  
+Because of how filesystems work, `df` is never a true representation of what will actually fit in a created img file.  
 Each file, no matter the size, will take up one block of the filesystem, so if you have a LOT of very small files (running `docker` f.ex) the "0 added space method" might fail during rsync. Increase the 0 a little bit and retry.
 
-This also means you have VERY little free space on the img file after creation.<br>
+This also means you have VERY little free space on the img file after creation.  
 If the filesystem you back up from increases in size, an update (`-U`) of the img file might fail.
 
-By using `-a` in combination with `-U` the script will resize the img file if needed.<br>
-Using combination `-Ua` on an img that has become overfilled works, if not add `--fix` and retry.<br>
+By using `-a` in combination with `-U` the script will resize the img file if needed (not supported on [`f2fs`](#f2fs)).  
+Using combination `-Ua` on an img that has become overfilled works, if not add `--fix` and retry.  
 Please see [`--fix`](#--fix-broken-pipe) and [Image update](#image-update) sections for more information.
 
 <hr>
@@ -267,36 +276,36 @@ To update an existing img file simply use the `-U` option and the path to the im
 ### Resizing img file when updating
 If `-a` is used in combination with `-U`, the script will compare the root partition on the img file to the size `resize2fs` recommends as minimum (or `du` calculations depending on filesystem).
 
-The **img file** `root` **partition** needs to be **>=256MB smaller** than `resize2fs` (or `du` calculations) recommended minimum to be expanded.<br>
-The **img file** `root` **partition** needs to be **>=512MB bigger** than `resize2fs` (or `du` calculations) recommended minimum to be shrunk.<br>
+The **img file** `root` **partition** needs to be **>=256MB smaller** than `resize2fs` (or `du` calculations) recommended minimum to be expanded.  
+The **img file** `root` **partition** needs to be **>=512MB bigger** than `resize2fs` (or `du` calculations) recommended minimum to be shrunk.  
 This is to protect from unessesary resizing operations most likely not needed.
 
-If _manually added_ `[extra space]` is used in combination with `-U`, the img file's `root` partition will be expanded by that amount. **No checks are being performed to make sure the data you want to back up will actually fit.**<br>
+If _manually added_ `[extra space]` is used in combination with `-U`, the img file's `root` partition will be expanded by that amount. **No checks are being performed to make sure the data you want to back up will actually fit.**  
 Only expansion is possible with this method.
 
 <hr>
 
 ## f2fs
-The script will detect `f2fs` on `root` automatically and act accordingly.<br>
-**Do NOT USE [`--f2fs`](#--fix-broken-pipe) unless you are converting from a `ext4` filesystem (on your system) into `f2fs` on the img file.**
+The script will detect `f2fs` on `root` automatically and act accordingly.  
+**Do NOT USE [`--f2fs`](#--f2fs-Convert-ext4-into-f2fs-on-img-file) unless you are converting from a `ext4` filesystem (on your system) into `f2fs` on the img file.**
 
-Autoexpansion at boot is not possible with `f2fs`. User will have to manually expand img to cover entire storage media (f.ex sd-card) when restoring.<br>
-Resizing of img `root` partition while updating img (`-U`) is not possible with `f2fs` _as of now_. User will have to create a new backup if img runs out of space.<br>
+Autoexpansion at boot is not possible with `f2fs`. User will have to manually expand img to cover entire storage media (f.ex sd-card) when restoring.  
+Resizing of img `root` partition while updating img (`-U`) is not possible with `f2fs` _as of now_. User will have to create a new backup if img runs out of space.  
 This is something I am planning to implement further down the line.
 
 <hr>
 
 ## btrfs
 
-**ALL testing has been done on Manjaro-arm**<br>
+**ALL testing has been done on Manjaro-arm**  
 **THIS IS NOT A CLONE, IT IS A BACKUP OF REQUIRED FILES FOR A BOOTABLE BTRFS SYSTEM!**
 
-All options in script should work just as on `ext4`. The script will detect `btrfs` and act accordingly.<br>
-The script will treat snapshots as nested volumes, so make sure to exclude snapshots if you have any, or directories and **nested volumes** will be created on the img file (not as copy-on-write snapshots).<br>
-This can be done in `exclude.txt`, wildcards (*) _should_ work.<br>
+All options in script should work just as on `ext4`. The script will detect `btrfs` and act accordingly.  
+The script will treat snapshots as nested volumes, so make sure to exclude snapshots if you have any, or directories and **nested volumes** will be created on the img file (not as copy-on-write snapshots).  
+This can be done in `exclude.txt`, wildcards (*) _should_ work.  
 When starting the script, the initial report window will tell you what volumes will be created. **Make sure these are correct before pressing Y**
 
-As of now, top level subvolumes are checked for in `/etc/fstab` and mounted accordingly, mount options should be preseved (for exmaple if you change compression).<br>
+As of now, top level subvolumes are checked for in `/etc/fstab` and mounted accordingly, mount options should be preserved (if you for example changed compression).  
 Autoresize function works on Manjaro-arm.
 
 <hr>

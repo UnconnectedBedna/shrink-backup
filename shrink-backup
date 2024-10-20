@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # shrink-backup
-# version 1.1
-# backup tool for backing up and updating .img files with autoexpansion on various operating systems
+# Version 1.2
+# Backup tool for creating and updating .img files (with autoexpansion function) on various linux operating systems
 #
 #    Copyright (c) 2024, Marcus Johansson
 #    https://github.com/UnconnectedBedna/shrink-backup
@@ -40,7 +40,7 @@ function cleanup() {
       while true; do
         # Check if the mount point is still busy
         if ! umount "${TMP_DIR}${BOOT_PATH}" && [ -n "$BOOT_PATH" ] && [ -n "$TMP_DIR" ] && grep -qs "${TMP_DIR}${BOOT_PATH} " /proc/mounts; then
-          # If it is, sleep for a few seconds and try again
+          # If it is, sleep for 5 seconds and try again
           echo -e "${Yellow}!! ${Green}${TMP_DIR}${BOOT_PATH} ${Yellow}is busy, retrying in 5 seconds..."
           debug 'DEBUG' "${TMP_DIR}${BOOT_PATH} is busy, retrying in 5 seconds"
           sleep 5
@@ -89,8 +89,6 @@ function cleanup() {
           break
         fi
       done
-      #debug 'DEBUG' "Removing loop in cleanup function: losetup -d $LOOP"
-      #losetup -d "$LOOP"
     fi
 
     if [ -d "$TMP_DIR" ]; then
@@ -119,18 +117,25 @@ trap "exit 10" SIGINT
 function pause() {
   read -p "$*"
 }
-
 # Uncomment the following line to enable the pause function
 #pause 'Press [Enter] key to continue...'
 
 # Set default values for script options
+unset diff_small
+INSTALL_METHOD='default'
 PROMPTS=true
 DEBUG=false
 EXCLUDE_FILE=false
 AUTOEXPAND=true
 AUTORESIZE_RUN=false
 UPDATE=false
-LOG_FILE="$(dirname $0)/shrink-backup.log"
+if [ "$INSTALL_METHOD" = 'curl' ]; then
+  LOG_FILE='/var/log/shrink-backup.log'
+  EXCLUDE_FILE_LOCATION='/usr/local/etc/shrink-backup.conf'
+else
+  LOG_FILE="$(dirname $0)/shrink-backup.log"
+  EXCLUDE_FILE_LOCATION="$(dirname $0)/exclude.txt"
+fi
 AUTORESIZE_WARNING=false
 ZOOM=false
 LOOPRUN=false
@@ -139,7 +144,6 @@ F2FS=false
 #STARTLINE="$0 $*" # will produce double // if script is in $PATH
 STARTLINE="$(dirname $0)/$(basename $0) $*" # will produce absolute path if script is in $PATH
 #STARTLINE="$(realpath $0) $*" # same as bove, but will ALWYAS produce absolute path
-#x=0
 COLS=85
 BREAK="$(printf "%${COLS}s" | tr " " "#")"
 
@@ -164,7 +168,7 @@ fi
 version() {
   echo -e "${Purple}#########################################################################
 #                                                                       #
-# ${Green}shrink-backup version 1.1                                             ${Purple}#
+# ${Green}shrink-backup version 1.2                                             ${Purple}#
 #                                                                       #
 # ${IWhite}Copyright (c) 2024, Marcus Johansson                                  ${Purple}#
 # ${White}https://github.com/UnconnectedBedna/shrink-backup                     ${Purple}#
@@ -177,7 +181,7 @@ version() {
 exit 2
 }
 
-# Function to display help information
+# Function to display help information and exit
 help() {
   local help
   read -r -d '' help << EOM
@@ -265,7 +269,7 @@ do
 done
 
 # Check if script is run as root
-if [ "$EUID" != 0 ]; then
+if [ "$EUID" -ne 0 ]; then
   echo -e "${Red}!! THIS SCRIPT MUST BE RUN AS ROOT! (WITH SUDO)"
   help
 fi
@@ -286,7 +290,7 @@ function debug() {
       fi
     fi
   fi
-  return 0
+return 0
 }
 
 
@@ -326,6 +330,7 @@ function looprun() {
   done
   echo -e "${Purple}##############################################################################"
   echo -e "${White}## ${Green}Done."
+  echo -e "${White}## ${IWhite}To remove loop type: ${Green}sudo losetup -d ${LOOP}"
 
   debug 'DEBUG' 'Exiting script, exit 2'
   if [ "$DEBUG" = true ]; then
@@ -339,7 +344,7 @@ exit 2
 # Function to gather device information
 function get_dev_variables() {
 
-  # Run get_btrfs_variables and then exit THIS function
+  # Run get_btrfs_variables and then exit THIS function (added space = 0)
   if [ "$FSTYPE" == 'btrfs' ] && [ "$AUTORESIZE_RUN" = false ] && [ "$ADDED_SPACE" -eq 0 ]; then
     debug 'INFO' 'Running function: get_btrfs_variables'
     get_btrfs_variables
@@ -351,22 +356,22 @@ function get_dev_variables() {
   # Check if separate boot and root partition exists and set variables accordingly
   if grep -q 'boot' /etc/fstab; then
     debug 'INFO' 'Separate boot partition detected'
-    LOCAL_DEV_BOOT_PATH=$(lsblk -lpo mountpoint,path | grep 'boot' | awk '{print $2}')
-    LOCAL_DEV_ROOT_PATH=$(mount | grep '/ ' | awk '{print $1}')
+    #LOCAL_DEV_BOOT_PATH=$(lsblk -lpo mountpoint,path | grep 'boot' | awk '{print $2}')
+    LOCAL_DEV_BOOT_PATH=$(mount | grep 'boot' | awk '{print $1}')
+    LOCAL_DEV_ROOT_PATH=$(mount | grep ' / ' | awk '{print $1}')
     debug 'DEBUG' "LOCAL_DEV_BOOT_PATH=$LOCAL_DEV_BOOT_PATH | LOCAL_DEV_ROOT_PATH=$LOCAL_DEV_ROOT_PATH"
-    LOCAL_BOOT_UUID=$(lsblk -o uuid "$LOCAL_DEV_BOOT_PATH" | tail -1)
-    LOCAL_ROOT_UUID=$(lsblk -o uuid "$LOCAL_DEV_ROOT_PATH" | tail -1)
-    LOCAL_ROOT_PARTUUID=$(lsblk -o partuuid "$LOCAL_DEV_ROOT_PATH" | tail -1)
+    LOCAL_BOOT_UUID=$(lsblk -no uuid "$LOCAL_DEV_BOOT_PATH")
+    LOCAL_ROOT_UUID=$(lsblk -no uuid "$LOCAL_DEV_ROOT_PATH")
+    LOCAL_ROOT_PARTUUID=$(lsblk -no partuuid "$LOCAL_DEV_ROOT_PATH")
     debug 'DEBUG' "LOCAL_BOOT_UUID=$LOCAL_BOOT_UUID | LOCAL_ROOT_UUID=$LOCAL_ROOT_UUID | LOCAL_ROOT_PARTUUID=$LOCAL_ROOT_PARTUUID"
-    BOOT_PATH=$(cat /etc/fstab | grep '/boot' | awk '{print $2}')
+    BOOT_PATH=$(cat /etc/fstab | grep 'boot' | awk '{print $2}')
     debug 'DEBUG' "BOOT_PATH=$BOOT_PATH"
   else
     debug 'INFO' 'No boot partition detected'
-    #LOCAL_DEV_ROOT_PATH=$(lsblk -lpo mountpoint,path | grep '/ ' | awk '{print $2}')
-    LOCAL_DEV_ROOT_PATH=$(mount | grep '/ ' | awk '{print $1}')
+    LOCAL_DEV_ROOT_PATH=$(mount | grep ' / ' | awk '{print $1}')
     debug 'DEBUG' "LOCAL_DEV_ROOT_PATH=$LOCAL_DEV_ROOT_PATH"
-    LOCAL_ROOT_UUID=$(lsblk -o uuid "$LOCAL_DEV_ROOT_PATH" | tail -1)
-    LOCAL_ROOT_PARTUUID=$(lsblk -o partuuid "$LOCAL_DEV_ROOT_PATH" | tail -1)
+    LOCAL_ROOT_UUID=$(lsblk -no uuid "$LOCAL_DEV_ROOT_PATH")
+    LOCAL_ROOT_PARTUUID=$(lsblk -no partuuid "$LOCAL_DEV_ROOT_PATH")
     debug 'DEBUG' "LOCAL_ROOT_UUID=$LOCAL_ROOT_UUID | LOCAL_ROOT_PARTUUID=$LOCAL_ROOT_PARTUUID"
   fi
   LOCAL_ROOT_PARTN=$(parted -sm "$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
@@ -375,19 +380,19 @@ function get_dev_variables() {
   # Collect information about partition sizes
   #if [ "$UPDATE" = false ] || [ "$ADDED_SPACE" -ne 0 ] || [ "$AUTORESIZE_RUN" = true ]; then
     debug 'INFO' 'Calculating size for dd to cover bootsector and adding 5MiB (5242880 bytes) to overlap into root (only used in img creation)'
-    #LOCAL_BOOTSECTOR=$(lsblk --bytes -o size "$LOCAL_DEV_BOOT_PATH" | tail -1) # bytes, can not be used, will be 0 if no boot partition exists
+    #LOCAL_BOOTSECTOR=$(lsblk --bytes -no size "$LOCAL_DEV_BOOT_PATH") # bytes, can not be used, will be 0 if no boot partition exists
     LOCAL_ROOT_START=$(fdisk -lo device,start "$LOCAL_DEV_PATH" | grep "$LOCAL_DEV_ROOT_PATH" | awk '{print $2}') # 512B blocks
     LOCAL_BOOTSECTOR=$(( LOCAL_ROOT_START - 1 )) # blocks, to set the actual bootsector, needed in case no boot partition exists
     LOCAL_ROOT_START=$(( LOCAL_ROOT_START * 512 )) # bytes
     LOCAL_BOOTSECTOR=$(( LOCAL_BOOTSECTOR * 512 )) # bytes
     LOCAL_DDBOOTSECTOR=$(( (LOCAL_BOOTSECTOR + 5242880) / 512 )) # 512B blocks, 5242880 = 5MiB in bytes
-    debug 'DEBUG' "LOCAL_ROOT_START=$LOCAL_ROOT_START bytes | LOCAL_BOOTSECTOR=$LOCAL_BOOTSECTOR bytes | LOCAL_DDBOOTSECTOR=$LOCAL_DDBOOTSECTOR 4k blocks"
+    debug 'DEBUG' "LOCAL_ROOT_START=$LOCAL_ROOT_START bytes | LOCAL_BOOTSECTOR=$LOCAL_BOOTSECTOR bytes | LOCAL_DDBOOTSECTOR=$LOCAL_DDBOOTSECTOR 512B blocks"
   #fi
 
   # Set automated calculated size (get_btrfs_variables if btrfs filesystem)
   if [ "$AUTORESIZE_RUN" = true ] || [ "$UPDATE" = false ] || [ "$FSTYPE" == 'btrfs' ]; then
     debug 'INFO' 'Calculating recommended root size'
-    BLOCKSIZE=$(stat -f / | grep -i 'Block size' | awk '{print $3}') # bytes
+    BLOCKSIZE=$(stat -fc %s /) # bytes, so it works with other localisations
     debug 'DEBUG' "BLOCKSIZE=${BLOCKSIZE} bytes"
     if [ "$FSTYPE" == 'ext4' ]; then
       debug 'INFO' 'ext4 filesystem detected, using resize2fs to set recommended root size'
@@ -447,7 +452,7 @@ return 0
 # Function to gather btrfs information
 function get_btrfs_variables() {
 
-  BOOT_PATH=$(cat /etc/fstab | grep '/boot' | awk '{print $2}')
+  BOOT_PATH=$(cat /etc/fstab | grep 'boot' | awk '{print $2}')
   debug 'DEBUG' "BOOT_PATH=$BOOT_PATH"
 
   if [ "$AUTORESIZE_RUN" = true ]; then
@@ -465,7 +470,8 @@ function get_btrfs_variables() {
   if [ "$EXCLUDE_FILE" = true ]; then
     debug 'INFO' 'Filtering out volumes from exclude.txt'
     for ((i = 0; i < ${#LOCAL_SUBVOLUMES[@]}; i++)); do
-      if $(echo "/${LOCAL_SUBVOLUMES[i]}" | grep -q -f "$(dirname $0)/exclude.txt"); then
+      #if $(echo "/${LOCAL_SUBVOLUMES[i]}" | grep -q -f "$(dirname $0)/exclude.txt"); then
+      if $(echo "/${LOCAL_SUBVOLUMES[i]}" | grep -q -f "$EXCLUDE_FILE_LOCATION"); then
         debug 'DEBUG' "Filtering out subvolume: ${LOCAL_SUBVOLUMES[i]}"
         unset LOCAL_SUBVOLUMES["$i"]
       fi
@@ -480,20 +486,18 @@ return 0
 # Function to gather image information
 function get_img_variables() {
 
-  debug 'DEBUG' "Running: ls -l $IMG_FILE | awk '{print \$5}'"
-  IMG_SIZE=$(ls -l "$IMG_FILE" | awk '{print $5}')
+  debug 'DEBUG' "Running: stat -c %s $IMG_FILE"
+  IMG_SIZE=$(stat -c %s "$IMG_FILE")
   debug 'DEBUG' "IMG_SIZE=$IMG_SIZE bytes"
 
   # Boot partition exists
   if grep -q 'boot' /etc/fstab; then
-    debug 'INFO' 'Separate boot partition detected'
 
     # ext4 & f2fs
     if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
-      # I have no idea why, but if I do not put this sleep here, IMG_DEV_BOOT_PATH does not get set
       sleep 2
-      IMG_DEV_BOOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
-      IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
+      IMG_DEV_BOOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
+      IMG_DEV_ROOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
       debug 'DEBUG' "IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
       # 2s sleep is sometimes not enough, might have to do with slow network if img file is on a network share
       if ! [ -e "$IMG_DEV_BOOT_PATH" ] || ! [ -e "$IMG_DEV_ROOT_PATH" ]; then
@@ -502,8 +506,8 @@ function get_img_variables() {
           debug 'WARNING' 'LOOP paths can not be set, retrying in 5 seconds'
           debug 'WARNING' "IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
           sleep 5
-          IMG_DEV_BOOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
-          IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
+          IMG_DEV_BOOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
+          IMG_DEV_ROOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
           if [ -e "$IMG_DEV_BOOT_PATH" ] && [ -e "$IMG_DEV_ROOT_PATH" ]; then
             echo -e "${White}## ${Green}LOOP paths found, resuming backup..."
             debug 'INFO' "LOOP paths found, resuming backup"
@@ -511,6 +515,12 @@ function get_img_variables() {
             break
           fi
         done
+      fi
+
+      if ! [ -e "$IMG_DEV_BOOT_PATH" ] || ! [ -e "$IMG_DEV_ROOT_PATH" ]; then
+        echo -e "${Red}!! LOOP PATHS CAN NOT BE SET!!!"
+        debug 'ERROR' 'LOOP PATHS CAN NOT BE SET'
+        exit 1
       fi
 
     # btrfs (old method)
@@ -526,7 +536,7 @@ function get_img_variables() {
     # I have no idea why, but if I do not put this sleep here, IMG_DEV_ROOT_PATH does not get set
     sleep 2
     #pause 'Press [Enter] key to continue...'
-    IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
+    IMG_DEV_ROOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
     debug 'DEBUG' "IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
   fi
 
@@ -543,7 +553,7 @@ function get_img_variables() {
     fi
     $SLEEPING
     partprobe "$LOOP"
-    declare -a fstab=( $(cat /etc/fstab | grep '/ ') )
+    declare -a fstab=( $(cat /etc/fstab | grep ' / ') )
     debug 'INFO' 'Mounting root to find subvolumes'
     debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH $TMP_DIR"
     if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
@@ -573,10 +583,9 @@ function set_img_variables() {
 
     # ext4 & f2fs
     if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
-      # I have no idea why, but if I do not put this sleep here, IMG_DEV_BOOT_PATH does not get set
       sleep 2
-      IMG_DEV_BOOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
-      IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
+      IMG_DEV_BOOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
+      IMG_DEV_ROOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
       debug 'DEBUG' "IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
       # 2s sleep is sometimes not enough, might have to do with slow network if img file is on a network share
       if ! [ -e "$IMG_DEV_BOOT_PATH" ] || ! [ -e "$IMG_DEV_ROOT_PATH" ]; then
@@ -585,8 +594,8 @@ function set_img_variables() {
           debug 'WARNING' 'LOOP paths can not be set, retrying in 5 seconds'
           debug 'WARNING' "IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
           sleep 5
-          IMG_DEV_BOOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
-          IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
+          IMG_DEV_BOOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
+          IMG_DEV_ROOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
           if [ -e "$IMG_DEV_BOOT_PATH" ] && [ -e "$IMG_DEV_ROOT_PATH" ]; then
             echo -e "${White}## ${Green}LOOP paths found, resuming backup..."
             debug 'INFO' "LOOP paths found, resuming backup"
@@ -612,11 +621,31 @@ function set_img_variables() {
   # No boot partition exists
   else
     debug 'INFO' 'No boot partition detected'
-    # I have no idea why, but if I do not put this sleep here, IMG_DEV_ROOT_PATH does not get set
     sleep 2
-    #pause 'Press [Enter] key to continue...'
-    IMG_DEV_ROOT_PATH=$(lsblk -o path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
+    IMG_DEV_ROOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
     debug 'DEBUG' "IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
+    # 2s sleep is sometimes not enough, might have to do with slow network if img file is on a network share
+    if ! [ -e "$IMG_DEV_ROOT_PATH" ]; then
+      for (( i=1; i<=3; i++ )); do
+        echo -e "${Yellow}!! ${Yellow}LOOP paths can not be set, retrying in 5 seconds..."
+        debug 'WARNING' 'LOOP paths can not be set, retrying in 5 seconds'
+        debug 'WARNING' "IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
+        sleep 5
+        IMG_DEV_ROOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
+        if [ -e "$IMG_DEV_ROOT_PATH" ]; then
+          echo -e "${White}## ${Green}LOOP paths found, resuming backup..."
+          debug 'INFO' "LOOP paths found, resuming backup"
+          debug 'DEBUG' "IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
+          break
+        fi
+      done
+    fi
+
+    if ! [ -e "$IMG_DEV_ROOT_PATH" ]; then
+      echo -e "${Red}!! LOOP PATHS CAN NOT BE SET!!!"
+      debug 'ERROR' 'LOOP PATHS CAN NOT BE SET'
+      exit 1
+    fi
   fi
 return 0
 }
@@ -675,7 +704,7 @@ function do_mount() {
 
   # btrfs
   elif [ "$FSTYPE" == 'btrfs' ]; then
-    declare -a fstab=( $(cat /etc/fstab | grep '/ ') )
+    declare -a fstab=( $(cat /etc/fstab | grep ' / ') )
     echo -e "${White}## ${IWhite}Mounting root subvolume..."
     debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH $TMP_DIR"
     if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
@@ -714,12 +743,11 @@ function do_mount() {
     done
   fi
 
-  # Checking if boot partition exists and if true, mount boot
-  #if [ $(lsblk | grep -c 'boot') -ne 0 ]; then
+  # Mount boot partition if exists
   if [ -n "$BOOT_PATH" ]; then
-    if ! lsblk | grep -q 'boot'; then
-      echo -e "${Red}!! BOOT PARTITION NOT MOUNTED ON SYSTEM, PLEASE MOUNT BOOT PARTITION AND RE-RUN THE SCRIPT!!!"
-      debug 'ERROR' 'BOOT PARTITION NOT MOUNTED ON SYSTEM, PLEASE MOUNT BOOT PARTITION AND RE-RUN THE SCRIPT!!!'
+    if ! mount | grep -q 'boot'; then
+      echo -e "${Red}!! Boot found in fstab but partition not mounted, please mount and retry script!!!"
+      debug 'ERROR' 'Boot found in fstab but partition not mounted, exit 1'
       exit 1
     fi
     echo -e "${White}## ${IWhite}Mounting img boot partition..."
@@ -827,7 +855,7 @@ function do_resize() {
     echo -e "${White}## ${IWhite}Expanding img filesystem..."
     $SLEEPING
 
-    # Removing loop for tuncate to take effect
+    # Removing loop for truncate to take effect
     echo -e "${White}## ${IWhite}Removing loop..."
     $SLEEPING
     debug 'INFO' 'Removing loop for truncate to take effect'
@@ -921,7 +949,7 @@ function do_resize() {
     #debug 'DEBUG' "Running: parted -s -a none $LOOP unit B resizepart $IMG_ROOT_PARTN $TRUNCATE_TOTAL"
     debug 'DEBUG' "Running: printf 'Yes\\\n' | parted -a none $LOOP unit B resizepart $IMG_ROOT_PARTN $TRUNCATE_TOTAL ---pretend-input-tty"
 
-    #if ! output=$(parted -s -a none "$LOOP" unit B resizepart "$IMG_ROOT_PARTN" "$TRUNCATE_TOTAL" 2>&1); then # tested may 2024 and does not work, still asking for user confirmation even though --script is used
+    #if ! output=$(parted -s -a none "$LOOP" unit B resizepart "$IMG_ROOT_PARTN" "$TRUNCATE_TOTAL" 2>&1); then # tested may 2024 and does not work, still asking for user confirmation
     if ! output=$(printf 'Yes\n' | parted -a none "$LOOP" unit B resizepart "$IMG_ROOT_PARTN" "$TRUNCATE_TOTAL" ---pretend-input-tty 2>&1); then
       echo -e "${Yellow}$output\n${Red}!! PARTED FAILED!!!"
       debug 'BREAK'
@@ -968,8 +996,8 @@ function do_rsync() {
   debug 'DEBUG' "tmp_file=$tmp_file"
 
   if [ "$EXCLUDE_FILE" = true ]; then
-    debug 'DEBUG' "Running: rsync -ahvHAX --exclude-from=$(dirname $0)/exclude.txt --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / $TMP_DIR"
-    rsync -ahvHAX --exclude-from=$(dirname "$0")/exclude.txt --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee "$TTY_AVAILABILITY"  > "$tmp_file"
+    debug 'DEBUG' "Running: rsync -ahvHAX --exclude-from="$EXCLUDE_FILE_LOCATION" --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / $TMP_DIR"
+    rsync -ahvHAX --exclude-from="$EXCLUDE_FILE_LOCATION" --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee "$TTY_AVAILABILITY"  > "$tmp_file"
     # Get the exit status of rsync from PIPESTATUS
     if [ "${PIPESTATUS[0]}" -ne 0 ] && [ "${PIPESTATUS[0]}" -ne 23 ]; then # code 23 = rsync warning: some files vanished before they could be transferred (code 24) at main.c
       output=$(tail -16 "$tmp_file")
@@ -1018,7 +1046,8 @@ function make_img() {
     echo -e "# ${Yellow}DISABLE PROMPTS SELECTED (${Green}-y${Yellow}), NO WARNINGS ABOUT DELETION!!! ${Purple}$(printf "%+$(( COLS - 63 ))s" '#')"
   fi
   #echo -e "# ${IWhite}A backup will be created at ${Green}$IMG_FILE $(while [ $x -lt $(( COLS - 31 - $(echo ${IMG_FILE} | wc -m ) )) ]; do echo -n ' '; let x=$x+1; done; echo)${Purple}#"
-  echo -e "# ${IWhite}A backup will be created at ${Green}$IMG_FILE ${Purple}$(printf "%+$(( COLS - 30 - $(echo ${IMG_FILE} | wc -m ) ))s" '#')"
+  echo -e "# ${IWhite}A backup will be created at: ${Purple}$(printf "%+$(( COLS - 31 ))s" '#')"
+  echo -e "# ${Green}$IMG_FILE ${Purple}$(printf "%+$(( COLS - 2 - $(echo ${IMG_FILE} | wc -m ) ))s" '#')"
   echo -e "# ${Green}$FSTYPE ${IWhite}filesystem detected on root ${Purple}$(printf "%+$(( COLS - 30 - $(echo ${FSTYPE} | wc -m ) ))s" '#')"
   if [ "$FSTYPE" == 'btrfs' ]; then
     echo -e "# ${Green}${#LOCAL_SUBVOLUMES[@]} ${IWhite}btrfs volumes will be included ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${#LOCAL_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
@@ -1030,25 +1059,25 @@ function make_img() {
     echo -e "# ${Yellow}Autoexpand filesystem at boot not available for ${Green}f2fs ${Purple}$(printf "%+$(( COLS - 55 ))s" '#')"
   fi
   echo -e "${Purple}# --------------------------------------------------------------------------------- #"
-  echo -e "# ${IWhite}Write to logfile: ${Green}$DEBUG ${Purple}$(printf "%+$(( COLS - 20 - $(echo ${DEBUG} | wc -m ) ))s" '#')"
-  echo -e "# ${IWhite}Zoom speed requested: ${Green}$ZOOM ${Purple}$(printf "%+$(( COLS - 24 - $(echo ${ZOOM} | wc -m ) ))s" '#')"
-  echo -e "# ${IWhite}Autocalculate img root partition size: ${Green}$AUTORESIZE_RUN ${Purple}$(printf "%+$(( COLS - 41 - $(echo ${AUTORESIZE_RUN} | wc -m ) ))s" '#')"
+  echo -e "# ${IWhite}Write to logfile:              ${Green}$DEBUG ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${DEBUG} | wc -m ) ))s" '#')"
+  echo -e "# ${IWhite}Zoom speed requested:          ${Green}$ZOOM ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${ZOOM} | wc -m ) ))s" '#')"
+  echo -e "# ${IWhite}Autocalculate img root size:   ${Green}$AUTORESIZE_RUN ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${AUTORESIZE_RUN} | wc -m ) ))s" '#')"
   echo -e "# ${IWhite}Autoexpand filesystem at boot: ${Green}$AUTOEXPAND ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${AUTOEXPAND} | wc -m ) ))s" '#')"
-  echo -e "# ${IWhite}Use exclude.txt: ${Green}$EXCLUDE_FILE ${Purple}$(printf "%+$(( COLS - 19 - $(echo ${EXCLUDE_FILE} | wc -m ) ))s" '#')"
+  echo -e "# ${IWhite}Use exclude.txt:               ${Green}$EXCLUDE_FILE ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${EXCLUDE_FILE} | wc -m ) ))s" '#')"
   print_temp="$(( LOCAL_BOOTSECTOR / 1024 / 1024 ))"
-  echo -e "# ${IWhite}Bootsector size: ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 22 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+  echo -e "# ${IWhite}Bootsector size:               ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
   print_temp="$(( $(df / -k --sync --output=used | tail -1) / 1024 ))"
-  echo -e "# ${IWhite}Estemated root usage: ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 27 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+  echo -e "# ${IWhite}Estemated root usage:          ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
   if [ "$AUTORESIZE_RUN" = true ]; then
     print_temp="$(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))"
-    echo -e "# ${IWhite}Auto calculated size (root partition): ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 44 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+    echo -e "# ${IWhite}Auto calculated root size:     ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
     print_temp="$(( TRUNCATE_TOTAL / 1024 / 1024 ))"
-    echo -e "# ${IWhite}Total img size: ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 21 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+    echo -e "# ${IWhite}Total img size:                ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
   else
     print_temp="$(( ADDED_SPACE / 1024 / 1024 ))"
-    echo -e "# ${IWhite}Manually added space: ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 27 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+    echo -e "# ${IWhite}Manually added space:          ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
     print_temp2="$(( TRUNCATE_TOTAL / 1024 / 1024 ))"
-    echo -e "# ${IWhite}Total img size: ${Green}${print_temp2}MiB ${IWhite}with ${Green}${print_temp}MiB [extra space] ${IWhite}included ${Purple}$(printf "%+$(( COLS - 52 - $(echo ${print_temp2} | wc -m ) - $(echo ${print_temp} | wc -m ) ))s" '#')"
+    echo -e "# ${IWhite}Total img size:                ${Green}${print_temp2}MiB ${IWhite}with ${Green}${print_temp}MiB [extra space] ${IWhite}included ${Purple}$(printf "%+$(( COLS - 67 - $(echo ${print_temp2} | wc -m ) - $(echo ${print_temp} | wc -m ) ))s" '#')"
     if [ "$AUTORESIZE_WARNING" = true ]; then
       echo -e "${Yellow}# --------------------------------------------------------------------------------- #"
       echo -e "! WARNING!!! Manually added space is smaller than calculated recommended minimum $(printf "%+$(( COLS - 81 ))s" '!')"
@@ -1159,7 +1188,7 @@ function make_img() {
   $SLEEPING
 
   # Loop img file
-  debug 'DEBUG' 'Running function: do_loop'
+  debug 'INFO' 'Running function: do_loop'
   do_loop
 
   # set img variables
@@ -1174,7 +1203,7 @@ function make_img() {
   if [ $PARTITION_TABLE == 'gpt' ]; then
     echo -e "${White}## ${Green}GPT partition table detected, ${Yellow}sgdisk needed, ${IWhite}checking for application..."
     $SLEEPING
-    if [[ ! -f $(which sgdisk 2>&1) ]]; then
+    if ! command -v sgdisk > /dev/null 2>&1; then
       echo -e "${Yellow}!! sgdisk is NOT installed..."
       debug 'INFO' 'sgdisk not available on system'
       read -p "Do you want to try to install gdisk? [y/n] " -n 1 -r
@@ -1186,10 +1215,10 @@ function make_img() {
       fi
       echo ''
       debug 'INFO' 'Y or y pressed to confirm'
-      if [[ -f $(which apt 2>&1) ]]; then
+      if command -v apt > /dev/null 2>&1; then
         echo -e "${White}## ${Green}apt found, ${IWhite}trying to install gdisk..."
-        read -p "Do you want to use apt to install gdisk? [y/n] " -n 1 -r
-        debug 'INFO' 'Do you want to use apt to install gdisk? [y/n]'
+        read -p "Do you want to use apt to install gdisk? (will upgrade system) [y/n] " -n 1 -r
+        debug 'INFO' 'Do you want to use apt to install gdisk? (will upgrade system) [y/n]'
         if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
           echo ''
           echo -e "${Red}!! Aborting..."
@@ -1199,7 +1228,7 @@ function make_img() {
         debug 'INFO' 'Y or y pressed to confirm'
         debug 'DEBUG' 'Running: apt update -y && apt upgrade -y && apt install gdisk -y'
         apt update -y && apt upgrade -y && apt install gdisk -y
-      elif [[ -f $(which pacman 2>&1) ]]; then
+      elif command -v pacman > /dev/null 2>&1; then
         echo -e "${White}## ${Green}pacman found, ${IWhite}trying to install gdisk..."
         read -p "Do you want to use pacman to install gptfdisk? (will do -Syu first) [y/n] " -n 1 -r
         debug 'INFO' 'Do you want to use pacman to install gptfdisk? (will do -Syu first) [y/n]'
@@ -1275,9 +1304,9 @@ function make_img() {
       exit 1
     fi
 
-  # ext4 & f2fs on root
+  # ext4 or f2fs on root
   elif [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
-    debug 'DEBUG' "Running: parted -s -a none $LOOP unit B mkpart primary $FSTYPE $LOCAL_ROOT_START 100%"
+    debug 'DEBUG' "Running: parted -s -a none $LOOP unit B mkpart primary $LOCAL_ROOT_START 100%"
     #if ! output=$(parted -s -a none "$LOOP" unit B mkpart primary "$FSTYPE" "$LOCAL_ROOT_START" 100% 2>&1); then
     if ! output=$(parted -s -a none "$LOOP" unit B mkpart primary "$LOCAL_ROOT_START" 100% 2>&1); then
       echo -e "${Yellow}$output\n${Red}!! PARTED FAILED!!!"
@@ -1302,19 +1331,19 @@ function make_img() {
   echo -e "${White}## ${IWhite}Formatting filesystem..."
   debug 'INFO' 'Formatting filesystem'
   $SLEEPING
-  LABEL=$(lsblk -o label "$LOCAL_DEV_ROOT_PATH" | tail -1)
-  UUID=$(lsblk -o uuid "$LOCAL_DEV_ROOT_PATH" | tail -1)
+  LABEL=$(lsblk -no label "$LOCAL_DEV_ROOT_PATH")
+  UUID=$(lsblk -no uuid "$LOCAL_DEV_ROOT_PATH")
   debug 'DEBUG' "LABEL=$LABEL | UUID=$UUID"
 
   # Convert to f2fs
   if [ "$F2FS" = true ]; then
     echo -e "${White}## ${Green}--f2fs option selected, mkfs.f2fs is needed, ${IWhite}checking if installed..."
     $SLEEPING
-    if [[ ! -f $(which mkfs.f2fs 2>&1) ]]; then
+    if ! command -v mkfs.f2fs > /dev/null 2>&1; then
       echo -e "${Yellow}!! mkfs.f2fs is NOT installed..."
       debug 'INFO' 'mkfs.f2fs (f2fs-tools) not available on system'
-      read -p "Do you want to use apt to install f2fs-tools? [y/n] " -n 1 -r
-      debug 'INFO' 'Do you want to try to install f2fs-tools? [y/n]'
+      read -p "Do you want to use apt to install f2fs-tools? (will upgrade system) [y/n] " -n 1 -r
+      debug 'INFO' 'Do you want to try to install f2fs-tools? (will upgrade system) [y/n]'
       if ! [[ "$REPLY" =~ ^[Yy]$ ]]; then
         echo ''
         echo -e "${Red}!! Aborting..."
@@ -1438,7 +1467,7 @@ function make_img() {
     $SLEEPING
     partprobe "$LOOP"
     #fstab=( $(cat /etc/fstab | grep "${LOCAL_SUBVOLUMES[0]}") )
-    declare -a fstab=( $(cat /etc/fstab | grep '/ ') )
+    declare -a fstab=( $(cat /etc/fstab | grep ' / ') )
     debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH $TMP_DIR"
     if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
       echo -e "${Yellow}$output\n${Red}!! ROOT SUBVOLUME MOUNT FAILED!!!"
@@ -1538,7 +1567,7 @@ function make_img() {
 
   # Final check of created img file
   if [ "$FSTYPE" == 'ext4' ] && [ "$F2FS" = false ]; then
-    debug 'INFO' "Running do_e2fsck 'final'"
+    debug 'INFO' "Running function: do_e2fsck 'final'"
     do_e2fsck 'final'
   fi
 
@@ -1572,6 +1601,7 @@ function do_backup() {
     debug 'DEBUG' "Running: fdisk --bytes -lo device,size "$LOOP" | grep "$IMG_DEV_ROOT_PATH" | awk '{print \$2}'"
     IMG_ROOT_SIZE=$(fdisk --bytes -lo device,size "$LOOP" | grep "$IMG_DEV_ROOT_PATH" | awk '{print $2}' )
     diff=$(( (LOCAL_AUTORESIZE_MIN - IMG_ROOT_SIZE) / 1024 / 1024 ))
+    [[ "$diff" != -* ]] && diff="+${diff}" # add a + in case the value is not negative for formatting reasons
     debug 'DEBUG' "IMG_ROOT_SIZE=$IMG_ROOT_SIZE bytes | LOCAL_AUTORESIZE_MIN=$LOCAL_AUTORESIZE_MIN bytes | diff=${diff}MiB"
 
     if [ "$IMG_ROOT_SIZE" -lt "$LOCAL_AUTORESIZE_MIN" ] && (( LOCAL_AUTORESIZE_MIN - IMG_ROOT_SIZE >= 268435456 )); then # 256MiB in bytes
@@ -1582,9 +1612,11 @@ function do_backup() {
       RESIZE_FUNCTION='shrink'
     else
       if [ "$diff" != -* ]; then
-        DIFFERENCE="Too small (${diff}MiB), not shrinking filesystem (must be >=512MiB)"
-      else
         DIFFERENCE="Too small (${diff}MiB), not expanding filesystem (must be >=256MiB)"
+        diff_small=true
+      else
+        DIFFERENCE="Too small (${diff}MiB), not shrinking filesystem (must be >=512MiB)"
+        diff_small=true
       fi
     fi
   # Change TRUNCATE_TOTAL to be based on img file instead of local root if [extra space] is provided
@@ -1600,7 +1632,9 @@ function do_backup() {
     debug 'INFO' '-y selected by user. prompts are disabled'
     echo -e "# ${Yellow}DISABLE PROMPTS SELECTED (${Green}-y${Yellow}), NO WARNINGS ABOUT DELETION!!! ${Purple}$(printf "%+$(( COLS - 63 ))s" '#')"
   fi
-  echo -e "# ${IWhite}Updating ${Green}$IMG_FILE ${Purple}$(printf "%+$(( COLS - 11 - $(echo ${IMG_FILE} | wc -m ) ))s" '#')"
+  #echo -e "# ${IWhite}Updating ${Green}$IMG_FILE ${Purple}$(printf "%+$(( COLS - 11 - $(echo ${IMG_FILE} | wc -m ) ))s" '#')"
+  echo -e "# ${IWhite}Updating backup img: ${Purple}$(printf "%+$(( COLS - 23 ))s" '#')"
+  echo -e "# ${Green}$IMG_FILE ${Purple}$(printf "%+$(( COLS - 2 - $(echo ${IMG_FILE} | wc -m ) ))s" '#')"
   echo -e "# ${Green}$FSTYPE ${IWhite}filesystem detected on root ${Purple}$(printf "%+$(( COLS - 30 - $(echo ${FSTYPE} | wc -m ) ))s" '#')"
   if [ "$FSTYPE" == 'btrfs' ]; then
     echo -e "# ${Green}${#LOCAL_SUBVOLUMES[@]} ${IWhite}btrfs volumes will be included"
@@ -1614,35 +1648,39 @@ function do_backup() {
     debug 'DEBUG' '--fix option selected by user, rsync deleting files before copy'
   fi
   echo -e "${Purple}# --------------------------------------------------------------------------------- #"
-  echo -e "# ${IWhite}Write to logfile: ${Green}$DEBUG ${Purple}$(printf "%+$(( COLS - 20 - $(echo ${DEBUG} | wc -m ) ))s" '#')"
-  echo -e "# ${IWhite}Zoom speed requested: ${Green}$ZOOM ${Purple}$(printf "%+$(( COLS - 24 - $(echo ${ZOOM} | wc -m ) ))s" '#')"
-  echo -e "# ${IWhite}Autocalculate img root partition size: ${Green}$AUTORESIZE_RUN ${Purple}$(printf "%+$(( COLS - 41 - $(echo ${AUTORESIZE_RUN} | wc -m ) ))s" '#')"
+  echo -e "# ${IWhite}Write to logfile:              ${Green}$DEBUG ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${DEBUG} | wc -m ) ))s" '#')"
+  echo -e "# ${IWhite}Zoom speed requested:          ${Green}$ZOOM ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${ZOOM} | wc -m ) ))s" '#')"
+  echo -e "# ${IWhite}Autocalculate img root size:   ${Green}$AUTORESIZE_RUN ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${AUTORESIZE_RUN} | wc -m ) ))s" '#')"
   echo -e "# ${IWhite}Autoexpand filesystem at boot: ${Green}$AUTOEXPAND ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${AUTOEXPAND} | wc -m ) ))s" '#')"
-  echo -e "# ${IWhite}Use exclude.txt: ${Green}$EXCLUDE_FILE ${Purple}$(printf "%+$(( COLS - 19 - $(echo ${EXCLUDE_FILE} | wc -m ) ))s" '#')"
+  echo -e "# ${IWhite}Use exclude.txt:               ${Green}$EXCLUDE_FILE ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${EXCLUDE_FILE} | wc -m ) ))s" '#')"
   print_temp="$(( LOCAL_BOOTSECTOR / 1024 / 1024 ))"
-  echo -e "# ${IWhite}Bootsector size: ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 22 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+  echo -e "# ${IWhite}Bootsector size:               ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
   if [ "$AUTORESIZE_RUN" = true ]; then
     print_temp="$(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))"
-    echo -e "# ${IWhite}Auto calculated size (root partition): ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 44 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+    echo -e "# ${IWhite}Auto calculated root size:     ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
     print_temp="$(( IMG_SIZE / 1024 / 1024 ))"
-    echo -e "# ${IWhite}Old img size: ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 19 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+    echo -e "# ${IWhite}Old img size:                  ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
     print_temp="$(( TRUNCATE_TOTAL / 1024 / 1024 ))"
-    echo -e "# ${IWhite}New img size: ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 19 - $(echo ${print_temp} | wc -m ) ))s" '#')"
-    echo -e "# ${IWhite}Difference: ${Green}$DIFFERENCE ${Purple}$(printf "%+$(( COLS - 14 - $(echo ${DIFFERENCE} | wc -m ) ))s" '#')"
+    echo -e "# ${IWhite}New img size:                  ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+    if [ -z "$diff_small" ]; then
+      echo -e "# ${IWhite}Difference:                   ${Green}$DIFFERENCE ${Purple}$(printf "%+$(( COLS - 32 - $(echo ${DIFFERENCE} | wc -m ) ))s" '#')"
+    else
+      echo -e "# ${IWhite}Difference: ${Green}$DIFFERENCE ${Purple}$(printf "%+$(( COLS - 14 - $(echo ${DIFFERENCE} | wc -m ) ))s" '#')"
+    fi
   elif [ "$ADDED_SPACE" -ne 0 ]; then
     print_temp="$(( $(df / -k --sync --output=used | tail -1) / 1024 ))"
-    echo -e "# ${IWhite}Estemated root usage: ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 27 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+    echo -e "# ${IWhite}Estemated root usage:          ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
     print_temp="$(( IMG_SIZE / 1024 / 1024 ))"
-    echo -e "# ${IWhite}Old img size: ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 19 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+    echo -e "# ${IWhite}Old img size:                  ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
     print_temp="$(( TRUNCATE_TOTAL / 1024 / 1024 ))"
-    echo -e "# ${IWhite}New img size: ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 19 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+    echo -e "# ${IWhite}New img size:                  ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
     print_temp="$(( ADDED_SPACE / 1024 / 1024 ))"
-    echo -e "# ${IWhite}Difference: ${Green}MiB ${Purple}$(printf "%+$(( COLS - 18 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+    echo -e "# ${IWhite}Difference:                    ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
   else
     print_temp="$(( $(df / -k --sync --output=used | tail -1) / 1024 ))"
-    echo -e "# ${IWhite}Estemated root usage: ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 27 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+    echo -e "# ${IWhite}Estemated root usage:          ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
     print_temp="$(( IMG_SIZE / 1024 / 1024 ))"
-    echo -e "# ${IWhite}Total img size: ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 21 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+    echo -e "# ${IWhite}Total img size:                ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
   fi
   echo -e "${Purple}${BREAK}${IWhite}"
 
@@ -1804,10 +1842,11 @@ EOF
   debug 'DEBUG' "Creating expansion script ${TMP_DIR}/expand-fs.sh"
   cat << EOF2 > "${TMP_DIR}/expand-fs.sh"
 #!/usr/bin/bash
-LOCAL_DEV_PTUUID=\$(lsblk -lpo mountpoint,ptuuid | grep '/ ' | awk '{print \$2}')
-LOCAL_DEV_PATH=\$(lsblk -lpo ptuuid,type,path | grep "\$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print \$3}')
+LOCAL_DEV_PTUUID=\$(lsblk -no mountpoint,ptuuid | grep '/ ' | awk '{print \$2}')
+LOCAL_DEV_PATH=\$(lsblk -no ptuuid,type,path | grep "\$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print \$3}')
 LOCAL_ROOT_PARTN=\$(parted -sm "\$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
-LOCAL_DEV_ROOT_PATH=\$(lsblk -lpo mountpoint,path | grep '/ ' | awk '{print \$2}')
+#LOCAL_DEV_ROOT_PATH=\$(lsblk -no mountpoint,path | grep '/ ' | awk '{print \$2}')
+LOCAL_DEV_ROOT_PATH=\$(mount | grep ' / ' | awk '{print \$1}')
 LOCAL_ROOT_START=\$(fdisk -lo start "\$LOCAL_DEV_PATH" | tail -1 | awk '{print \$1}') # blocks, 512B block size
 LOCAL_ROOT_START=\$(( LOCAL_ROOT_START * 512 )) # bytes
 
@@ -1863,10 +1902,11 @@ EOF
   debug 'DEBUG' 'Creating expansion script ${TMP_DIR}/expand-fs.sh'
   cat << EOF2 > "${TMP_DIR}/expand-fs.sh"
 #!/usr/bin/bash
-LOCAL_DEV_PTUUID=\$(lsblk -lpo mountpoint,ptuuid | grep '/ ' | awk '{print \$2}')
-LOCAL_DEV_PATH=\$(lsblk -lpo ptuuid,type,path | grep "\$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print \$3}')
+LOCAL_DEV_PTUUID=\$(lsblk -no mountpoint,ptuuid | grep '/ ' | awk '{print \$2}')
+LOCAL_DEV_PATH=\$(lsblk -no ptuuid,type,path | grep "\$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print \$3}')
 LOCAL_ROOT_PARTN=\$(parted -sm "\$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
-LOCAL_DEV_ROOT_PATH=\$(lsblk -lpo mountpoint,path | grep '/ ' | awk '{print \$2}')
+#LOCAL_DEV_ROOT_PATH=\$(lsblk -no mountpoint,path | grep '/ ' | awk '{print \$2}')
+LOCAL_DEV_ROOT_PATH=\$(mount | grep ' / ' | awk '{print \$1}')
 LOCAL_ROOT_START=\$(fdisk -lo start "\$LOCAL_DEV_PATH" | tail -1 | awk '{print \$1}') # blocks, 512B block size
 LOCAL_ROOT_START=\$(( LOCAL_ROOT_START * 512 )) # bytes
 
@@ -1891,7 +1931,7 @@ return 0
 # Function to print result
 function print_result() {
 
-  declare -i AFTER_SIZE=$(ls -l "$IMG_FILE" | cut -d ' ' -f 5)
+  declare -i AFTER_SIZE=$(stat -c %s "$IMG_FILE")
   AFTER_SIZE=$(( AFTER_SIZE / 1024 / 1024 ))
 
   echo -e "${White}## ${Green}Backup done."
@@ -2025,17 +2065,23 @@ fi
 
 echo -e "${White}## ${IWhite}Scanning filesystem and calculating..."
 
+# Make sure boot is mounted if it exists in fstab
+if grep -q 'boot' /etc/fstab && ! mount | grep -q 'boot'; then
+  echo -e "${Red}!! Boot found in fstab but partition not mounted, please mount and retry script!!!"
+  debug 'ERROR' 'Boot found in fstab but partition not mounted, exit 3'
+  exit 3
+fi
+
 # Check what filesystem root is using and set LOCAL_DEV_PATH & PARTITION_TABLE
-#FSTYPE=$(lsblk -lo mountpoint,fstype | grep '/ ' | awk '{print $2}')
 FSTYPE="$(mount | grep ' / ' | awk '{print $5}')"
 debug 'INFO' "$FSTYPE root filesystem detected"
 debug 'DEBUG' "FSTYPE=$FSTYPE"
 if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
-  LOCAL_DEV_PTUUID=$(lsblk -lpo mountpoint,ptuuid | grep '/ ' | awk '{print $2}')
+  LOCAL_DEV_PTUUID=$(lsblk -no mountpoint,ptuuid | grep '/ ' | awk '{print $2}')
 else
-  LOCAL_DEV_PTUUID=$(lsblk -lpo fsroots,ptuuid | grep '/ ' | awk '{print $2}')
+  LOCAL_DEV_PTUUID=$(lsblk -no fsroots,ptuuid | grep '/ ' | awk '{print $2}')
 fi
-LOCAL_DEV_PATH=$(lsblk -lpo ptuuid,type,path | grep "$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print $3}')
+LOCAL_DEV_PATH=$(lsblk -no ptuuid,type,path | grep "$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print $3}' | head -1)
 debug 'DEBUG' "LOCAL_DEV_PTUUID=$LOCAL_DEV_PTUUID | LOCAL_DEV_PATH=$LOCAL_DEV_PATH"
 PARTITION_TABLE=$(parted "$LOCAL_DEV_PATH" print | grep -i 'Partition Table' | awk '{print $3}')
 #PARTITION_TABLE=$(blkid "$LOCAL_DEV_PATH" | sed -n 's|^.*PTTYPE="\(\S\+\)".*|\1|p')
@@ -2069,6 +2115,7 @@ fi
 # Enter variables into logfile
 if [ "$DEBUG" = true ]; then
   debug 'BREAK'
+  debug 'DEBUG' "INSTALL_METHOD=$INSTALL_METHOD"
   debug 'DEBUG' "IMG_FILE=$IMG_FILE"
   debug 'DEBUG' "PARTITION_TABLE=$PARTITION_TABLE"
   debug 'DEBUG' "UPDATE=$UPDATE"
@@ -2084,13 +2131,13 @@ fi
 
 # Check if usage of exclude.txt is requested
 if [ "$EXCLUDE_FILE" = true ]; then
-  debug 'INFO' "-f selected by user, using $(dirname $0)/exclude.txt"
-  if ! [ -f $(dirname "$0")/exclude.txt ]; then
-    echo -e "${Red}!! ERROR! ${Green}-f selected but exclude.txt ${Yellow}is not present in script directory!"
-    debug 'ERROR' 'exclude.txt does not exist in script directory, exit 3'
+  debug 'INFO' "-f selected by user, using $EXCLUDE_FILE_LOCATION"
+  if ! [ -f "$EXCLUDE_FILE_LOCATION" ]; then
+    echo -e "${Red}!! ERROR! ${Green}-f selected but $EXCLUDE_FILE_LOCATION ${Yellow}does not exist!"
+    debug 'ERROR' "$EXCLUDE_FILE_LOCATION does not exist, exit 3"
     exit 3
   fi
-  debug 'DEBUG' "$(dirname $0)/exclude.txt exists"
+  debug 'DEBUG' "$EXCLUDE_FILE_LOCATION exists"
 else
   debug 'INFO' '-f NOT selected by user, using default exclude directories'
 fi
