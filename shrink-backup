@@ -228,7 +228,7 @@ EOM
 }
 
 # Parse command-line options
-options=$(getopt -o Uatyelzh --long help,fix,f2fs,version,loop: -- "$@")
+options=$(getopt -o Uatyelzh --long help,fix,f2fs,version,loop,no-color: -- "$@")
 [ $? -eq 0 ] || {
     echo -e "${Red}Incorrect options provided"
     help
@@ -247,6 +247,7 @@ while true; do
     -z) ZOOM=true; shift;;
     --fix) RSYNC_DELETE='--delete-before'; shift;;
     --f2fs) F2FS=true; shift;;
+    --no-color) unset White IWhite Red Blue Green Yellow Purple NC; shift;;
     --loop) LOOPRUN=true; IMG_FILE="$2"; shift 2;;
     --) break;;
     *) shift;;
@@ -268,9 +269,9 @@ do
   fi
 done
 
-# Check if script is run as root
+# Check if script is running as root
 if [ "$EUID" -ne 0 ]; then
-  echo -e "${Red}!! THIS SCRIPT MUST BE RUN AS ROOT! (WITH SUDO)"
+  echo -e "${Red}!! THIS SCRIPT MUST BE RUNNING AS ROOT! (WITH SUDO)"
   help
 fi
 
@@ -357,8 +358,8 @@ function get_dev_variables() {
   if grep -q 'boot' /etc/fstab; then
     debug 'INFO' 'Separate boot partition detected'
     #LOCAL_DEV_BOOT_PATH=$(lsblk -lpo mountpoint,path | grep 'boot' | awk '{print $2}')
-    LOCAL_DEV_BOOT_PATH=$(mount | grep 'boot' | awk '{print $1}')
-    LOCAL_DEV_ROOT_PATH=$(mount | grep ' / ' | awk '{print $1}')
+    LOCAL_DEV_BOOT_PATH=$(mount --fake | grep 'boot' | awk '{print $1}')
+    LOCAL_DEV_ROOT_PATH=$(mount --fake | grep ' / ' | awk '{print $1}')
     debug 'DEBUG' "LOCAL_DEV_BOOT_PATH=$LOCAL_DEV_BOOT_PATH | LOCAL_DEV_ROOT_PATH=$LOCAL_DEV_ROOT_PATH"
     LOCAL_BOOT_UUID=$(lsblk -no uuid "$LOCAL_DEV_BOOT_PATH")
     LOCAL_ROOT_UUID=$(lsblk -no uuid "$LOCAL_DEV_ROOT_PATH")
@@ -368,7 +369,7 @@ function get_dev_variables() {
     debug 'DEBUG' "BOOT_PATH=$BOOT_PATH"
   else
     debug 'INFO' 'No boot partition detected'
-    LOCAL_DEV_ROOT_PATH=$(mount | grep ' / ' | awk '{print $1}')
+    LOCAL_DEV_ROOT_PATH=$(mount --fake | grep ' / ' | awk '{print $1}')
     debug 'DEBUG' "LOCAL_DEV_ROOT_PATH=$LOCAL_DEV_ROOT_PATH"
     LOCAL_ROOT_UUID=$(lsblk -no uuid "$LOCAL_DEV_ROOT_PATH")
     LOCAL_ROOT_PARTUUID=$(lsblk -no partuuid "$LOCAL_DEV_ROOT_PATH")
@@ -745,7 +746,7 @@ function do_mount() {
 
   # Mount boot partition if exists
   if [ -n "$BOOT_PATH" ]; then
-    if ! mount | grep -q 'boot'; then
+    if ! mount --fake | grep -q 'boot'; then
       echo -e "${Red}!! Boot found in fstab but partition not mounted, please mount and retry script!!!"
       debug 'ERROR' 'Boot found in fstab but partition not mounted, exit 1'
       exit 1
@@ -1846,7 +1847,7 @@ LOCAL_DEV_PTUUID=\$(lsblk -no mountpoint,ptuuid | grep '/ ' | awk '{print \$2}')
 LOCAL_DEV_PATH=\$(lsblk -no ptuuid,type,path | grep "\$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print \$3}')
 LOCAL_ROOT_PARTN=\$(parted -sm "\$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
 #LOCAL_DEV_ROOT_PATH=\$(lsblk -no mountpoint,path | grep '/ ' | awk '{print \$2}')
-LOCAL_DEV_ROOT_PATH=\$(mount | grep ' / ' | awk '{print \$1}')
+LOCAL_DEV_ROOT_PATH=\$(mount --fake | grep ' / ' | awk '{print \$1}')
 LOCAL_ROOT_START=\$(fdisk -lo start "\$LOCAL_DEV_PATH" | tail -1 | awk '{print \$1}') # blocks, 512B block size
 LOCAL_ROOT_START=\$(( LOCAL_ROOT_START * 512 )) # bytes
 
@@ -1906,7 +1907,7 @@ LOCAL_DEV_PTUUID=\$(lsblk -no mountpoint,ptuuid | grep '/ ' | awk '{print \$2}')
 LOCAL_DEV_PATH=\$(lsblk -no ptuuid,type,path | grep "\$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print \$3}')
 LOCAL_ROOT_PARTN=\$(parted -sm "\$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
 #LOCAL_DEV_ROOT_PATH=\$(lsblk -no mountpoint,path | grep '/ ' | awk '{print \$2}')
-LOCAL_DEV_ROOT_PATH=\$(mount | grep ' / ' | awk '{print \$1}')
+LOCAL_DEV_ROOT_PATH=\$(mount --fake | grep ' / ' | awk '{print \$1}')
 LOCAL_ROOT_START=\$(fdisk -lo start "\$LOCAL_DEV_PATH" | tail -1 | awk '{print \$1}') # blocks, 512B block size
 LOCAL_ROOT_START=\$(( LOCAL_ROOT_START * 512 )) # bytes
 
@@ -1936,6 +1937,9 @@ function print_result() {
 
   echo -e "${White}## ${Green}Backup done."
   echo -e "${Purple}${BREAK}"
+
+  echo -e "## ${IWhite}Backup location: ${Green}${IMG_FILE} ${Purple}$(printf "%+$(( COLS - 20 - $(echo ${IMG_FILE} | wc -m ) ))s" '#')"
+
   echo -e "## ${IWhite}Write to logfile: ${Green}$DEBUG ${Purple}$(printf "%+$(( COLS - 21 - $(echo ${DEBUG} | wc -m ) ))s" '#')"
   echo -e "## ${IWhite}Autoexpand filesystem at boot: ${Green}$AUTOEXPAND ${Purple}$(printf "%+$(( COLS - 34 - $(echo ${AUTOEXPAND} | wc -m ) ))s" '#')"
   echo -e "## ${IWhite}Use exclude.txt: ${Green}$EXCLUDE_FILE ${Purple}$(printf "%+$(( COLS - 20 - $(echo ${EXCLUDE_FILE} | wc -m ) ))s" '#')"
@@ -1944,18 +1948,27 @@ function print_result() {
   if [ "$UPDATE" != true ]; then
     if [ "$AUTORESIZE_RUN" = true ]; then
       print_temp="$(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))"
-      echo -e "## ${Green}${IMG_FILE} ${IWhite}is ${Green}${AFTER_SIZE}MiB ${IWhite}with a ${Green}root partition ${IWhite}of ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 37 - $(echo ${IMG_FILE} | wc -m ) - $(echo ${AFTER_SIZE} | wc -m ) - $(echo ${print_temp} | wc -m ) ))s" '#')"
+      #echo -e "## ${Green}${IMG_FILE} ${IWhite}is ${Green}${AFTER_SIZE}MiB ${IWhite}with a ${Green}root partition ${IWhite}of ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 37 - $(echo ${IMG_FILE} | wc -m ) - $(echo ${AFTER_SIZE} | wc -m ) - $(echo ${print_temp} | wc -m ) ))s" '#')"
+
+      echo -e "## ${IWhite}Backup size: ${Green}${AFTER_SIZE}MiB ${IWhite}with a ${Green}root partition ${IWhite}of ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 49 - $(echo ${AFTER_SIZE} | wc -m ) - $(echo ${print_temp} | wc -m ) ))s" '#')"
+
       debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MiB with a root partition of $(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB"
     else
       print_temp="$(( ADDED_SPACE / 1024 / 1024 ))"
-      echo -e "## ${Green}$IMG_FILE ${IWhite}is ${Green}${AFTER_SIZE}MiB ${IWhite}with ${Green}${print_temp}MiB [extra space] ${IWhite}included ${Purple}$(printf "%+$(( COLS - 40 - $(echo ${IMG_FILE} | wc -m ) - $(echo ${AFTER_SIZE} | wc -m ) - $(echo ${print_temp} | wc -m ) ))s" '#')"
+      #echo -e "## ${Green}$IMG_FILE ${IWhite}is ${Green}${AFTER_SIZE}MiB ${IWhite}with ${Green}${print_temp}MiB [extra space] ${IWhite}included ${Purple}$(printf "%+$(( COLS - 40 - $(echo ${IMG_FILE} | wc -m ) - $(echo ${AFTER_SIZE} | wc -m ) - $(echo ${print_temp} | wc -m ) ))s" '#')"
+
+      echo -e "## ${IWhite}Backup size: ${Green}${AFTER_SIZE}MiB ${IWhite}with ${Green}${print_temp}MiB [extra space] ${IWhite}included ${Purple}$(printf "%+$(( COLS - 40 - $(echo ${AFTER_SIZE} | wc -m ) - $(echo ${print_temp} | wc -m ) ))s" '#')"
+
       debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MiB with $(( ADDED_SPACE / 1024 / 1024 ))MiB [extra space] included"
     fi
     debug 'INFO' 'Img file created'
 
   # Updated backup
   else
-    echo -e "## ${Green}$IMG_FILE ${IWhite}is ${Green}${AFTER_SIZE}MiB ${Purple}$(printf "%+$(( COLS - 9 - $(echo ${IMG_FILE} | wc -m ) - $(echo ${AFTER_SIZE} | wc -m ) ))s" '#')"
+    #echo -e "## ${Green}$IMG_FILE ${IWhite}is ${Green}${AFTER_SIZE}MiB ${Purple}$(printf "%+$(( COLS - 9 - $(echo ${IMG_FILE} | wc -m ) - $(echo ${AFTER_SIZE} | wc -m ) ))s" '#')"
+
+    echo -e "## ${IWhite}Backup size: ${Green}${AFTER_SIZE}MiB ${Purple}$(printf "%+$(( COLS - 20 - $(echo ${AFTER_SIZE} | wc -m ) ))s" '#')"
+
     debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MiB"
     debug 'INFO' 'Img file updated'
   fi
@@ -2066,20 +2079,21 @@ fi
 echo -e "${White}## ${IWhite}Scanning filesystem and calculating..."
 
 # Make sure boot is mounted if it exists in fstab
-if grep -q 'boot' /etc/fstab && ! mount | grep -q 'boot'; then
+if grep -q 'boot' /etc/fstab && ! mount --fake | grep -q 'boot'; then
   echo -e "${Red}!! Boot found in fstab but partition not mounted, please mount and retry script!!!"
   debug 'ERROR' 'Boot found in fstab but partition not mounted, exit 3'
   exit 3
 fi
 
 # Check what filesystem root is using and set LOCAL_DEV_PATH & PARTITION_TABLE
-FSTYPE="$(mount | grep ' / ' | awk '{print $5}')"
+FSTYPE="$(mount --fake | grep ' / ' | awk '{print $5}')"
 debug 'INFO' "$FSTYPE root filesystem detected"
 debug 'DEBUG' "FSTYPE=$FSTYPE"
 if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
   LOCAL_DEV_PTUUID=$(lsblk -no mountpoint,ptuuid | grep '/ ' | awk '{print $2}')
 else
-  LOCAL_DEV_PTUUID=$(lsblk -no fsroots,ptuuid | grep '/ ' | awk '{print $2}')
+  #LOCAL_DEV_PTUUID=$(lsblk -no fsroots,ptuuid | grep '/ ' | awk '{print $2}')
+  LOCAL_DEV_PTUUID=$(lsblk -no path,ptuuid $(mount --fake | grep ' / ' | awk '{print $1}') | awk '{print $2}')
 fi
 LOCAL_DEV_PATH=$(lsblk -no ptuuid,type,path | grep "$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print $3}' | head -1)
 debug 'DEBUG' "LOCAL_DEV_PTUUID=$LOCAL_DEV_PTUUID | LOCAL_DEV_PATH=$LOCAL_DEV_PATH"
@@ -2133,7 +2147,7 @@ fi
 if [ "$EXCLUDE_FILE" = true ]; then
   debug 'INFO' "-f selected by user, using $EXCLUDE_FILE_LOCATION"
   if ! [ -f "$EXCLUDE_FILE_LOCATION" ]; then
-    echo -e "${Red}!! ERROR! ${Green}-f selected but $EXCLUDE_FILE_LOCATION ${Yellow}does not exist!"
+    echo -e "${Red}!! ERROR! ${Green}-f selected but ${Yellow}$EXCLUDE_FILE_LOCATION does not exist!"
     debug 'ERROR' "$EXCLUDE_FILE_LOCATION does not exist, exit 3"
     exit 3
   fi
