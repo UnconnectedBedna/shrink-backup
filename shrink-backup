@@ -12,6 +12,27 @@
 #    LICENSE file in the root directory of this source tree.
 ##############################################################################
 
+
+
+function debug() {
+  local log_level="$1"
+  local log_message="$2"
+  if [ "$DEBUG" = true ]; then
+    if [ "$log_level" = 'BREAK' ]; then
+      echo '------------------------------------------------------------------------------' >> "$LOG_FILE"
+    else
+      if [ $log_level = 'INFO' ]; then
+        echo -e "$(date +"%Y-%m-%d %H:%M:%S") [$log_level]  - $log_message" >> "$LOG_FILE"
+      else
+        echo -e "$(date +"%Y-%m-%d %H:%M:%S") [$log_level] - $log_message" >> "$LOG_FILE"
+      fi
+    fi
+  fi
+return 0
+}
+
+
+
 # Function to clean up resources on script exit or termination
 function cleanup() {
   # exit 0 = cleanup after script
@@ -115,6 +136,8 @@ function cleanup() {
 trap cleanup EXIT SIGTERM
 trap "exit 10" SIGINT
 
+
+
 # Function to pause script execution and prompt for user input
 function pause() {
   read -p "$*"
@@ -122,7 +145,9 @@ function pause() {
 # Uncomment the following line to enable the pause function
 #pause 'Press [Enter] key to continue...'
 
-# Set default values for script options
+
+
+# Set default variables
 unset diff_small
 INSTALL_METHOD='default'
 PROMPTS=true
@@ -167,6 +192,8 @@ else
   TTY_AVAILABILITY='/dev/null'
 fi
 
+
+
 # Print version and exit
 version() {
   echo -e "${Purple}#########################################################################
@@ -184,7 +211,9 @@ version() {
 exit 2
 }
 
-# Function to display help information and exit
+
+
+# Display help information and exit
 help() {
   local help
   read -r -d '' help << EOM
@@ -232,8 +261,10 @@ EOM
   exit 2
 }
 
+
+
 # Parse command-line options
-options=$(getopt -o Uatyelzh --long help,fix,f2fs,version,loop,no-color: -- "$@")
+options=$(getopt -o Uatyelzhq --long help,version,quiet,fix,f2fs,no-color,loop: -- "$@")
 [ $? -eq 0 ] || {
     echo -e "${Red}Incorrect options provided"
     help
@@ -253,7 +284,7 @@ while true; do
     -q|--quiet) RSYNC_TTY=false; shift;;
     --fix) RSYNC_DELETE='--delete-before'; shift;;
     --f2fs) F2FS=true; shift;;
-    --no-color) unset White IWhite Red Blue Green Yellow Purple NC; debug 'DEBUG' '--no-color selected by user'; shift;;
+    --no-color) unset White IWhite Red Blue Green Yellow Purple NC; debug 'DEBUG' '--no-color selected by user, unsetting color variables'; shift;;
     --loop) LOOPRUN=true; IMG_FILE="$2"; shift 2;;
     --) break;;
     *) shift;;
@@ -275,7 +306,7 @@ do
   fi
 done
 
-# Check if script is running as root
+# Verify script is running as root
 if [ "$EUID" -ne 0 ]; then
   echo -e "${Red}!! THIS SCRIPT MUST BE RUNNING AS ROOT! (WITH SUDO)"
   help
@@ -283,26 +314,7 @@ fi
 
 
 
-function debug() {
-  local log_level="$1"
-  local log_message="$2"
-  if [ "$DEBUG" = true ]; then
-    if [ "$log_level" = 'BREAK' ]; then
-      echo '------------------------------------------------------------------------------' >> "$LOG_FILE"
-    else
-      if [ $log_level = 'INFO' ]; then
-        echo -e "$(date +"%Y-%m-%d %H:%M:%S") [$log_level]  - $log_message" >> "$LOG_FILE"
-      else
-        echo -e "$(date +"%Y-%m-%d %H:%M:%S") [$log_level] - $log_message" >> "$LOG_FILE"
-      fi
-    fi
-  fi
-return 0
-}
-
-
-
-# Function to loop the img file and exit
+# loop img file and exit
 function looprun() {
   if [ "$ADDED_SPACE" -ne 0 ]; then
     echo -e "${Yellow}!! ${Red}WARNING! ${Yellow}You have requested to add ${Green}${ADDED_SPACE}MiB ${Yellow}to the img file (NOT partition)"
@@ -348,7 +360,7 @@ exit 2
 
 
 
-# Function to gather device information
+# Gather device information
 function get_dev_variables() {
 
   # Run get_btrfs_variables and then exit THIS function (added space = 0)
@@ -456,7 +468,7 @@ return 0
 
 
 
-# Function to gather btrfs information
+# Gather btrfs information
 function get_btrfs_variables() {
 
   BOOT_PATH=$(cat /etc/fstab | grep 'boot' | awk '{print $2}')
@@ -490,7 +502,7 @@ return 0
 
 
 
-# Function to gather image information
+# Gather image information
 function get_img_variables() {
 
   debug 'DEBUG' "Running: stat -c %s $IMG_FILE"
@@ -581,7 +593,7 @@ return 0
 
 
 
-# Function for shared variables
+# Set shared variables
 function set_img_variables() {
 
   # Boot partition exists
@@ -659,7 +671,7 @@ return 0
 
 
 
-# Function to loop img file
+# loop img file
 function do_loop() {
 
   if [ -z "$LOOP" ]; then
@@ -681,7 +693,7 @@ return 0
 
 
 
-# Function to mount img file
+# mount img file
 function do_mount() {
 
   # Check for temp directory and create if needed
@@ -778,7 +790,7 @@ return 0
 
 
 
-# Function to check filesystem
+# Check filesystem
 function do_e2fsck() {
 
   if [ -n "$BOOT_PATH" ] && [ -n "$TMP_DIR" ] && grep -qs "${TMP_DIR}${BOOT_PATH} " /proc/mounts; then
@@ -829,7 +841,7 @@ return 0
 
 
 
-# Function to resize image
+# Resize image
 function do_resize() {
 
   # Reading offset for img root partition
@@ -987,7 +999,7 @@ return 0
 
 
 
-# Function to rsync to img file
+# rsync to img file
 function do_rsync() {
 
   echo -e "${White}## ${IWhite}Backing up files..."
@@ -1061,7 +1073,7 @@ return 0
 
 
 
-# Function to create a backup img file
+# Create a backup img file
 function make_img() {
 
   debug 'INFO' 'Running function: get_dev_variables'
@@ -1089,6 +1101,7 @@ function make_img() {
   echo -e "${Purple}# --------------------------------------------------------------------------------- #"
   echo -e "# ${IWhite}Write to logfile:              ${Green}$DEBUG ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${DEBUG} | wc -m ) ))s" '#')"
   echo -e "# ${IWhite}Zoom speed requested:          ${Green}$ZOOM ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${ZOOM} | wc -m ) ))s" '#')"
+  echo -e "# ${IWhite}rsync tty output:              ${Green}$RSYNC_TTY ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${RSYNC_TTY} | wc -m ) ))s" '#')"
   echo -e "# ${IWhite}Autocalculate img root size:   ${Green}$AUTORESIZE_RUN ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${AUTORESIZE_RUN} | wc -m ) ))s" '#')"
   echo -e "# ${IWhite}Autoexpand filesystem at boot: ${Green}$AUTOEXPAND ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${AUTOEXPAND} | wc -m ) ))s" '#')"
   echo -e "# ${IWhite}Use exclude.txt:               ${Green}$EXCLUDE_FILE ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${EXCLUDE_FILE} | wc -m ) ))s" '#')"
@@ -1604,7 +1617,7 @@ return 0
 
 
 
-# Function to update existing img file
+# Update existing backup img file
 function do_backup() {
 
   # Making sure img file exists
@@ -1678,6 +1691,7 @@ function do_backup() {
   echo -e "${Purple}# --------------------------------------------------------------------------------- #"
   echo -e "# ${IWhite}Write to logfile:              ${Green}$DEBUG ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${DEBUG} | wc -m ) ))s" '#')"
   echo -e "# ${IWhite}Zoom speed requested:          ${Green}$ZOOM ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${ZOOM} | wc -m ) ))s" '#')"
+  echo -e "# ${IWhite}rsync tty output:              ${Green}$RSYNC_TTY ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${RSYNC_TTY} | wc -m ) ))s" '#')"
   echo -e "# ${IWhite}Autocalculate img root size:   ${Green}$AUTORESIZE_RUN ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${AUTORESIZE_RUN} | wc -m ) ))s" '#')"
   echo -e "# ${IWhite}Autoexpand filesystem at boot: ${Green}$AUTOEXPAND ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${AUTOEXPAND} | wc -m ) ))s" '#')"
   echo -e "# ${IWhite}Use exclude.txt:               ${Green}$EXCLUDE_FILE ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${EXCLUDE_FILE} | wc -m ) ))s" '#')"
@@ -1786,7 +1800,7 @@ return 0
 
 
 
-# Enabling autoexpansion for Manjaro
+# Enable autoexpansion for Manjaro
 function autoexpansion_manjaro() {
   if ! [ -d "${TMP_DIR}/etc/systemd/system/basic.target.wants" ]; then
     debug 'DEBUG' "Systemd basic.target.wants directory does not exist, running: mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants"
@@ -1823,7 +1837,7 @@ return 0
 
 
 
-# Enabling autoexpansion for Armbian
+# Enable autoexpansion for Armbian
 function autoexpansion_armbian() {
   if ! test -L "${TMP_DIR}/etc/systemd/system/basic.target.wants/armbian-resize-filesystem.service"; then
     debug 'DEBUG' "Enabling systemd service by creating symlink: ln -s /lib/systemd/system/armbian-resize-filesystem.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/armbian-resize-filesystem.service"
@@ -1837,7 +1851,7 @@ return 0
 
 
 
-# Enabling autoexpansion for Raspberry pi
+# Enable autoexpansion for Raspberry pi
 function autoexpansion_rpi() {
   if ! [ -d "${TMP_DIR}/etc/systemd/system/basic.target.wants" ]; then
     debug 'DEBUG' "Systemd basic.target.wants directory does not exist, running: mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants"
@@ -1897,7 +1911,7 @@ return 0
 
 
 
-# Enabling autoexpansion for ArchLinuxArm
+# Enable autoexpansion for ArchLinuxArm
 function autoexpansion_arch() {
   if ! [ -d "${TMP_DIR}/etc/systemd/system/basic.target.wants" ]; then
     debug 'DEBUG' "Systemd basic.target.wants directory does not exist, running: mkdir ${TMP_DIR}/etc/systemd/system/basic.target.wants"
@@ -1956,7 +1970,7 @@ return 0
 
 
 
-# Function to print result
+# Print result
 function print_result() {
 
   declare -i AFTER_SIZE=$(stat -c %s "$IMG_FILE")
