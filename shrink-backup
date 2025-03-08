@@ -20,6 +20,7 @@ function cleanup() {
   # exit 3 = early/clean error
   # exit 4 = abort early
   # exit 5 = abort later
+  # exit 6 = rsync error
   # exit 10 = stopped by user mid script (ctrl+c)
   local exit_code="$?"
 
@@ -28,8 +29,9 @@ function cleanup() {
       0) debug 'DEBUG' 'Cleanup function called with exit 0';;
       4) debug 'WARNING' 'Script aborted by user early, cleanup exit 4';;
       5) debug 'WARNING' 'Script aborted by user later, cleanup exit 5';;
+      6) debug 'ERROR' 'Script failed during rsync, cleanup exit 6';;
       10) echo -e "\n${Yellow}!! Script stopped by user..."; debug 'WARNING' 'Script stopped by user with ctrl+c, cleanup exit 10';;
-      *) echo -e "${Yellow}!! Cleanup function called with non zero exit code, something went wrong!!!"; debug 'ERROR' "Cleanup function called with non zero exit code: exit $exit_code";;
+      *) echo -e "${Yellow}!! Cleanup function called with non-zero exit code, something went wrong!!!"; debug 'ERROR' "Cleanup function called with non zero exit code: exit $exit_code";;
     esac
 
     echo -e "${White}## ${IWhite}Exiting and cleaning up..."
@@ -140,6 +142,7 @@ AUTORESIZE_WARNING=false
 ZOOM=false
 LOOPRUN=false
 RSYNC_DELETE='--delete'
+RSYNC_TTY=true
 F2FS=false
 #STARTLINE="$0 $*" # will produce double // if script is in $PATH
 STARTLINE="$(dirname $0)/$(basename $0) $*" # will produce absolute path if script is in $PATH
@@ -198,10 +201,12 @@ Usage: ${Green}sudo $(basename "$0") [-Uatyelzh] [--fix] [--loop] [--f2fs] image
   ${Green}-t            ${IWhite}Use exclude.txt in same folder as script to set excluded directories
                   One directory per line: "/dir" or "/dir/*" to only exclude contents
   ${Green}-y            ${IWhite}Disable prompts in script (please use this option with care!)
-  ${Green}-e            ${IWhite}DISABLE autoexpansion on root filesystem when image is booted
+  ${Green}-e            ${IWhite}Disable autoexpansion on root filesystem when image is booted
   ${Green}-l            ${IWhite}Write debug messages to logfile shrink-backup.log located in same directory as script
   ${Green}-z            ${IWhite}Make script zoom at light-speed, only question prompts might slow it down
                   Can be combined with -y for UNSAFE ultra-mega-superduper-speed
+  ${Green}-q --quiet    ${IWhite}Do not print rsync copy process
+  ${Green}--no-color    ${IWhite}Run script without color formatted text
   ${Green}--fix         ${IWhite}Try to fix the img file if -a fails with a "broken pipe" error
   ${Green}--loop [img]  ${IWhite}Loop img file and exit, works in combination with -l & -z
                   If optional [extra space] is defined, the img file will be extended with the amount before looping
@@ -245,9 +250,10 @@ while true; do
     -e) AUTOEXPAND=false; shift;;
     -l) DEBUG=true; shift;;
     -z) ZOOM=true; shift;;
+    -q|--quiet) RSYNC_TTY=false; shift;;
     --fix) RSYNC_DELETE='--delete-before'; shift;;
     --f2fs) F2FS=true; shift;;
-    --no-color) unset White IWhite Red Blue Green Yellow Purple NC; shift;;
+    --no-color) unset White IWhite Red Blue Green Yellow Purple NC; debug 'DEBUG' '--no-color selected by user'; shift;;
     --loop) LOOPRUN=true; IMG_FILE="$2"; shift 2;;
     --) break;;
     *) shift;;
@@ -986,8 +992,8 @@ function do_rsync() {
 
   echo -e "${White}## ${IWhite}Backing up files..."
   $SLEEPING
-  if [ "$TTY_AVAILABILITY" == '/dev/null' ]; then
-    echo '## This might take some time, please stand by...'
+  if [ "$TTY_AVAILABILITY" == '/dev/null' ] || [ "$RSYNC_TTY" = false ]; then
+    echo -e "${White}## ${Yellow}This might take some time, please stand by..."
   fi
   IMG_PATH=$(dirname "$IMG_FILE")
   debug 'DEBUG' "Backing up to ${IMG_PATH}${IMG_FILE}"
@@ -998,30 +1004,51 @@ function do_rsync() {
 
   if [ "$EXCLUDE_FILE" = true ]; then
     debug 'DEBUG' "Running: rsync -ahvHAX --exclude-from="$EXCLUDE_FILE_LOCATION" --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / $TMP_DIR"
-    rsync -ahvHAX --exclude-from="$EXCLUDE_FILE_LOCATION" --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee "$TTY_AVAILABILITY"  > "$tmp_file"
-    # Get the exit status of rsync from PIPESTATUS
-    if [ "${PIPESTATUS[0]}" -ne 0 ] && [ "${PIPESTATUS[0]}" -ne 23 ]; then # code 23 = rsync warning: some files vanished before they could be transferred (code 24) at main.c
-      output=$(tail -16 "$tmp_file")
-      echo -e "${Yellow}$output\n${Red}!! RSYNC FAILED!!!"
-      debug 'BREAK'
-      debug 'ERROR' "RSYNC FAILED:\n$output\n------------------------------------------------------------------------------"
-      exit 1
-    elif [ "${PIPESTATUS[0]}" -eq 23 ]; then
-      debug 'WARNING' 'rsync code 23, some files vanished before they could be transferred (code 24) at main.c'
+    if [ "$RSYNC_TTY" = true ]; then
+      rsync -ahvHAX --exclude-from="$EXCLUDE_FILE_LOCATION" --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee "$TTY_AVAILABILITY" > "$tmp_file"
+    else
+      rsync -ahvHAX --exclude-from="$EXCLUDE_FILE_LOCATION" --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/null > "$tmp_file"
     fi
+#     if [ "${PIPESTATUS[0]}" -ne 0 ] && [ "${PIPESTATUS[0]}" -ne 23 ]; then # code 23 = rsync warning: some files vanished before they could be transferred (code 24) at main.c
+#       output=$(tail -16 "$tmp_file")
+#       echo -e "${Yellow}$output\n${Red}!! RSYNC FAILED!!!"
+#       debug 'BREAK'
+#       debug 'ERROR' "RSYNC FAILED:\n$output\n------------------------------------------------------------------------------"
+#       exit 6
+#     elif [ "${PIPESTATUS[0]}" -eq 23 ]; then
+#       debug 'WARNING' 'rsync code 23, some files vanished before they could be transferred (code 24) at main.c'
+#     fi
   else
     debug 'DEBUG' "Running: rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/swap,${IMG_PATH}/*} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / $TMP_DIR"
-    rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/swap,${IMG_PATH}/*} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee "$TTY_AVAILABILITY" > "$tmp_file"
-    if [ "${PIPESTATUS[0]}" -ne 0 ] && [ "${PIPESTATUS[0]}" -ne 23 ]; then # code 23 = rsync warning: some files vanished before they could be transferred (code 24) at main.c
-      output=$(tail -16 "$tmp_file")
-      echo -e "${Yellow}$output\n${Red}!! RSYNC FAILED!!!"
-      debug 'BREAK'
-      debug 'ERROR' "RSYNC FAILED:\n$output\n------------------------------------------------------------------------------"
-      exit 1
-    elif [ "${PIPESTATUS[0]}" -eq 23 ]; then
-      debug 'WARNING' 'rsync code 23, some files vanished before they could be transferred (code 24) at main.c'
+    if [ "$RSYNC_TTY" = true ]; then
+      rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/swap,${IMG_PATH}/*} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee "$TTY_AVAILABILITY" > "$tmp_file"
+    else
+      rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/swap,${IMG_PATH}/*} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/null > "$tmp_file"
     fi
+#     if [ "${PIPESTATUS[0]}" -ne 0 ] && [ "${PIPESTATUS[0]}" -ne 23 ]; then # code 23 = rsync warning: some files vanished before they could be transferred (code 24) at main.c
+#       output=$(tail -16 "$tmp_file")
+#       echo -e "${Yellow}$output\n${Red}!! RSYNC FAILED!!!"
+#       debug 'BREAK'
+#       debug 'ERROR' "RSYNC FAILED:\n$output\n------------------------------------------------------------------------------"
+#       exit 6
+#     elif [ "${PIPESTATUS[0]}" -eq 23 ]; then
+#       debug 'WARNING' 'rsync code 23, some files vanished before they could be transferred (code 24) at main.c'
+#     fi
   fi
+
+  # Get the exit status of rsync from PIPESTATUS
+  if [ "${PIPESTATUS[0]}" -ne 0 ] && [ "${PIPESTATUS[0]}" -ne 23 ]; then # code 23 = rsync warning: some files vanished before they could be transferred (code 24) at main.c
+    output=$(tail -16 "$tmp_file")
+    echo -e "${Yellow}$output\n${Red}!! RSYNC FAILED!!!"
+    debug 'BREAK'
+    debug 'ERROR' "RSYNC FAILED:\nPIPESTATUS=${PIPESTATUS[0]}\n$output\n------------------------------------------------------------------------------"
+    exit 6
+  elif [ "${PIPESTATUS[0]}" -eq 23 ]; then
+    echo -e "${White}## ${Yellow}Warning, rsync code 23, some files vanished before they could be transferred (code 24) at main.c"
+    echo -e "${White}## ${Yellow}This does NOT mean the backup failed"
+    debug 'WARNING' 'rsync code 23, some files vanished before they could be transferred (code 24) at main.c'
+  fi
+
   echo -e "${White}## ${Green}Rsync done..."
   echo -e "${White}## ${IWhite}Please stand by..."
   output=$(tail -16 "$tmp_file")
@@ -1646,7 +1673,7 @@ function do_backup() {
   fi
   if [ "$RSYNC_DELETE" = '--delete-before' ]; then
     echo -e "# ${Green}--fix ${IWhite}option selected, rsync will delete files on img before copy ${Purple}$(printf "%+$(( COLS - 68 ))s" '#')"
-    debug 'DEBUG' '--fix option selected by user, rsync deleting files before copy'
+    debug 'DEBUG' '--fix selected by user, rsync deleting files before copy'
   fi
   echo -e "${Purple}# --------------------------------------------------------------------------------- #"
   echo -e "# ${IWhite}Write to logfile:              ${Green}$DEBUG ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${DEBUG} | wc -m ) ))s" '#')"
@@ -2135,6 +2162,7 @@ if [ "$DEBUG" = true ]; then
   debug 'DEBUG' "UPDATE=$UPDATE"
   debug 'DEBUG' "AUTORESIZE_RUN=$AUTORESIZE_RUN"
   debug 'DEBUG' "PROMPTS=$PROMPTS"
+  debug 'DEBUG' "RSYNC_TTY=$RSYNC_TTY"
   debug 'DEBUG' "EXCLUDE_FILE=$EXCLUDE_FILE"
   debug 'DEBUG' "AUTOEXPAND=$AUTOEXPAND"
   debug 'DEBUG' "RSYNC_DELETE=$RSYNC_DELETE"
