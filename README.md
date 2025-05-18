@@ -157,8 +157,8 @@ To remind yourself: `lsblk /dev/loop*` (if you forgot what `loop` it got assigne
 #### `--f2fs` (Convert `ext4` into `f2fs` on img file)
 > [!IMPORTANT]
 > ONLY use this for **CONVERTING** filesystem into img file, **if you already have `f2fs` on the system you backup from, do not use this option.**
+> The script will detect what filesystem is used on `root` and act accordingly.  
 
-The script will detect what filesystem is used on `root` and act accordingly.  
 Only supported with new backups, not when using `-U`.
 
 Autoexpansion at boot is not supported for `f2fs` (there is no way of resizing a mounted `f2fs` filesystem, unlike with `ext4`) so resizing root partition have to be made manually after writing img to sd-card.  
