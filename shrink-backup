@@ -2054,7 +2054,7 @@ else
 fi
 
 # Check if the image file has the correct extension
-if [[ "$IMG_FILE" != *.img ]]; then
+if [ "$LOOPRUN" = false ] && [[ "$IMG_FILE" != *.img ]]; then
   echo -e "${Red}!! ERROR! ${Yellow}File must have ${Green}.img ${Yellow}extension"
   debug 'ERROR' 'File must have .img extension, exit 3'
   exit 3
