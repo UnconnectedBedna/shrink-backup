@@ -55,6 +55,8 @@ Usage: sudo shrink-backup [-Uatyelhz] [--fix] [--loop] [--f2fs] imagefile.img [e
   -l            Write debug messages to logfile shrink-backup.log located in same directory as script
   -z            Make script zoom at light-speed, only question prompts might slow it down
                   Can be combined with -y for UNSAFE ultra-mega-superduper-speed
+  -q --quiet    Do not print rsync copy process
+  --no-color    Run script without color formatted text
   --fix         Try to fix the img file if -a fails with a "broken pipe" error
   --loop [img]  Loop img file and exit, works in combination with -l & -z
                   If optional [extra space] is defined, the img file will be extended with the amount before looping
