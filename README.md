@@ -135,7 +135,7 @@ Having a "broken pipe" error during backup has in my experience never broken an 
 
 #### `--loop` (Loop img file)
 Use `--loop` to loop an img file to your `/dev`.  
-This functionality works on any linux system, just use the script on any img file anywhere available to the computer.
+This functionality works on any linux system, just use the script on any img type file (not limited to `.img` extension files) anywhere available to the computer.
 
 **Example:** `sudo shrink-backup --loop /path/to/backup.img`
 
