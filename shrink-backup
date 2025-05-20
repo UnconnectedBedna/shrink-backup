@@ -1015,11 +1015,11 @@ function do_rsync() {
   debug 'DEBUG' "tmp_file=$tmp_file"
 
   if [ "$EXCLUDE_FILE" = true ]; then
-    debug 'DEBUG' "Running: rsync -ahvHAX --exclude-from="$EXCLUDE_FILE_LOCATION" --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / $TMP_DIR"
+    debug 'DEBUG' "Running: rsync -ahvHAX --exclude-from="$EXCLUDE_FILE_LOCATION" --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded --timeout=10 / $TMP_DIR"
     if [ "$RSYNC_TTY" = true ]; then
-      rsync -ahvHAX --exclude-from="$EXCLUDE_FILE_LOCATION" --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee "$TTY_AVAILABILITY" > "$tmp_file"
+      rsync -ahvHAX --exclude-from="$EXCLUDE_FILE_LOCATION" --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded --timeout=10 / "$TMP_DIR" 2>&1 | tee "$TTY_AVAILABILITY" > "$tmp_file"
     else
-      rsync -ahvHAX --exclude-from="$EXCLUDE_FILE_LOCATION" --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/null > "$tmp_file"
+      rsync -ahvHAX --exclude-from="$EXCLUDE_FILE_LOCATION" --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded --timeout=10 / "$TMP_DIR" 2>&1 | tee /dev/null > "$tmp_file"
     fi
 #     if [ "${PIPESTATUS[0]}" -ne 0 ] && [ "${PIPESTATUS[0]}" -ne 23 ]; then # code 23 = rsync warning: some files vanished before they could be transferred (code 24) at main.c
 #       output=$(tail -16 "$tmp_file")
@@ -1031,11 +1031,11 @@ function do_rsync() {
 #       debug 'WARNING' 'rsync code 23, some files vanished before they could be transferred (code 24) at main.c'
 #     fi
   else
-    debug 'DEBUG' "Running: rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/swap,${IMG_PATH}/*} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / $TMP_DIR"
+    debug 'DEBUG' "Running: rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/swap,${IMG_PATH}/*} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded --timeout=10 / $TMP_DIR"
     if [ "$RSYNC_TTY" = true ]; then
-      rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/swap,${IMG_PATH}/*} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee "$TTY_AVAILABILITY" > "$tmp_file"
+      rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/swap,${IMG_PATH}/*} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded --timeout=10 / "$TMP_DIR" 2>&1 | tee "$TTY_AVAILABILITY" > "$tmp_file"
     else
-      rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/swap,${IMG_PATH}/*} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded / "$TMP_DIR" 2>&1 | tee /dev/null > "$tmp_file"
+      rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/swap,${IMG_PATH}/*} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded --timeout=10 / "$TMP_DIR" 2>&1 | tee /dev/null > "$tmp_file"
     fi
 #     if [ "${PIPESTATUS[0]}" -ne 0 ] && [ "${PIPESTATUS[0]}" -ne 23 ]; then # code 23 = rsync warning: some files vanished before they could be transferred (code 24) at main.c
 #       output=$(tail -16 "$tmp_file")
