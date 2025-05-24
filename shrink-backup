@@ -1204,6 +1204,7 @@ function make_img() {
   fi
   $SLEEPING
   debug 'INFO' 'Using dd to create bootsector'
+  debug 'DEBUG' "Running: dd bs=512 count=$LOCAL_DDBOOTSECTOR if=$LOCAL_DEV_PATH of=$IMG_FILE conv=noerror,sync status=progress"
   if ! output=$(dd bs=512 count=$LOCAL_DDBOOTSECTOR if="$LOCAL_DEV_PATH" of="$IMG_FILE" conv=noerror,fsync status=progress 2>&1 | tee "$TTY_AVAILABILITY") && sync; then
     echo -e "${Yellow}$output\n${Red}!! DD TO LOCAL_BOOTSECTOR FAILED!!!"
     debug 'BREAK'
@@ -1212,7 +1213,7 @@ function make_img() {
   fi
   output=$(echo "$output" | tail -3 )
   debug 'BREAK'
-  debug 'DEBUG' "Running: dd bs=512 count=$LOCAL_DDBOOTSECTOR if=$LOCAL_DEV_PATH of=$IMG_FILE conv=noerror,sync status=progress\n$output\n------------------------------------------------------------------------------"
+  debug 'DEBUG' "dd completed:\n$output\n------------------------------------------------------------------------------"
   $SLEEPING
 
   # Truncate file to correct size
