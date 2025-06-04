@@ -7,7 +7,7 @@ shrink-backup is a very fast utility for backing up your SBC:s into minimal boot
 Supports backing up `root` & `boot` (if existing) partitions. Data from other partitions will be written to `root` if not excluded (exception for [`btrfs`](#btrfs), all existing subvolumes in `/etc/fstab` will be created).  
 Please see [`Info`](#info) section.
 
-Autoexpansion tested on **Raspberry Pi** os (bookworm and older), **Armbian**, **Manjaro-arm**, **DietPi** & **ArchLinuxARM** for rpi with `ext4` or [`f2fs`](#f2fs) root partition.  
+Autoexpansion tested on **Raspberry Pi OS** (bookworm and older), **Armbian**, **Manjaro-arm**, **DietPi** & **ArchLinuxARM** for rpi with `ext4` or [`f2fs`](#f2fs) root partition.  
 (Also **experimental** [`btrfs`](#btrfs) functionality, please read further down)  
 Full functionality for usage inside [webmin](https://webmin.com/) (including "custom command" button). Thank you to [iliajie](https://github.com/iliajie) for helping out. ❤️
 
@@ -159,7 +159,7 @@ To remind yourself: `lsblk /dev/loop*` (if you forgot what `loop` it got assigne
 > ONLY use this for **CONVERTING** filesystem into img file, **if you already have `f2fs` on the system you backup from, do not use this option.**
 > The script will detect what filesystem is used on `root` and act accordingly.  
 
-Only supported with new backups, not when using `-U`.
+Only supported for Raspberry Pi OS with new backups, not when using `-U`.
 
 Autoexpansion at boot is not supported for `f2fs` (there is no way of resizing a mounted `f2fs` filesystem, unlike with `ext4`) so resizing root partition have to be made manually after writing img to sd-card.  
 Resize operations (when updating backup with `-U`) is not available for `f2fs` _as of now_.
