@@ -166,9 +166,11 @@ fi
 AUTORESIZE_WARNING=false
 ZOOM=false
 LOOPRUN=false
+CHROOTRUN=false
 RSYNC_DELETE='--delete'
 RSYNC_TTY=true
-F2FS=false
+F2FS_CONVERSION=false
+BTRFS_CONVERSION=false
 #STARTLINE="$0 $*" # will produce double // if script is in $PATH
 STARTLINE="$(dirname $0)/$(basename $0) $*" # will produce absolute path if script is in $PATH
 #STARTLINE="$(realpath $0) $*" # same as bove, but will ALWYAS produce absolute path
@@ -220,33 +222,39 @@ help() {
 ${IWhite}Script for creating an .img file and subsequently keeing it updated (-U), autoexpansion is enabled by default
 Directory where .img file is created is automatically excluded in backup
 ######################################################################################################################
-Usage: ${Green}sudo $(basename "$0") [-Uatyelzh] [--fix] [--loop] [--f2fs] imagefile.img [extra space (MiB)]
-  -U            ${IWhite}Update existing img file (rsync to existing img)
-                  Optional [extra space] extends img root partition
-  ${Green}-a            ${IWhite}Autocalculate root size partition, [extra space] is ignored
-                  When used in combination with -U:
-                  Expand if partition is >=256MiB smaller than autocalculated recommended minimum
-                  Shrink if partition is >=512MiB bigger than autocalculated recommended minimum
-  ${Green}-t            ${IWhite}Use exclude.txt in same folder as script to set excluded directories
-                  One directory per line: "/dir" or "/dir/*" to only exclude contents
-  ${Green}-y            ${IWhite}Disable prompts in script (please use this option with care!)
-  ${Green}-e            ${IWhite}Disable autoexpansion on root filesystem when image is booted
-  ${Green}-l            ${IWhite}Write debug messages to logfile shrink-backup.log located in same directory as script
-  ${Green}-z            ${IWhite}Make script zoom at light-speed, only question prompts might slow it down
-                  Can be combined with -y for UNSAFE ultra-mega-superduper-speed
-  ${Green}-q --quiet    ${IWhite}Do not print rsync copy process
-  ${Green}--no-color    ${IWhite}Run script without color formatted text
-  ${Green}--fix         ${IWhite}Try to fix the img file if -a fails with a "broken pipe" error
-  ${Green}--loop [img]  ${IWhite}Loop img file and exit, works in combination with -l & -z
-                  If optional [extra space] is defined, the img file will be extended with the amount before looping
-                  NOTE that only the file gets truncated, no partitions
-                  Useful if you for example want to manually manage the partitions
-  ${Green}--f2fs        ${IWhite}Convert root filesystem on img from ext4 to f2fs
-                  Only works on new img file, not in combination with -U
-                  Will make backups of fstab & cmdline.txt to: fstab.shrink-backup.bak & cmdline.txt.shrink-backup.bak
-                  Then change ext4 to f2fs in both files and add discard to options on root partition in fstab
-  ${Green}--version     ${IWhite}Print version and exit
-  ${Green}-h --help     ${IWhite}Show this help snippet
+Usage: ${Green}sudo $(basename "$0") [options] imagefile.img [extra space (MiB)]
+  -U             ${IWhite}Update existing img file (rsync to existing img)
+                   Optional [extra space] extends img root partition
+  ${Green}-a             ${IWhite}Autocalculate root size partition, [extra space] is ignored
+                   When used in combination with -U:
+                   Expand if partition is >=256MiB smaller than autocalculated recommended minimum
+                   Shrink if partition is >=512MiB bigger than autocalculated recommended minimum
+  ${Green}-t             ${IWhite}Use exclude.txt in same folder as script to set excluded directories
+                   One directory per line: "/dir" or "/dir/*" to only exclude contents
+  ${Green}-y             ${IWhite}Disable prompts in script (please use this option with care!)
+  ${Green}-e             ${IWhite}Disable autoexpansion on root filesystem when image is booted
+  ${Green}-l             ${IWhite}Write debug messages to logfile shrink-backup.log located in same directory as script
+  ${Green}-z             ${IWhite}Make script zoom at light-speed, only question prompts might slow it down
+                   Can be combined with -y for UNSAFE ultra-mega-superduper-speed
+  ${Green}-q --quiet     ${IWhite}Do not print rsync copy process
+  ${Green}--no-color     ${IWhite}Run script without color formatted text
+  ${Green}--fix          ${IWhite}Try to fix the img file if -a fails with a "broken pipe" error
+  ${Green}--loop [img]   ${IWhite}Loop img file and exit, works in combination with -l & -z
+                   If optional [extra space] is defined, the img file will be extended with the amount before looping
+                   NOTE that only the file gets truncated, no partitions
+                   Useful if you for example want to manually manage the partitions
+  ${Green}--chroot [img] ${IWhite}Loop img file, mount to a temp directory, enter chroot environment and drop to shell
+                   This will let you make changes in a chroot environment directly on the img file
+                   For example update with package manager or rebuild initramfs
+                   The script will keep running in the background
+                   Type 'exit' when done and the script will unmount, remove loop and exit
+                   Uses systemd-nspawn
+  ${Green}--f2fs         ${IWhite}Convert root filesystem on img from ext4 to f2fs
+                   Only works on new img file, not in combination with -U
+                   Will make backups of fstab & cmdline.txt to: fstab.shrink-backup.bak & cmdline.txt.shrink-backup.bak
+                   Then change ext4 to f2fs in both files and add discard to options on root partition in fstab
+  ${Green}--version      ${IWhite}Print version and exit
+  ${Green}-h --help      ${IWhite}Show this help snippet
 ######################################################################################################################
 Examples:
 ${Green}sudo $(basename "$0") -a /path/to/backup.img ${White}(create img, automatically set size)
@@ -264,7 +272,7 @@ EOM
 
 
 # Parse command-line options
-options=$(getopt -o Uatyelzhq --long help,version,quiet,fix,f2fs,no-color,loop: -- "$@")
+options=$(getopt -o Uatyelzhq --long help,version,quiet,fix,f2fs,no-color,loop,chroot: -- "$@")
 [ $? -eq 0 ] || {
     echo -e "${Red}Incorrect options provided"
     help
@@ -283,21 +291,21 @@ while true; do
     -z) ZOOM=true; shift;;
     -q|--quiet) RSYNC_TTY=false; shift;;
     --fix) RSYNC_DELETE='--delete-before'; shift;;
-    --f2fs) F2FS=true; shift;;
+    --f2fs) F2FS_CONVERSION=true; shift;;
     --no-color) unset White IWhite Red Blue Green Yellow Purple NC; COLORS=false; debug 'DEBUG' '--no-color selected by user, unsetting color variables'; shift;;
-    --loop) LOOPRUN=true; IMG_FILE="$2"; shift 2;;
+    --loop) LOOPRUN=true; IMG_FILE="$3"; shift;;
+    --chroot) CHROOTRUN=true; IMG_FILE="$2"; shift;;
     --) break;;
     *) shift;;
   esac
 done
 
-# Process the non-option arguments, checks/fixes if the imagefile comes before the options
-while [ "$#" -gt 0 ];
-do
+# Process non-option arguments
+while [ "$#" -gt 0 ]; do
   if [[ "$1" =~ ^- ]]; then
     shift
   elif [ -n "$IMG_FILE" ]; then
-    ADDED_SPACE="$1"
+    ADDED_SPACE="$2"
     break
   else
     IMG_FILE="$1"
@@ -383,6 +391,159 @@ exit 2
 
 
 
+function chrootrun() {
+
+  check_dependencies
+  do_loop
+
+  # Assumes last partition is root
+  partprobe "$LOOP"
+  sleep 2
+  FSTYPE="$(lsblk -no fstype $LOOP | tail -1)"
+  debug 'DEBUG' "FSTYPE=$FSTYPE"
+  # First index (LSBLK_PARTITIONS[0]) will be the loop itself
+  LSBLK_PARTITIONS=($(lsblk -no path $LOOP))
+  debug 'DEBUG' "LSBLK_PARTITIONS=$(echo ${LSBLK_PARTITIONS[@]})"
+
+  # Check for temp directory and create if needed
+  if ! [ -d "$TMP_DIR" ]; then
+    echo -e "${White}## ${IWhite}Creating temp directory..."
+    $SLEEPING
+    debug 'INFO' 'Creating temp directory'
+    debug 'DEBUG' "Running: mktemp -d -t chroot-XXX"
+    TMP_DIR=$(mktemp -d -t chroot-XXX)
+    debug 'DEBUG' "TMP_DIR=$TMP_DIR"
+  fi
+
+  # ext4 or f2fs
+  if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
+    # Assumes root is on last partition
+    count=$(( ${#LSBLK_PARTITIONS[@]} - 1 )) # ${#LSBLK_PARTITIONS[@]} gives count
+    echo -e "${White}## ${IWhite}Mounting ${Green}root (/) ${IWhite}partition"
+    $SLEEPING
+    debug 'INFO' 'Mounting root partition'
+    debug 'DEBUG' "Running: mount ${LSBLK_PARTITIONS[$count]} $TMP_DIR"
+    if ! output=$(mount "${LSBLK_PARTITIONS[$count]}" "$TMP_DIR" 2>&1); then
+      echo -e "${Yellow}$output\n${Red}!! ROOT MOUNT FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "ROOT MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
+      exit 3
+    fi
+    # Remount with flags from fstab
+    fstab=($(cat "$TMP_DIR"/etc/fstab | grep ' / '))
+    echo -e "${White}## ${IWhite}Remounting ${Green}root (/) ${IWhite}partition with flags from fstab"
+    $SLEEPING
+    debug 'INFO' 'Remounting root partition with flags from fstab'
+    debug 'DEBUG' "Running: mount -o remount,${fstab[3]} $TMP_DIR"
+    if ! output=$(mount -o remount,${fstab[3]} "$TMP_DIR" 2>&1); then
+      echo -e "${Yellow}$output\n${Red}!! REMOUNTING ROOT PARTITION FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "REMOUNTING ROOT PARTITION FAILED:\n$output\n-------------------------------------------------------------------------------------"
+      exit 3
+    fi
+    # Mount boot if exists
+    if grep -q 'boot' $TMP_DIR/etc/fstab; then
+      (( count -- ))
+      debug 'INFO' 'Boot partition found in fstab, mounting boot partition'
+      fstab=($(cat "$TMP_DIR"/etc/fstab | grep 'boot'))
+      BOOT_PATH="${fstab[1]}" # Used to find mount in cleanup function
+      debug 'DEBUG' "BOOT_PATH=$BOOT_PATH"
+      echo -e "${White}## ${IWhite}Mounting ${Green}${fstab[1]} ${IWhite}from fstab"
+      $SLEEPING
+      debug 'DEBUG' "Running: mount -o ${fstab[3]} ${LSBLK_PARTITIONS[$count]} ${TMP_DIR}${fstab[1]}"
+      if ! output=$(mount -o "${fstab[3]}" "${LSBLK_PARTITIONS[$count]}" "${TMP_DIR}${fstab[1]}" 2>&1); then
+        echo -e "${Yellow}$output\n${Red}!! BOOT MOUNT FAILED!!!"
+        debug 'BREAK'
+        debug 'ERROR' "BOOT MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
+        exit 3
+      fi
+    fi
+
+  # btrfs
+  elif [ "$FSTYPE" == 'btrfs' ]; then
+    # Assumes root subvolume is @ and is on second partition
+    echo -e "${White}## ${IWhite}Mounting ${Green}@ ${IWhite}subvolume"
+    $SLEEPING
+    debug 'INFO' 'Mounting @ subvolume'
+    debug 'DEBUG' "Running: mount -o subvol=@ ${LSBLK_PARTITIONS[2]} $TMP_DIR"
+    if ! output=$(mount -o subvol=@ "${LSBLK_PARTITIONS[2]}" "$TMP_DIR" 2>&1); then
+      echo -e "${Yellow}$output\n${Red}!! ROOT SUBVOLUME (@) MOUNT FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "ROOT SUBVOLUME (@) MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
+      exit 3
+    fi
+    # Remount with flags from fstab
+    fstab=($(cat "$TMP_DIR"/etc/fstab | grep ' / '))
+    echo -e "${White}## ${IWhite}Remounting ${Green}@ ${IWhite}subvolume with flags from fstab"
+    $SLEEPING
+    debug 'INFO' 'Remounting @ with flags from fstab'
+    debug 'DEBUG' "Running: mount -o remount,${fstab[3]} $TMP_DIR"
+    if ! output=$(mount -o remount,${fstab[3]} "$TMP_DIR" 2>&1); then
+      echo -e "${Yellow}$output\n${Red}!! REMOUNTING ROOT SUBVOLUME (@) FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "REMOUNTING ROOT SUBVOLUME (@) FAILED:\n$output\n-------------------------------------------------------------------------------------"
+      exit 3
+    fi
+    # Assumes boot exists and is on first partition
+    fstab=($(cat "$TMP_DIR"/etc/fstab | grep 'boot'))
+    BOOT_PATH="${fstab[1]}" # Used to find mount in cleanup function
+    debug 'INFO' 'Mounting boot partition'
+    debug 'DEBUG' "BOOT_PATH=$BOOT_PATH"
+    echo -e "${White}## ${IWhite}Mounting ${Green}${fstab[1]} ${IWhite}from fstab"
+    $SLEEPING
+    debug 'DEBUG' "Running: mount -o ${fstab[3]} ${LSBLK_PARTITIONS[1]} ${TMP_DIR}${fstab[1]}"
+    if ! output=$(mount -o "${fstab[3]}" "${LSBLK_PARTITIONS[1]}" "${TMP_DIR}${fstab[1]}" 2>&1); then
+      echo -e "${Yellow}$output\n${Red}!! BOOT MOUNT FAILED!!!"
+      debug 'BREAK'
+      debug 'ERROR' "BOOT MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
+      exit 3
+    fi
+    # Filter out @ and subvolumes not in fstab
+    IMG_SUBVOLUMES=($(btrfs subvol list $TMP_DIR | awk '{print $9}'))
+    echo -e "${White}## ${IWhite}Subvolumes found on image ${Green}${IMG_SUBVOLUMES[@]}"
+    echo -e "${White}## ${IWhite}Filtering out subvolumes not present in fstab"
+    $SLEEPING
+    debug 'INFO' 'Filtering out @ and subvolumes not in fstab'
+    debug 'DEBUG' "Subvolumes before filtering: $(echo ${IMG_SUBVOLUMES[@]})"
+    for i in ${!IMG_SUBVOLUMES[@]}; do
+      if ! $(grep -q ${IMG_SUBVOLUMES[i]} $TMP_DIR/etc/fstab) || [ $(echo ${IMG_SUBVOLUMES[i]}) == '@' ]; then
+      unset IMG_SUBVOLUMES[i]
+      fi
+    done
+    echo -e "${White}## ${IWhite}Subvolumes to mount: ${Green}${IMG_SUBVOLUMES[@]}"
+    $SLEEPING
+    debug 'DEBUG' "Subvolumes after filtering: ${IMG_SUBVOLUMES[@]}"
+    # Mount remaining subvolumes
+    debug 'INFO' 'Mounting remaining subvolumes'
+    for subvol in ${IMG_SUBVOLUMES[@]}; do
+      fstab=($(cat "$TMP_DIR"/etc/fstab | grep "$subvol"))
+      echo -e "${White}## ${IWhite}Mounting ${Green}${fstab[1]} ${IWhite}from fstab"
+      $SLEEPING
+      debug 'DEBUG' "Running: mount -o ${fstab[3]} ${LSBLK_PARTITIONS[2]} ${TMP_DIR}${fstab[1]}"
+      if ! output=$(mount -o "${fstab[3]}" "${LSBLK_PARTITIONS[2]}" "${TMP_DIR}${fstab[1]}" 2>&1); then
+        echo -e "${Yellow}$output\n${Red}!! SUBVOLUME MOUNT FAILED!!!"
+        debug 'BREAK'
+        debug 'ERROR' "SUBVOLUME MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
+        exit 3
+      fi
+    done
+  fi
+
+  # Enter chroot environment
+  echo -e "${White}## ${IWhite}Running systemd-nspawn, type ${Green}exit ${IWhite}when done to exit chroot environment"
+  echo -e "${White}## ${Yellow}YOU ARE RUNNING AS ROOT!!!${NC}"
+  if systemctl is-active -q systemctl-resolved.service; then
+    debug 'DEBUG' "Running: systemd-nspawn --resolv-conf=replace-stub -D $TMP_DIR bin/bash"
+    systemd-nspawn --resolv-conf=replace-stub -D "$TMP_DIR" bin/bash
+  else
+    debug 'DEBUG' "Running: systemd-nspawn --resolv-conf=copy-host -D $TMP_DIR bin/bash"
+    systemd-nspawn --resolv-conf=copy-host -D "$TMP_DIR" bin/bash
+  fi
+exit 0
+}
+
+
+
 # Gather device information
 function dev_variables() {
 
@@ -463,6 +624,11 @@ function dev_variables() {
   if [ "$AUTORESIZE_RUN" = true ]; then
     debug 'INFO' 'Setting TOTAL (space needed for files on root) to autocalculated size'
     TOTAL=$LOCAL_AUTORESIZE_MIN # bytes
+    # Add 512MiB if f2fs conversion
+    if [ "$F2FS_CONVERSION" = true ]; then
+      debug 'INFO' 'Adding 512MiB because of f2fs conversion'
+      TOTAL=$(( $TOTAL + 536870912 ))
+    fi
   else
     debug 'INFO' 'Calculating TOTAL (space needed for files on root) by adding LOCAL_USED_SPACE and ADDED_SPACE'
     debug 'DEBUG' "LOCAL_USED_SPACE=${LOCAL_USED_SPACE} bytes | ADDED_SPACE=${ADDED_SPACE} bytes"
@@ -601,34 +767,34 @@ function img_variables() {
 
   # Check for btrfs subvolumes on img
   # None of this is needed unless creation of new voumes during update will be implemented
-  if [ "$FSTYPE" = 'btrfs' ] && [ "$UPDATE" = true ]; then
-    # Check for temp directory and create if needed
-    if ! [ -d "$TMP_DIR" ]; then
-      echo -e "${White}## ${IWhite}Creating temp directory..."
-      $SLEEPING
-      debug 'INFO' 'Creating temp directory'
-      debug 'DEBUG' "Running: mktemp -d -t backup-XXX"
-      TMP_DIR=$(mktemp -d -t backup-XXX)
-      debug 'DEBUG' "TMP_DIR=$TMP_DIR"
-    fi
-    $SLEEPING
-    partprobe "$LOOP"
-    declare -a fstab=( $(cat /etc/fstab | grep ' / ') )
-    debug 'INFO' 'Mounting btrfs filesystem to find subvolumes'
-    debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH $TMP_DIR"
-    if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
-      echo -e "${Yellow}$output\n${Red}!! ROOT MOUNT FAILED!!!"
-      debug 'BREAK'
-      debug 'ERROR' "ROOT MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
-      exit 3
-    fi
-    $SLEEPING
-    debug 'DEBUG' "Running: btrfs subvolume list $TMP_DIR | awk '{print \$9}'"
-    declare -a IMG_SUBVOLUMES=( $(btrfs subvolume list "$TMP_DIR" | awk '{print $9}') )
-    debug 'DEBUG' "IMG_SUBVOLUMES=$(echo ${IMG_SUBVOLUMES[@]})"
-    debug 'DEBUG' "Running: umount $TMP_DIR"
-    umount "$TMP_DIR"
-  fi
+#   if [ "$FSTYPE" == 'btrfs' ] && [ "$UPDATE" = true ]; then
+#     # Check for temp directory and create if needed
+#     if ! [ -d "$TMP_DIR" ]; then
+#       echo -e "${White}## ${IWhite}Creating temp directory..."
+#       $SLEEPING
+#       debug 'INFO' 'Creating temp directory'
+#       debug 'DEBUG' "Running: mktemp -d -t backup-XXX"
+#       TMP_DIR=$(mktemp -d -t backup-XXX)
+#       debug 'DEBUG' "TMP_DIR=$TMP_DIR"
+#     fi
+#     $SLEEPING
+#     partprobe "$LOOP"
+#     fstab=($(cat /etc/fstab | grep ' / '))
+#     debug 'INFO' 'Mounting btrfs filesystem to find subvolumes'
+#     debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH $TMP_DIR"
+#     if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
+#       echo -e "${Yellow}$output\n${Red}!! ROOT MOUNT FAILED!!!"
+#       debug 'BREAK'
+#       debug 'ERROR' "ROOT MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
+#       exit 3
+#     fi
+#     $SLEEPING
+#     debug 'DEBUG' "Running: btrfs subvolume list $TMP_DIR | awk '{print \$9}'"
+#     declare -a IMG_SUBVOLUMES=( $(btrfs subvolume list "$TMP_DIR" | awk '{print $9}') )
+#     debug 'DEBUG' "IMG_SUBVOLUMES=$(echo ${IMG_SUBVOLUMES[@]})"
+#     debug 'DEBUG' "Running: umount $TMP_DIR"
+#     umount "$TMP_DIR"
+#   fi
 return 0
 }
 
@@ -638,7 +804,7 @@ return 0
 function check_dependencies() {
 
   # GPT
-  if [ $PARTITION_TABLE == 'gpt' ]; then
+  if [ "$PARTITION_TABLE" == 'gpt' ]; then
     echo -e "${White}## ${Green}GPT partition table detected, ${Yellow}sgdisk needed, ${IWhite}checking for application..."
     $SLEEPING
     if ! command -v sgdisk > /dev/null 2>&1; then
@@ -650,11 +816,10 @@ function check_dependencies() {
         echo -e "${White}## ${Green}apt found, ${IWhite}trying to install gdisk..."
         # Confirm with user input
         if [ "$PROMPTS" = true ]; then
-          echo -e "${Purple}${BREAK}${IWhite}"
           debug 'INFO' 'Do you want to use apt to install gdisk? (will upgrade system first) [y/n]'
           while true; do
             if [ "$COLORS" = true ]; then
-              read -r -p $'\e[0;37m## \e[0;97mDo you want to use apt to install gdisk? (will upgrade system first) \e[0;92m[y/n] \e[0m' input
+              read -r -p $'\e[0;37m## \e[0;93mDo you want to use apt to install gdisk? \e[0;97m(will upgrade system first) \e[0;92m[y/n] \e[0m' input
             else
               read -r -p '## Do you want to use apt to install gdisk? (will upgrade system first) [y/n] ' input
             fi
@@ -678,11 +843,10 @@ function check_dependencies() {
         echo -e "${White}## ${Green}pacman found, ${IWhite}trying to install gdisk..."
         # Confirm with user input
         if [ "$PROMPTS" = true ]; then
-          echo -e "${Purple}${BREAK}${IWhite}"
           debug 'INFO' 'Do you want to use pacman to install gptfdisk? (will run pacman -Syu first) [y/n]'
           while true; do
             if [ "$COLORS" = true ]; then
-              read -r -p $'\e[0;37m## \e[0;97mDo you want to use pacman to install gptfdisk? (will run pacman -Syu first) \e[0;92m[y/n] \e[0m' input
+              read -r -p $'\e[0;37m## \e[0;93mDo you want to use pacman to install gptfdisk? \e[0;97m(will run pacman -Syu first) \e[0;92m[y/n] \e[0m' input
             else
               read -r -p '## Do you want to use pacman to install gptfdisk? (will run pacman -Syu first) [y/n] ' input
             fi
@@ -721,7 +885,7 @@ function check_dependencies() {
   fi
 
   # f2fs conversion
-  if [ "$f2fs" = true ]; then
+  if [ "$F2FS_CONVERSION" = true ]; then
     echo -e "${White}## ${Green}--f2fs option selected, mkfs.f2fs is needed, ${IWhite}checking for application..."
     $SLEEPING
     if ! command -v mkfs.f2fs > /dev/null 2>&1; then
@@ -733,11 +897,10 @@ function check_dependencies() {
         echo -e "${White}## ${Green}apt found, ${IWhite}trying to install f2fs-tools..."
         # Confirm with user input
         if [ "$PROMPTS" = true ]; then
-          echo -e "${Purple}${BREAK}${IWhite}"
           debug 'INFO' 'Do you want to use apt to install f2fs-tools? (will upgrade system first) [y/n]'
           while true; do
             if [ "$COLORS" = true ]; then
-              read -r -p $'\e[0;37m## \e[0;97mDo you want to use apt to install f2fs-tools? (will upgrade system first) \e[0;92m[y/n] \e[0m' input
+              read -r -p $'\e[0;37m## \e[0;93mDo you want to use apt to install f2fs-tools? \e[0;97m(will upgrade system first) \e[0;92m[y/n] \e[0m' input
             else
               read -r -p '## Do you want to use apt to install f2fs-tools? (will upgrade system first) [y/n] ' input
             fi
@@ -770,12 +933,60 @@ function check_dependencies() {
       debug 'INFO' 'mkfs.f2fs is available on system'
       $SLEEPING
     fi
+  fi
 
   # btrfs conversion
-  elif [ "$btrfs" = true ]; then
+  if [ "$BTRFS_CONVERSION" = true ]; then
     echo 'btrfs'
   fi
-return
+
+  # --chroot selected
+  if [ "$CHROOTRUN" = true ]; then
+    echo -e "${White}## ${Green}--chrootrun ${IWhite}selected, ${Yellow}systemd-nspawn needed, ${IWhite}checking for application..."
+    $SLEEPING
+    if ! command -v systemd-nspawn > /dev/null 2>&1; then
+      echo -e "${Yellow}!! systemd-nspawn is NOT installed..."
+      debug 'INFO' 'systemd-nspawn not available on system'
+
+      # Only needed on debian based systems, on arch systemd-nspawn is in systemd package
+      if command -v apt > /dev/null 2>&1; then
+        echo -e "${White}## ${Green}apt found, ${IWhite}trying to install systemd-container..."
+        # Confirm with user input
+        if [ "$PROMPTS" = true ]; then
+          debug 'INFO' 'Do you want to use apt to install systemd-container? (will upgrade system first) [y/n]'
+          while true; do
+            if [ "$COLORS" = true ]; then
+              read -r -p $'\e[0;37m## \e[0;93mDo you want to use apt to install systemd-container? \e[0;97m(will upgrade system first) \e[0;92m[y/n] \e[0m' input
+            else
+              read -r -p '## Do you want to use apt to install systemd-container? (will upgrade system first) [y/n] ' input
+            fi
+            case $input in
+              [Yy]) break;;
+              [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
+              *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"; debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
+            esac
+          done
+          debug 'INFO' 'Y or y pressed to confirm'
+          debug 'BREAK'
+          debug 'DEBUG' 'Running: apt update -y && apt upgrade -y && apt install systemd-container -y'
+          apt update -y && apt upgrade -y && apt install systemd-container -y
+        else
+          debug 'DEBUG' 'Running: apt update -y && apt upgrade -y && apt install systemd-container -y'
+          apt update -y && apt upgrade -y && apt install systemd-container -y
+        fi
+        echo -e "${White}## ${Green}systemd-container installed successfully, ${IWhite}resuming..."
+        debug 'INFO' 'systemd-container installed successfully'
+        $SLEEPING
+      fi
+
+    # systemd-nspawn already installed
+    else
+      echo -e "${White}## ${Green}systemd-nspawn is available, ${IWhite}resuming..."
+      debug 'INFO' 'systemd-nspawn is available on system'
+      $SLEEPING
+    fi
+  fi
+return 0
 }
 
 
@@ -819,7 +1030,7 @@ function do_mount() {
   partprobe "$LOOP"
 
   # ext4 & f2fs
-  if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ] || [ "$F2FS" = true ]; then
+  if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ] || [ "$F2FS_CONVERSION" = true ]; then
     echo -e "${White}## ${IWhite}Mounting img root partition..."
     $SLEEPING
     debug 'INFO' 'Mounting root partition from loop'
@@ -1169,7 +1380,7 @@ function do_conversion() {
   if [ "$*" == 'create_partition' ]; then
 
     # f2fs
-    if [ "$F2FS" = true ]; then
+    if [ "$F2FS_CONVERSION" = true ]; then
       debug 'INFO' '--f2fs selected by user, creating f2fs partition on img file'
       debug 'DEBUG' "Running: parted -s -a none $LOOP unit B mkpart primary f2fs $LOCAL_ROOT_START 100%"
       if ! output=$(parted -s -a none "$LOOP" unit B mkpart primary f2fs "$LOCAL_ROOT_START" 100% 2>&1); then
@@ -1184,7 +1395,7 @@ function do_conversion() {
   elif [ "$*" == 'format_filesystem' ]; then
 
     # f2fs
-    if [ "$F2FS" = true ]; then
+    if [ "$F2FS_CONVERSION" = true ]; then
       debug 'INFO' "Using mkfs.f2fs to format root filesystem"
       if ! output=$(mkfs.f2fs -f -U "$UUID" -l "$LABEL" "$IMG_DEV_ROOT_PATH" 2>&1 | tee "$TTY_AVAILABILITY" ); then
         echo -e "${Yellow}$output\n${Red}!! MKFS.F2FS FAILED!!!"
@@ -1204,7 +1415,7 @@ function do_conversion() {
   elif [ "$*" == 'edit_configs' ]; then
 
     # f2fs
-    if [ "$F2FS" = true ]; then
+    if [ "$F2FS_CONVERSION" = true ]; then
       echo -e "${White}## ${IWhite}Editing img configurations for f2fs..."
       $SLEEPING
       echo -e "${White}## ${IWhite}Backups will be created: ${Green}/etc/fstab.shrink-backup.bak ${IWhite}& ${Green}${BOOT_PATH}/cmdline.txt.shrink-backup.bak"
@@ -1256,7 +1467,7 @@ function make_img() {
     echo -e "${Purple}# ${IWhite}btrfs volumes: ${Green}${LOCAL_SUBVOLUMES[@]} ${Purple}$(printf "%+$(( COLS - 17 - $(echo ${LOCAL_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
   elif [ "$FSTYPE" == 'f2fs' ]; then
     echo -e "# ${Yellow}Autoexpand filesystem at boot not available for ${Green}f2fs ${Purple}$(printf "%+$(( COLS - 54 ))s" '#')"
-  elif [ "$F2FS" = true ]; then
+  elif [ "$F2FS_CONVERSION" = true ]; then
     echo -e "# ${Yellow}Converting filesystem into ${Green}f2fs ${Yellow}on img file ${Purple}$(printf "%+$(( COLS - 46 ))s" '#')"
     echo -e "# ${Yellow}Autoexpand filesystem at boot not available for ${Green}f2fs ${Purple}$(printf "%+$(( COLS - 55 ))s" '#')"
   fi
@@ -1292,7 +1503,7 @@ function make_img() {
       echo -e "! ${IWhite}Requested root size:            ${Yellow}${print_temp}MiB $(printf "%+$(( COLS - 37 - $(echo ${print_temp} | wc -m ) ))s" '!')"
     fi
   fi
-  if [ "$F2FS" = true ]; then
+  if [ "$F2FS_CONVERSION" = true ]; then
     echo -e "${Yellow}# $(printf %$(( COLS - 4 ))s | tr ' ' '-') #"
     echo -e "! WARNING!!! --f2fs option selected. f2fs filesystem will be created on img file $(printf "%+$(( COLS - 81 ))s" '!')"
     echo -e "! This option is only for CONVERTING existing filesystem into f2fs on img file $(printf "%+$(( COLS - 79 ))s" '!')"
@@ -1399,10 +1610,6 @@ function make_img() {
   debug 'INFO' 'Running function: img_variables'
   img_variables
 
-  # Check dependencies
-  debug 'INFO' 'Running function: check_dependencies'
-  check_dependencies
-
   # Remove partition
   echo -e "${White}## ${IWhite}Removing root partition..."
   $SLEEPING
@@ -1446,7 +1653,7 @@ function make_img() {
   debug 'INFO' 'Using parted to recreate root partition'
 
   # Converting
-  if [ "$F2FS" = true ]; then
+  if [ "$F2FS_CONVERSION" = true ]; then
     debug 'INFO' "Running function: do_conversion 'create_partition'"
     do_conversion 'create_partition'
 
@@ -1483,7 +1690,7 @@ function make_img() {
   debug 'DEBUG' "LABEL=$LABEL | UUID=$UUID"
 
   # Converting
-  if [ "$F2FS" = true ]; then
+  if [ "$F2FS_CONVERSION" = true ]; then
     debug 'INFO' "Running function: do_conversion 'format_filesystem'"
     do_conversion 'format_filesystem'
 
@@ -1549,17 +1756,17 @@ function make_img() {
 
     # Mount btrfs filesystem and create volumes
     echo -e "${White}## ${IWhite}Creating btrfs subvolumes..."
-    debug 'INFO' 'Creating btrfs subvolumes'
+    debug 'INFO' 'Mounting btrfs filesystem and creating btrfs subvolumes'
     debug 'DEBUG' "Running: mount -o noatime,compress=zstd $IMG_DEV_ROOT_PATH $TMP_DIR"
     if ! output=$(mount -o noatime,compress=zstd "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
-      echo -e "${Yellow}$output\n${Red}!! ROOT MOUNT FAILED!!!"
+      echo -e "${Yellow}$output\n${Red}!! BTRFS FILESYSTEM MOUNT FAILED!!!"
       debug 'BREAK'
       debug 'ERROR' "BTRFS FILESYSTEM MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
       exit 3
     fi
     $SLEEPING
 
-    # Create top level subvolumes
+    # Create top level subvolumes, assumes subvols starting with @ are level 5 volumes
     for subvol in "${LOCAL_SUBVOLUMES[@]}"; do
       if [[ "$subvol" == '@'* ]]; then
         echo -e "${White}## ${IWhite}Creating subvolume: ${Green}$subvol"
@@ -1585,9 +1792,9 @@ function make_img() {
     declare -a fstab=( $(cat /etc/fstab | grep ' / ') )
     debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH $TMP_DIR"
     if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
-      echo -e "${Yellow}$output\n${Red}!! ROOT SUBVOLUME MOUNT FAILED!!!"
+      echo -e "${Yellow}$output\n${Red}!! ROOT SUBVOLUME (@) MOUNT FAILED!!!"
       debug 'BREAK'
-      debug 'ERROR' "ROOT SUBVOLUME MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
+      debug 'ERROR' "ROOT SUBVOLUME (@) MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
       exit 3
     fi
     $SLEEPING
@@ -1655,13 +1862,13 @@ function make_img() {
   do_rsync
 
   # Edit config files for conversion
-  if [ "$F2FS" = true ]; then
+  if [ "$F2FS_CONVERSION" = true ]; then
     debug 'INFO' "Running function: do_conversion 'edit_configs'"
     do_conversion 'edit_configs'
   fi
 
   # Final check of created img file
-  if [ "$FSTYPE" == 'ext4' ] && [ "$F2FS" = false ]; then
+  if [ "$FSTYPE" == 'ext4' ] && [ "$F2FS_CONVERSION" = false ]; then
     debug 'INFO' "Running function: do_e2fsck 'final'"
     do_e2fsck 'final'
   fi
@@ -2044,21 +2251,22 @@ function print_result() {
 
   # New backup
   if [ "$UPDATE" = false ]; then
+    debug 'INFO' 'Img file created'
     if [ "$AUTORESIZE_RUN" = true ]; then
       print_temp="$(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))"
       echo -e "# ${IWhite}Image size: ${Green}${AFTER_SIZE}MiB ${IWhite}with a ${Green}root partition ${IWhite}of ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 45 - $(echo ${AFTER_SIZE} | wc -m ) - $(echo ${print_temp} | wc -m ) ))s" '#')"
-      debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MiB with a root partition of $(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB"
+      debug 'DEBUG' "$IMG_FILE is ${AFTER_SIZE}MiB with a root partition of $(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB"
     else
       print_temp="$(( ADDED_SPACE / 1024 / 1024 ))"
       echo -e "# ${IWhite}Added [extra space]: ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 26 - $(echo ${print_temp} | wc -m ) ))s" '#')"
       print_temp=$(( IMG_ROOT_SIZE / 1024 / 1024 ))
       echo -e "# ${IWhite}Image size: ${Green}${AFTER_SIZE}MiB ${IWhite}with a ${Green}root partition ${IWhite}of ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 45 - $(echo ${AFTER_SIZE} | wc -m ) - $(echo ${print_temp} | wc -m ) ))s" '#')"
-      debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MiB with $(( ADDED_SPACE / 1024 / 1024 ))MiB [extra space] included"
+      debug 'DEBUG' "$IMG_FILE is ${AFTER_SIZE}MiB with a root partition of ${print_temp}MiB including $(( ADDED_SPACE / 1024 / 1024 ))MiB [extra space]"
     fi
-    debug 'INFO' 'Img file created'
 
   # Updated backup
   else
+    debug 'INFO' 'Img file updated'
     if [ "$ADDED_SPACE" -ne 0 ]; then
       print_temp="$(( ADDED_SPACE / 1024 / 1024 ))"
       echo -e "# ${IWhite}Added [extra space]: ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 26 - $(echo ${print_temp} | wc -m ) ))s" '#')"
@@ -2066,7 +2274,6 @@ function print_result() {
     print_temp=$(( IMG_ROOT_SIZE / 1024 / 1024 ))
     echo -e "# ${IWhite}Image size: ${Green}${AFTER_SIZE}MiB ${IWhite}with a ${Green}root partition ${IWhite}of ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 45 - $(echo ${AFTER_SIZE} | wc -m ) - $(echo ${print_temp} | wc -m ) ))s" '#')"
     debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MiB"
-    debug 'INFO' 'Img file updated'
   fi
   if [ "$AUTOEXPAND" = true ]; then
     echo -e "# ${Yellow}Please wait for the system to reboot after restoring an image with autoexpansion ${Purple}$(printf "%+$(( COLS - 83 ))s" '#')"
@@ -2138,6 +2345,12 @@ if [ "$LOOPRUN" = true ] && [ -z "$ADDED_SPACE" ]; then
   debug 'INFO' '--loop selected and [extra space] not provided by user, setting ADDED_SPACE to 0 (non-zero value)'
 fi
 
+# Setting ADDED_SPACE to 0 if --chroot is selected
+if [ "$CHROOTRUN" = true ]; then
+  ADDED_SPACE=0
+  debug 'INFO' '--chroot selected, setting ADDED_SPACE to 0 (non-zero value)'
+fi
+
 # Requesting user to input [extra space] if not provided while making new image
 if [ "$UPDATE" = false ] && [ -z "$ADDED_SPACE" ]; then
   debug 'INFO' 'New image without -a option and no [extra space] defined by user, requesting user input'
@@ -2176,8 +2389,14 @@ fi
 
 # If --loop is requested, execute looprun function. Will exit script within the function
 if [ "$LOOPRUN" = true ]; then
-  debug 'INFO' '--loop selected by user, running function: looprun'
+  debug 'INFO' 'Running function: looprun'
   looprun
+fi
+
+# If --chroot is requested, execute chrootrun function. Will exit script within the function
+if [ "$CHROOTRUN" = true ]; then
+  debug 'INFO' 'Running function: chrootrun'
+  chrootrun
 fi
 
 echo -e "${White}## ${IWhite}Scanning filesystem and calculating..."
@@ -2204,13 +2423,13 @@ debug 'DEBUG' "LOCAL_DEV_PTUUID=$LOCAL_DEV_PTUUID | LOCAL_DEV_PATH=$LOCAL_DEV_PA
 PARTITION_TABLE=$(parted "$LOCAL_DEV_PATH" print | grep -i 'Partition Table' | awk '{print $3}')
 #PARTITION_TABLE=$(blkid "$LOCAL_DEV_PATH" | sed -n 's|^.*PTTYPE="\(\S\+\)".*|\1|p')
 
-if [ "$FSTYPE" == 'f2fs' ] || [ "$F2FS" = true ]; then
-  if [ "$FSTYPE" == 'f2fs' ] && [ "$F2FS" = true ]; then
+if [ "$FSTYPE" == 'f2fs' ] || [ "$F2FS_CONVERSION" = true ]; then
+  if [ "$FSTYPE" == 'f2fs' ] && [ "$F2FS_CONVERSION" = true ]; then
     echo -e "${Red}!! ERROR! ${Green}--f2fs ${Yellow}selected with existing ${Green}f2fs filesystem${Yellow}, conversion not needed"
     echo -e "${Red}!! Run script without ${Green}--f2fs"
     debug 'ERROR' '--f2fs selected with existing f2fs filesystem, conversion not needed, exit 1'
     exit 1
-  elif [ "$F2FS" = true ] && [ "$UPDATE" = true ]; then
+  elif [ "$F2FS_CONVERSION" = true ] && [ "$UPDATE" = true ]; then
     echo -e "${Red}!! ERROR! ${Green}--f2fs ${Yellow}selected in combination with ${Green}-U${Yellow}, conversion not possible"
     echo -e "${Red}!! ${Yellow}Create new img to enable ${Green}f2fs conversion"
     debug 'ERROR' '--f2fs selected in combination with -U, operation not supported, exit 1'
@@ -2272,7 +2491,7 @@ if [ "$DEBUG" = true ]; then
   debug 'DEBUG' "EXCLUDE_FILE=$EXCLUDE_FILE"
   debug 'DEBUG' "AUTOEXPAND=$AUTOEXPAND"
   debug 'DEBUG' "RSYNC_DELETE=$RSYNC_DELETE"
-  debug 'DEBUG' "F2FS=$F2FS"
+  debug 'DEBUG' "F2FS_CONVERSION=$F2FS_CONVERSION"
   debug 'DEBUG' "TTY_AVAILABILITY=$TTY_AVAILABILITY"
   debug 'DEBUG' "ADDED_SPACE=$ADDED_SPACE"
   debug 'BREAK'
@@ -2291,6 +2510,11 @@ else
   debug 'INFO' '-f NOT selected by user, using default exclude directories'
 fi
 
+# Check dependencies
+debug 'INFO' 'Running function: check_dependencies'
+check_dependencies
+
+# Create or update image
 if [ "$UPDATE" != true ]; then
   debug 'INFO' 'Running function: make_img'
   debug 'BREAK'
