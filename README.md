@@ -25,7 +25,7 @@ Backing up/restoring, to/from: usb-stick `/dev/sdX` with Raspberry pi os has bee
 
 **Ultra-fast incremental backups to existing img files.**
 
-See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for information about installation methods, usage and examples.  
+See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for information about [installation methods](https://github.com/UnconnectedBedna/shrink-backup/wiki/Installing), usage and examples.  
 [Ideas and feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) is always appreciated, whether it's positive or negative. Please just keep it civil. :)  
 If you find a bug or think something is missing in the script, please file a [Bug report or Feature request](https://github.com/UnconnectedBedna/shrink-backup/issues/new/choose)
 
@@ -42,32 +42,37 @@ Script for creating an .img file and subsequently keeing it updated (-U), autoex
 Directory where .img file is created is automatically excluded in backup
 ########################################################################
 Usage: sudo shrink-backup [-Uatyelhz] [--fix] [--loop] [--f2fs] imagefile.img [extra space (MiB)]
-  -U            Update existing img file (rsync to existing img)
-                  Optional [extra space] extends img root partition
-  -a            Autocalculate root size partition, [extra space] is ignored
-                  When used in combination with -U:
-                  Expand if partition is >=256MiB smaller than autocalculated recommended minimum
-                  Shrink if partition is >=512MiB bigger than autocalculated recommended minimum
-  -t            Use exclude.txt in same folder as script to set excluded directories
-                  One directory per line: "/dir" or "/dir/*" to only exclude contents
-  -y            Disable prompts in script (please use this option with care!)
-  -e            Disable autoexpansion on root filesystem when image is booted
-  -l            Write debug messages to logfile shrink-backup.log located in same directory as script
-  -z            Make script zoom at light-speed, only question prompts might slow it down
-                  Can be combined with -y for UNSAFE ultra-mega-superduper-speed
-  -q --quiet    Do not print rsync copy process
-  --no-color    Run script without color formatted text
-  --fix         Try to fix the img file if -a fails with a "broken pipe" error
-  --loop [img]  Loop img file and exit, works in combination with -l & -z
-                  If optional [extra space] is defined, the img file will be extended with the amount before looping
-                  NOTE that only the file gets truncated, no partitions
-                  Useful if you for example want to manually manage the partitions
-  --f2fs        Convert root filesystem on img from ext4 to f2fs
-                  Only works on new img file, not in combination with -U
-                  Will make backups of fstab & cmdline.txt to: fstab.shrink-backup.bak & cmdline.txt.shrink-backup.bak
-                  Then change ext4 to f2fs in both files and add discard to options on root partition in fstab
-  --version     Print version and exit
-  -h --help     Show this help snippet
+  -U              Update existing img file (rsync to existing img)
+                    Optional [extra space] extends img root partition
+  -a              Autocalculate root size partition, [extra space] is ignored
+                    When used in combination with -U:
+                    Expand if partition is >=256MiB smaller than autocalculated recommended minimum
+                    Shrink if partition is >=512MiB bigger than autocalculated recommended minimum
+  -t              Use exclude.txt in same folder as script to set excluded directories
+                    One directory per line: "/dir" or "/dir/*" to only exclude contents
+  -y              Disable prompts in script (please use this option with care!)
+  -e              Disable autoexpansion on root filesystem when image is booted
+  -l              Write debug messages to logfile shrink-backup.log located in same directory as script
+  -z              Make script zoom at light-speed, only question prompts might slow it down
+                    Can be combined with -y for UNSAFE ultra-mega-superduper-speed
+  -q --quiet      Do not print rsync copy process
+  --no-color      Run script without color formatted text
+  --fix           Try to fix the img file if -a fails with a "broken pipe" error
+  --loop [img]    Loop img file and exit, works in combination with -l & -z
+                    If optional [extra space] is defined, the img file will be extended with the amount before looping
+                    NOTE that only the file gets truncated, no partitions
+                    Useful if you for example want to manually manage the partitions
+  --chroot [img]  Use systemd-nspawn. Loop img file, mount to temp directory, enter chroot environment and drop to shell
+                    This will let you make changes in a chroot environment directly on the img file
+                    For example update with package manager or rebuild initramfs
+                    The script will keep running in the background
+                    Type 'exit' when done. Script will unmount, remove temp directory/loop and exit
+  --f2fs          Convert root filesystem on img from ext4 to f2fs
+                    Only works on new img file, not in combination with -U
+                    Will make backups of fstab & cmdline.txt to: fstab.shrink-backup.bak & cmdline.txt.shrink-backup.bak
+                    Then change ext4 to f2fs in both files and add discard to options on root partition in fstab
+  --version       Print version and exit
+  -h --help       Show this help snippet
 ########################################################################
 Examples:
 sudo shrink-backup -a /path/to/backup.img (create img, resize2fs calcualtes size)
