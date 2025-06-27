@@ -243,12 +243,11 @@ Usage: ${Green}sudo $(basename "$0") [options] imagefile.img [extra space (MiB)]
                    If optional [extra space] is defined, the img file will be extended with the amount before looping
                    NOTE that only the file gets truncated, no partitions
                    Useful if you for example want to manually manage the partitions
-  ${Green}--chroot [img] ${IWhite}Loop img file, mount to a temp directory, enter chroot environment and drop to shell
+  ${Green}--chroot [img] ${IWhite}Use systemd-nspawn. Loop img file, mount to temp directory, enter chroot environment and drop to shell
                    This will let you make changes in a chroot environment directly on the img file
                    For example update with package manager or rebuild initramfs
                    The script will keep running in the background
-                   Type 'exit' when done and the script will unmount, remove loop and exit
-                   Uses systemd-nspawn
+                   Type 'exit' when done. Script will unmount, remove temp directory/loop and exit
   ${Green}--f2fs         ${IWhite}Convert root filesystem on img from ext4 to f2fs
                    Only works on new img file, not in combination with -U
                    Will make backups of fstab & cmdline.txt to: fstab.shrink-backup.bak & cmdline.txt.shrink-backup.bak
@@ -1606,10 +1605,6 @@ function make_img() {
   debug 'INFO' 'Running function: do_loop'
   do_loop
 
-  # set img variables
-  debug 'INFO' 'Running function: img_variables'
-  img_variables
-
   # Remove partition
   echo -e "${White}## ${IWhite}Removing root partition..."
   $SLEEPING
@@ -1680,6 +1675,10 @@ function make_img() {
     fi
   fi
   $SLEEPING
+
+  # Get img variables
+  debug 'INFO' 'Running function: img_variables'
+  img_variables
 
   # Format filesystem
   echo -e "${White}## ${IWhite}Formatting filesystem..."
