@@ -106,6 +106,7 @@ If `-t` is **NOT** selected the following will be excluded:
 /mnt/*
 /media/*
 /var/swap
+/snap/*
 ```
 
 #### `-l` (Log file)
