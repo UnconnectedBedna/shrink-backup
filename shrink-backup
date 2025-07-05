@@ -1082,9 +1082,22 @@ function do_mount() {
   # Mount boot partition if exists
   if [ -n "$BOOT_PATH" ]; then
     if ! mount --fake | grep -q 'boot'; then
-      echo -e "${Red}!! Boot found in fstab but partition not mounted, please mount and retry script!!!"
-      debug 'ERROR' 'Boot found in fstab but partition not mounted, exit 3'
-      exit 3
+      while true; do
+        if [ "$COLORS" = true ]; then
+          echo -e "${Red}!! Boot found in fstab but partition not mounted..."
+          debug 'WARNING' 'Boot found in fstab but partition not mounted'
+          debug 'INFO' 'Do you want to mount boot partition?'
+          read -r -p $'\e[0;37m## \e[0;97mDo you want to mount boot partition? \e[0;92m[y/n] \e[0m' input
+        else
+          read -r -p '## Do you want to mount boot partition? [y/n] ' input
+        fi
+        case $input in
+          [Yy]) debug 'DEBUG' "Y or y pressed to confirm, running: mount $LOCAL_DEV_BOOT_PATH $BOOT_PATH"; mount "$LOCAL_DEV_BOOT_PATH" "$BOOT_PATH"; break;;
+          [Nn]) echo -e "${Red}!! Aborting..."; exit 3;;
+          *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"; debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
+        esac
+      done
+    sleep 1
     fi
     echo -e "${White}## ${IWhite}Mounting img boot partition..."
     $SLEEPING
