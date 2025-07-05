@@ -39,19 +39,17 @@ function cleanup() {
   # exit 1 = early/clean error
   # exit 2 = help, version & looprun
   # exit 3 = later/normal error
-  # exit 4 = abort early
-  # exit 5 = abort later
-  # exit 6 = rsync error
+  # exit 4 = aborted by user
+  # exit 5 = rsync error
   # exit 10 = stopped by user (ctrl+c)
   local exit_code="$?"
 
   if [ "$exit_code" -ne 1 ] && [ "$exit_code" -ne 2 ]; then
     case $exit_code in
       0) debug 'DEBUG' 'Cleanup function called with exit 0';;
-      4) debug 'WARNING' 'Script aborted by user early, cleanup exit 4';;
-      5) debug 'WARNING' 'Script aborted by user later, cleanup exit 5';;
-      6) debug 'ERROR' 'Script failed during rsync, cleanup exit 6';;
-      10) echo -e "\n${Yellow}!! Script stopped by user..."; debug 'WARNING' 'Script stopped by user with ctrl+c, cleanup exit 10';;
+      4) debug 'WARNING' 'Script aborted by user, cleanup exit 4';;
+      5) debug 'ERROR' 'Script failed during rsync, cleanup exit 5';;
+      10) echo -e "\n${Yellow}!! Script aborted by user with ctrl+c..."; debug 'WARNING' 'Script stopped by user with ctrl+c, cleanup exit 10';;
       *) echo -e "${Yellow}!! Cleanup function called with non-zero exit code, something went wrong!!!"; debug 'ERROR' "Cleanup function called with non zero exit code: exit $exit_code";;
     esac
 
@@ -1093,7 +1091,7 @@ function do_mount() {
         fi
         case $input in
           [Yy]) debug 'DEBUG' "Y or y pressed to confirm, running: mount $LOCAL_DEV_BOOT_PATH $BOOT_PATH"; mount "$LOCAL_DEV_BOOT_PATH" "$BOOT_PATH"; break;;
-          [Nn]) echo -e "${Red}!! Aborting..."; exit 3;;
+          [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
           *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"; debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
         esac
       done
@@ -1366,7 +1364,7 @@ function do_rsync() {
     echo -e "${Yellow}$output\n${Red}!! RSYNC FAILED!!!"
     debug 'BREAK'
     debug 'ERROR' "RSYNC FAILED:\nPIPESTATUS=${PIPESTATUS[0]}\n$output\n-------------------------------------------------------------------------------------"
-    exit 6
+    exit 5
   elif [ "${PIPESTATUS[0]}" -eq 23 ]; then
     echo -e "${White}## ${Yellow}Warning, rsync code 23, some files vanished before they could be transferred (code 24) at main.c"
     echo -e "${White}## ${Yellow}This does NOT mean the backup failed"
