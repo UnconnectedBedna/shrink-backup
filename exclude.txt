@@ -7,3 +7,4 @@
 /mnt/*
 /media/*
 /var/swap
+/snap/*
