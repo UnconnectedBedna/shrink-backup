@@ -2416,12 +2416,13 @@ if grep -q 'boot' /etc/fstab; then
           read -r -p '## Do you want to mount boot partition? [y/n] ' input
         fi
         case $input in
-          [Yy]) debug 'DEBUG' "Y or y pressed to confirm, running: mount ${fstab[0]} ${fstab[1]}"; mount "${fstab[0]}" "${fstab[1]}"; break;;
+          [Yy]) debug 'DEBUG' "Y or y pressed to confirm, running: mount ${fstab[0]} ${fstab[1]}"; echo -e "${Yellow}!! Mounting boot partition to ${fstab[1]}..."; mount "${fstab[0]}" "${fstab[1]}"; break;;
           [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
           *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"; debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
         esac
       done
     else
+      echo -e "${Yellow}!! Mounting boot partition to ${fstab[1]}..."
       debug 'DEBUG' "Running: mount ${fstab[0]} ${fstab[1]}"
       mount "${fstab[0]}" "${fstab[1]}"
     fi
