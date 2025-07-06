@@ -443,8 +443,8 @@ function chrootrun() {
       (( count -- ))
       debug 'INFO' 'Boot partition found in fstab, mounting boot partition'
       fstab=($(cat "$TMP_DIR"/etc/fstab | grep 'boot'))
-      BOOT_PATH="${fstab[1]}" # Used to find mount in cleanup function
-      debug 'DEBUG' "BOOT_PATH=$BOOT_PATH"
+#       BOOT_PATH="${fstab[1]}" # Used to find mount in cleanup function
+#       debug 'DEBUG' "BOOT_PATH=$BOOT_PATH"
       echo -e "${White}## ${IWhite}Mounting ${Green}${fstab[1]} ${IWhite}from fstab"
       $SLEEPING
       debug 'DEBUG' "Running: mount -o ${fstab[3]} ${LSBLK_PARTITIONS[$count]} ${TMP_DIR}${fstab[1]}"
@@ -483,9 +483,9 @@ function chrootrun() {
     fi
     # Assumes boot exists and is on first partition
     fstab=($(cat "$TMP_DIR"/etc/fstab | grep 'boot'))
-    BOOT_PATH="${fstab[1]}" # Used to find mount in cleanup function
+#     BOOT_PATH="${fstab[1]}" # Used to find mount in cleanup function
+#     debug 'DEBUG' "BOOT_PATH=$BOOT_PATH"
     debug 'INFO' 'Mounting boot partition'
-    debug 'DEBUG' "BOOT_PATH=$BOOT_PATH"
     echo -e "${White}## ${IWhite}Mounting ${Green}${fstab[1]} ${IWhite}from fstab"
     $SLEEPING
     debug 'DEBUG' "Running: mount -o ${fstab[3]} ${LSBLK_PARTITIONS[1]} ${TMP_DIR}${fstab[1]}"
@@ -548,7 +548,7 @@ function dev_variables() {
 
   # Check if separate boot and root partition exists and set variables accordingly
   if grep -q 'boot' /etc/fstab; then
-    debug 'INFO' 'Separate boot partition detected'
+#     debug 'INFO' 'Separate boot partition detected'
     BOOT_PARTITION=true
     LOCAL_DEV_BOOT_PATH=$(mount --fake | grep 'boot' | awk '{print $1}')
     LOCAL_DEV_ROOT_PATH=$(mount --fake | grep ' / ' | awk '{print $1}')
@@ -557,8 +557,8 @@ function dev_variables() {
     LOCAL_ROOT_UUID=$(lsblk -no uuid "$LOCAL_DEV_ROOT_PATH")
     LOCAL_ROOT_PARTUUID=$(lsblk -no partuuid "$LOCAL_DEV_ROOT_PATH")
     debug 'DEBUG' "LOCAL_BOOT_UUID=$LOCAL_BOOT_UUID | LOCAL_ROOT_UUID=$LOCAL_ROOT_UUID | LOCAL_ROOT_PARTUUID=$LOCAL_ROOT_PARTUUID"
-    BOOT_PATH=$(cat /etc/fstab | grep 'boot' | awk '{print $2}')
-    debug 'DEBUG' "BOOT_PATH=$BOOT_PATH"
+#     BOOT_PATH=$(cat /etc/fstab | grep 'boot' | awk '{print $2}')
+#     debug 'DEBUG' "BOOT_PATH=$BOOT_PATH"
   else
     debug 'INFO' 'No boot partition detected'
     BOOT_PARTITION=false
@@ -1079,24 +1079,24 @@ function do_mount() {
 
   # Mount boot partition if exists
   if [ -n "$BOOT_PATH" ]; then
-    if ! mount --fake | grep -q 'boot'; then
-      while true; do
-        if [ "$COLORS" = true ]; then
-          echo -e "${Red}!! Boot found in fstab but partition not mounted..."
-          debug 'WARNING' 'Boot found in fstab but partition not mounted'
-          debug 'INFO' 'Do you want to mount boot partition?'
-          read -r -p $'\e[0;37m## \e[0;97mDo you want to mount boot partition? \e[0;92m[y/n] \e[0m' input
-        else
-          read -r -p '## Do you want to mount boot partition? [y/n] ' input
-        fi
-        case $input in
-          [Yy]) debug 'DEBUG' "Y or y pressed to confirm, running: mount $LOCAL_DEV_BOOT_PATH $BOOT_PATH"; mount "$LOCAL_DEV_BOOT_PATH" "$BOOT_PATH"; break;;
-          [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
-          *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"; debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
-        esac
-      done
-    sleep 1
-    fi
+#     if ! mount --fake | grep -q 'boot'; then
+#       while true; do
+#         if [ "$COLORS" = true ]; then
+#           echo -e "${Red}!! Boot found in fstab but partition not mounted..."
+#           debug 'WARNING' 'Boot found in fstab but partition not mounted'
+#           debug 'INFO' 'Do you want to mount boot partition?'
+#           read -r -p $'\e[0;37m## \e[0;97mDo you want to mount boot partition? \e[0;92m[y/n] \e[0m' input
+#         else
+#           read -r -p '## Do you want to mount boot partition? [y/n] ' input
+#         fi
+#         case $input in
+#           [Yy]) debug 'DEBUG' "Y or y pressed to confirm, running: mount $LOCAL_DEV_BOOT_PATH $BOOT_PATH"; mount "$LOCAL_DEV_BOOT_PATH" "$BOOT_PATH"; break;;
+#           [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
+#           *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"; debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
+#         esac
+#       done
+#     sleep 1
+#     fi
     echo -e "${White}## ${IWhite}Mounting img boot partition..."
     $SLEEPING
     debug 'INFO' 'Mounting boot inside root'
@@ -2397,6 +2397,38 @@ if ! [[ "$ADDED_SPACE" =~ $RE ]]; then
   typeset -i ADDED_SPACE
 fi
 
+# If boot exists in fstab, set BOOT_PATH and make sure boot is mounted
+if grep -q 'boot' /etc/fstab; then
+  debug 'INFO' 'Separate boot partition detected'
+  BOOT_PATH=$(cat /etc/fstab | grep 'boot' | awk '{print $2}') # Used in cleanup function
+  debug 'DEBUG' "BOOT_PATH=$BOOT_PATH"
+  if ! mount --fake | grep -q 'boot'; then
+    echo -e "${Red}!! Boot found in fstab but partition not mounted..."
+    debug 'WARNING' 'Boot found in fstab but partition not mounted'
+    $SLEEPING
+    fstab=($(cat /etc/fstab | grep 'boot'))
+    if [ "$PROMPTS" = true ]; then
+      while true; do
+        if [ "$COLORS" = true ]; then
+          debug 'INFO' 'Do you want to mount boot partition?'
+          read -r -p $'\e[0;37m## \e[0;97mDo you want to mount boot partition? \e[0;92m[y/n] \e[0m' input
+        else
+          read -r -p '## Do you want to mount boot partition? [y/n] ' input
+        fi
+        case $input in
+          [Yy]) debug 'DEBUG' "Y or y pressed to confirm, running: mount ${fstab[0]} ${fstab[1]}"; mount "${fstab[0]}" "${fstab[1]}"; break;;
+          [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
+          *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"; debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
+        esac
+      done
+    else
+      debug 'DEBUG' "Running: mount ${fstab[0]} ${fstab[1]}"
+      mount "${fstab[0]}" "${fstab[1]}"
+    fi
+  sleep 1
+  fi
+fi
+
 # If --loop is requested, execute looprun function. Will exit script within the function
 if [ "$LOOPRUN" = true ]; then
   debug 'INFO' 'Running function: looprun'
@@ -2410,13 +2442,6 @@ if [ "$CHROOTRUN" = true ]; then
 fi
 
 echo -e "${White}## ${IWhite}Scanning filesystem and calculating..."
-
-# Make sure boot is mounted if it exists in fstab
-if grep -q 'boot' /etc/fstab && ! mount --fake | grep -q 'boot'; then
-  echo -e "${Red}!! Boot found in fstab but partition not mounted, please mount and retry script!!!"
-  debug 'ERROR' 'Boot found in fstab but partition not mounted, exit 1'
-  exit 1
-fi
 
 # Check what filesystem root is using and set LOCAL_DEV_PATH & PARTITION_TABLE
 FSTYPE="$(mount --fake | grep ' / ' | awk '{print $5}')"
