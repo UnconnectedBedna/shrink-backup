@@ -1,2 +1,2 @@
-exclude.txt
-shrink-backup.log
+/exclude.txt
+/shrink-backup.log
