@@ -568,7 +568,8 @@ function dev_variables() {
     LOCAL_ROOT_PARTUUID=$(lsblk -no partuuid "$LOCAL_DEV_ROOT_PATH")
     debug 'DEBUG' "LOCAL_ROOT_UUID=$LOCAL_ROOT_UUID | LOCAL_ROOT_PARTUUID=$LOCAL_ROOT_PARTUUID"
   fi
-  LOCAL_ROOT_PARTN=$(parted -sm "$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
+  LOCAL_ROOT_PARTN=$(blkid -s PART_ENTRY_NUMBER -o value -p "$LOCAL_DEV_ROOT_PATH")
+  #LOCAL_ROOT_PARTN=$(parted -sm "$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
   debug 'DEBUG' "LOCAL_ROOT_PARTN=$LOCAL_ROOT_PARTN"
 
   # Collect information about partition sizes
@@ -2145,6 +2146,7 @@ ExecStop=/bin/bash -c "/usr/bin/rm /etc/systemd/system/basic.target.wants/expand
 WantedBy=basic.target
 EOF
 
+  # Enable service by creating symlink
   if ! [ -L "${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service" ]; then
     debug 'DEBUG' "Enabling systemd service by creating symlink: ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service"
     ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service
@@ -2154,11 +2156,13 @@ EOF
   debug 'DEBUG' "Creating expansion script ${TMP_DIR}/expand-fs.sh"
   cat << EOF2 > "${TMP_DIR}/expand-fs.sh"
 #!/usr/bin/bash
-LOCAL_DEV_PTUUID=\$(lsblk -no mountpoint,ptuuid | grep '/ ' | awk '{print \$2}')
-LOCAL_DEV_PATH=\$(lsblk -no ptuuid,type,path | grep "\$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print \$3}')
-LOCAL_ROOT_PARTN=\$(parted -sm "\$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
-#LOCAL_DEV_ROOT_PATH=\$(lsblk -no mountpoint,path | grep '/ ' | awk '{print \$2}')
-LOCAL_DEV_ROOT_PATH=\$(mount --fake | grep ' / ' | awk '{print \$1}')
+#LOCAL_DEV_PTUUID=\$(lsblk -no mountpoint,ptuuid | grep '/ ' | awk '{print \$2}')
+LOCAL_DEV_ROOT_PATH=\$(findmnt -n -o SOURCE /)
+LOCAL_DEV_PATH=/dev/\$(lsblk -no pkname "\$LOCAL_DEV_ROOT_PATH")
+#LOCAL_DEV_PATH=\$(lsblk -no ptuuid,type,path | grep "\$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print \$3}')
+LOCAL_ROOT_PARTN=\$(blkid -s PART_ENTRY_NUMBER -o value -p "\$LOCAL_DEV_ROOT_PATH")
+#LOCAL_ROOT_PARTN=\$(parted -sm "\$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
+#LOCAL_DEV_ROOT_PATH=\$(mount --fake | grep ' / ' | awk '{print \$1}')
 LOCAL_ROOT_START=\$(fdisk -lo start "\$LOCAL_DEV_PATH" | tail -1 | awk '{print \$1}') # blocks, 512B block size
 LOCAL_ROOT_START=\$(( LOCAL_ROOT_START * 512 )) # bytes
 
@@ -2205,20 +2209,23 @@ ExecStop=/bin/bash -c "/usr/bin/rm /etc/systemd/system/basic.target.wants/expand
 WantedBy=basic.target
 EOF
 
+  # Enable service by creating symlink
   if ! [ -L "${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service" ]; then
     debug 'DEBUG' "Enabling systemd service by creating symlink: ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service"
     ln -s /etc/systemd/system/expand-fs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/expand-fs.service
   fi
 
   # Creating script for autoexpansion
-  debug 'DEBUG' 'Creating expansion script ${TMP_DIR}/expand-fs.sh'
+  debug 'DEBUG' "Creating expansion script ${TMP_DIR}/expand-fs.sh"
   cat << EOF2 > "${TMP_DIR}/expand-fs.sh"
 #!/usr/bin/bash
-LOCAL_DEV_PTUUID=\$(lsblk -no mountpoint,ptuuid | grep '/ ' | awk '{print \$2}')
-LOCAL_DEV_PATH=\$(lsblk -no ptuuid,type,path | grep "\$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print \$3}')
-LOCAL_ROOT_PARTN=\$(parted -sm "\$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
-#LOCAL_DEV_ROOT_PATH=\$(lsblk -no mountpoint,path | grep '/ ' | awk '{print \$2}')
-LOCAL_DEV_ROOT_PATH=\$(mount --fake | grep ' / ' | awk '{print \$1}')
+#LOCAL_DEV_PTUUID=\$(lsblk -no mountpoint,ptuuid | grep '/ ' | awk '{print \$2}')
+LOCAL_DEV_ROOT_PATH=\$(findmnt -n -o SOURCE /)
+LOCAL_DEV_PATH=/dev/\$(lsblk -no pkname "\$LOCAL_DEV_ROOT_PATH")
+#LOCAL_DEV_PATH=\$(lsblk -no ptuuid,type,path | grep "\$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print \$3}')
+LOCAL_ROOT_PARTN=\$(blkid -s PART_ENTRY_NUMBER -o value -p "\$LOCAL_DEV_ROOT_PATH")
+#LOCAL_ROOT_PARTN=\$(parted -sm "\$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
+#LOCAL_DEV_ROOT_PATH=\$(mount --fake | grep ' / ' | awk '{print \$1}')
 LOCAL_ROOT_START=\$(fdisk -lo start "\$LOCAL_DEV_PATH" | tail -1 | awk '{print \$1}') # blocks, 512B block size
 LOCAL_ROOT_START=\$(( LOCAL_ROOT_START * 512 )) # bytes
 
