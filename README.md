@@ -88,6 +88,13 @@ sudo shrink-backup -l --loop /path/to/backup.img 1024 (write to log file, expand
 The folder where the img file is created will **ALWAYS be excluded in the backup.**<br>
 If `-t` option is selected, `exclude.txt` **MUST exist** (but can be empty) within the **directory where the script is located** or the script will exit with an error.
 
+Use e.g.
+
+```bash
+cp exclude.txt.example exclude.txt
+```
+to create one from a template file and adapt it to your needs.
+
 > [!NOTE]
 > If installed using `curl`, location and name of file is different. Please read [install with curl](https://github.com/UnconnectedBedna/shrink-backup/wiki/Installing#curl---shrink-backup-install-script) for more information.
 
