@@ -126,9 +126,9 @@ function cleanup() {
     echo -e "${White}## ${IWhite}Elapsed time: ${Green}$(date -d@$SECONDS -u +%M.%S)${NC}"
     debug 'INFO' "Elapsed time: $(date -d@$SECONDS -u +%M.%S)"
     debug 'DEBUG' 'Exiting script'
-    if [ "$DEBUG" = true ]; then
-      echo '#####################################################################################' >> "$LOG_FILE"
-    fi
+  fi
+  if [ "$DEBUG" = true ]; then
+    echo '#####################################################################################' >> "$LOG_FILE"
   fi
 }
 trap cleanup EXIT SIGTERM
@@ -2542,9 +2542,9 @@ fi
 
 # Check if usage of exclude.txt is requested
 if [ "$EXCLUDE_FILE" = true ]; then
-  debug 'INFO' "-f selected by user, using $EXCLUDE_FILE_LOCATION"
+  debug 'INFO' "-t selected by user, using $EXCLUDE_FILE_LOCATION"
   if ! [ -f "$EXCLUDE_FILE_LOCATION" ]; then
-    echo -e "${Red}!! ERROR! ${Green}-f selected but ${Yellow}$EXCLUDE_FILE_LOCATION does not exist!"
+    echo -e "${Red}!! ERROR! ${Green}-t selected but ${Yellow}$EXCLUDE_FILE_LOCATION does not exist!"
     debug 'ERROR' "$EXCLUDE_FILE_LOCATION does not exist, exit 1"
     exit 1
   fi
