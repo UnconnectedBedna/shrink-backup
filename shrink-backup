@@ -2247,6 +2247,20 @@ return 0
 
 
 
+# Enable autoexpansion for Kali-ARM
+function autoexpansion_kali() {
+  if ! test -L "${TMP_DIR}/etc/systemd/system/basic.target.wants/rpi-resizerootfs.service"; then
+    debug 'DEBUG' "Enabling systemd service by creating symlink: ln -s /etc/systemd/system/rpi-resizerootfs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/rpi-resizerootfs.service"
+    ln -s /etc/systemd/system/rpi-resizerootfs.service ${TMP_DIR}/etc/systemd/system/basic.target.wants/rpi-resizerootfs.service
+  fi
+  echo -e "${White}## ${Green}Kali-ARM filesystem autoresizing at boot..."
+  debug 'INFO' 'Kali-ARM filesystem autoresizing at boot'
+  $SLEEPING
+return 0
+}
+
+
+
 # Print result
 function print_result() {
 
@@ -2292,13 +2306,13 @@ function print_result() {
     echo -e "# ${IWhite}Image size: ${Green}${AFTER_SIZE}MiB ${IWhite}with a ${Green}root partition ${IWhite}of ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 45 - $(echo ${AFTER_SIZE} | wc -m ) - $(echo ${print_temp} | wc -m ) ))s" '#')"
     debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MiB"
   fi
-  if [ "$AUTOEXPAND" = true ]; then
+  if [ "$AUTOEXPAND" = true ] && [ "$OS" != 'armbian' ] && [ "$OS" != 'kali' ]; then
     echo -e "# ${Yellow}Please wait for the system to reboot after restoring an image with autoexpansion ${Purple}$(printf "%+$(( COLS - 83 ))s" '#')"
   fi
   echo -e "${Purple}${BREAK}"
   debug 'INFO' 'Backup done'
   debug 'BREAK'
-  
+
   # Make sure boot partition was not unmounted during backup
   if grep -q 'boot' /etc/fstab && ! mount --fake | grep -q 'boot'; then
     debug 'ERROR' 'Boot partition became unmounted during backup'
@@ -2520,6 +2534,11 @@ elif grep -qsi 'archlinuxarm' /etc/os-release; then
   OS='archlinux-arm'
   debug 'INFO' 'ArchLinux-arm detected'
   $SLEEPING
+elif grep -qsi 'kali' /etc/os-release; then
+  echo -e "${White}## ${Green}Kali-ARM detected"
+  OS='kali'
+  debug 'INFO' 'Kali-ARM detected'
+  $SLEEPING
 else
   echo -e "${Yellow}!! Unknown OS"
   OS='unknown'
@@ -2584,6 +2603,7 @@ if [ "$AUTOEXPAND" = true ]; then
     armbian) echo -e "${White}## ${IWhite}Enabling autoexpansion for ${Green}Armbian..."; debug 'INFO' 'Running function: autoexpansion_armbian'; autoexpansion_armbian;;
     manjaro-arm) echo -e "${White}## ${IWhite}Enabling autoexpansion for ${Green}Manjaro-arm..."; debug 'INFO' 'Running function: autoexpansion_manjaro'; autoexpansion_manjaro;;
     archlinux-arm) echo -e "${White}## ${IWhite}Enabling autoexpansion for ${Green}ArchLinux-arm..."; debug 'INFO' 'Running function: autoexpansion_arch'; autoexpansion_arch;;
+    kali) echo -e "${White}## ${IWhite}Enabling autoexpansion for ${Green}Kali-ARM..."; debug 'INFO' 'Running function: autoexpansion_kali'; autoexpansion_kali;;
     unknown) echo -e "${Yellow}!! No autoexpand option available for this OS!"; debug 'WARNING' 'No autoexpand option available for this OS'; AUTOEXPAND='failed';;
   esac
 fi
