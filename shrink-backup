@@ -1146,7 +1146,7 @@ function do_e2fsck() {
     $SLEEPING
 
     # Remounting if autoexpansion is requested
-    if [ "$AUTOEXPAND" = true ]; then
+    if [ "$AUTOEXPAND" = true ] && [ "$OS" != 'unknown' ]; then
       echo -e "${White}## ${IWhite}Remounting for autoexpansion..."
       debug 'INFO' 'Remounting for autoexpansion function'
       debug 'INFO' 'Running function: do_mount'
@@ -2298,6 +2298,13 @@ function print_result() {
   echo -e "${Purple}${BREAK}"
   debug 'INFO' 'Backup done'
   debug 'BREAK'
+  
+  # Make sure boot partition was not unmounted during backup
+  if grep -q 'boot' /etc/fstab && ! mount --fake | grep -q 'boot'; then
+    debug 'ERROR' 'Boot partition became unmounted during backup'
+    echo -e "${Red}!! BOOT PARTITION BECAME UNMOUNTED DURING BACKUP!!"
+    echo -e "${Red}!! RE-RUN SHRINK-BACKUP WITH -U OPTION!!"
+  fi
 return 0
 }
 
