@@ -56,6 +56,7 @@ function cleanup() {
     echo -e "${White}## ${IWhite}Exiting and cleaning up..."
     echo -e "${White}## ${IWhite}Please stand by..."
 
+    # Unmount img boot
     if [ -n "$BOOT_PATH" ] && [ -n "$TMP_DIR" ] && grep -qs "${TMP_DIR}${BOOT_PATH} " /proc/mounts; then
       # Loop until the mount point is not busy
       while true; do
@@ -73,6 +74,7 @@ function cleanup() {
       done
     fi
 
+    # Unmount img home (only relevant for btrfs)
     if [ -n "$TMP_DIR" ] && grep -qs "${TMP_DIR}/home " /proc/mounts; then
       while true; do
         if ! umount "${TMP_DIR}/home" && [ -n "$TMP_DIR" ] && grep -qs "${TMP_DIR}/home " /proc/mounts; then
@@ -86,6 +88,7 @@ function cleanup() {
       done
     fi
 
+    # Unmount img root
     if [ -n "$TMP_DIR" ] && grep -qs "$TMP_DIR " /proc/mounts; then
       while true; do
         if ! umount "${TMP_DIR}" && [ -n "$TMP_DIR" ] && grep -qs "$TMP_DIR " /proc/mounts; then
@@ -99,6 +102,7 @@ function cleanup() {
       done
     fi
 
+    # Remove loop
     if losetup "$LOOP" &>/dev/null; then
       while true; do
         if ! losetup -d "$LOOP"; then
@@ -112,11 +116,13 @@ function cleanup() {
       done
     fi
 
+    # Remove temp directly
     if [ -d "$TMP_DIR" ]; then
       debug 'DEBUG' "Removing temp directory in cleanup function: rm -rf $TMP_DIR"
       rm -rf "$TMP_DIR"
     fi
 
+    # Remove temp file
     if [ -f "$tmp_file" ]; then
       debug 'DEBUG' "Removing temp file in cleanup function: rm $tmp_file"
       rm "$tmp_file"
@@ -415,43 +421,45 @@ function chrootrun() {
   # ext4 or f2fs
   if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
     # Assumes root is on last partition
-    count=$(( ${#LSBLK_PARTITIONS[@]} - 1 )) # ${#LSBLK_PARTITIONS[@]} gives count
-    echo -e "${White}## ${IWhite}Mounting ${Green}root (/) ${IWhite}partition"
+    count=$(( ${#LSBLK_PARTITIONS[@]} - 1 )) # ${#LSBLK_PARTITIONS[@]} gives count, -1 removes device so only partitions are counted
+    echo -e "${White}## ${IWhite}Mounting img ${Green}root (/) ${IWhite}partition"
     $SLEEPING
-    debug 'INFO' 'Mounting root partition'
+    debug 'INFO' 'Mounting img root partition'
     debug 'DEBUG' "Running: mount ${LSBLK_PARTITIONS[$count]} $TMP_DIR"
     if ! output=$(mount "${LSBLK_PARTITIONS[$count]}" "$TMP_DIR" 2>&1); then
-      echo -e "${Yellow}$output\n${Red}!! ROOT MOUNT FAILED!!!"
+      echo -e "${Yellow}$output\n${Red}!! IMG ROOT MOUNT FAILED!!!"
       debug 'BREAK'
-      debug 'ERROR' "ROOT MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
+      debug 'ERROR' "IMG ROOT MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
       exit 3
     fi
+
     # Remount with flags from fstab
     fstab=($(cat "$TMP_DIR"/etc/fstab | grep ' / '))
-    echo -e "${White}## ${IWhite}Remounting ${Green}root (/) ${IWhite}partition with flags from fstab"
+    echo -e "${White}## ${IWhite}Remounting img ${Green}root (/) ${IWhite}partition with flags from fstab"
     $SLEEPING
-    debug 'INFO' 'Remounting root partition with flags from fstab'
+    debug 'INFO' 'Remounting img root partition with flags from fstab'
     debug 'DEBUG' "Running: mount -o remount,${fstab[3]} $TMP_DIR"
     if ! output=$(mount -o remount,${fstab[3]} "$TMP_DIR" 2>&1); then
-      echo -e "${Yellow}$output\n${Red}!! REMOUNTING ROOT PARTITION FAILED!!!"
+      echo -e "${Yellow}$output\n${Red}!! REMOUNTING IMG ROOT PARTITION FAILED!!!"
       debug 'BREAK'
-      debug 'ERROR' "REMOUNTING ROOT PARTITION FAILED:\n$output\n-------------------------------------------------------------------------------------"
+      debug 'ERROR' "REMOUNTING IMG ROOT PARTITION FAILED:\n$output\n-------------------------------------------------------------------------------------"
       exit 3
     fi
+
     # Mount boot if exists
     if grep -q 'boot' $TMP_DIR/etc/fstab; then
       (( count -- ))
-      debug 'INFO' 'Boot partition found in fstab, mounting boot partition'
+      debug 'INFO' 'Boot partition found in fstab, mounting img boot partition'
       fstab=($(cat "$TMP_DIR"/etc/fstab | grep 'boot'))
 #       BOOT_PATH="${fstab[1]}" # Used to find mount in cleanup function
 #       debug 'DEBUG' "BOOT_PATH=$BOOT_PATH"
-      echo -e "${White}## ${IWhite}Mounting ${Green}${fstab[1]} ${IWhite}from fstab"
+      echo -e "${White}## ${IWhite}Mounting img ${Green}${fstab[1]} ${IWhite}from fstab"
       $SLEEPING
       debug 'DEBUG' "Running: mount -o ${fstab[3]} ${LSBLK_PARTITIONS[$count]} ${TMP_DIR}${fstab[1]}"
       if ! output=$(mount -o "${fstab[3]}" "${LSBLK_PARTITIONS[$count]}" "${TMP_DIR}${fstab[1]}" 2>&1); then
-        echo -e "${Yellow}$output\n${Red}!! BOOT MOUNT FAILED!!!"
+        echo -e "${Yellow}$output\n${Red}!! IMG BOOT MOUNT FAILED!!!"
         debug 'BREAK'
-        debug 'ERROR' "BOOT MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
+        debug 'ERROR' "IMG BOOT MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
         exit 3
       fi
     fi
@@ -459,45 +467,45 @@ function chrootrun() {
   # btrfs
   elif [ "$FSTYPE" == 'btrfs' ]; then
     # Assumes root subvolume is @ and is on second partition
-    echo -e "${White}## ${IWhite}Mounting ${Green}@ ${IWhite}subvolume"
+    echo -e "${White}## ${IWhite}Mounting img ${Green}@ ${IWhite}subvolume"
     $SLEEPING
-    debug 'INFO' 'Mounting @ subvolume'
+    debug 'INFO' 'Mounting img @ subvolume'
     debug 'DEBUG' "Running: mount -o subvol=@ ${LSBLK_PARTITIONS[2]} $TMP_DIR"
     if ! output=$(mount -o subvol=@ "${LSBLK_PARTITIONS[2]}" "$TMP_DIR" 2>&1); then
-      echo -e "${Yellow}$output\n${Red}!! ROOT SUBVOLUME (@) MOUNT FAILED!!!"
+      echo -e "${Yellow}$output\n${Red}!! IMG ROOT SUBVOLUME (@) MOUNT FAILED!!!"
       debug 'BREAK'
-      debug 'ERROR' "ROOT SUBVOLUME (@) MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
+      debug 'ERROR' "IMG ROOT SUBVOLUME (@) MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
       exit 3
     fi
     # Remount with flags from fstab
     fstab=($(cat "$TMP_DIR"/etc/fstab | grep ' / '))
-    echo -e "${White}## ${IWhite}Remounting ${Green}@ ${IWhite}subvolume with flags from fstab"
+    echo -e "${White}## ${IWhite}Remounting img ${Green}@ ${IWhite}subvolume with flags from fstab"
     $SLEEPING
-    debug 'INFO' 'Remounting @ with flags from fstab'
+    debug 'INFO' 'Remounting img @ subvolume with flags from fstab'
     debug 'DEBUG' "Running: mount -o remount,${fstab[3]} $TMP_DIR"
     if ! output=$(mount -o remount,${fstab[3]} "$TMP_DIR" 2>&1); then
-      echo -e "${Yellow}$output\n${Red}!! REMOUNTING ROOT SUBVOLUME (@) FAILED!!!"
+      echo -e "${Yellow}$output\n${Red}!! REMOUNTING IMG ROOT SUBVOLUME (@) FAILED!!!"
       debug 'BREAK'
-      debug 'ERROR' "REMOUNTING ROOT SUBVOLUME (@) FAILED:\n$output\n-------------------------------------------------------------------------------------"
+      debug 'ERROR' "REMOUNTING IMG ROOT SUBVOLUME (@) FAILED:\n$output\n-------------------------------------------------------------------------------------"
       exit 3
     fi
     # Assumes boot exists and is on first partition
     fstab=($(cat "$TMP_DIR"/etc/fstab | grep 'boot'))
 #     BOOT_PATH="${fstab[1]}" # Used to find mount in cleanup function
 #     debug 'DEBUG' "BOOT_PATH=$BOOT_PATH"
-    debug 'INFO' 'Mounting boot partition'
-    echo -e "${White}## ${IWhite}Mounting ${Green}${fstab[1]} ${IWhite}from fstab"
+    debug 'INFO' 'Mounting img boot partition'
+    echo -e "${White}## ${IWhite}Mounting img ${Green}${fstab[1]} ${IWhite}from fstab"
     $SLEEPING
     debug 'DEBUG' "Running: mount -o ${fstab[3]} ${LSBLK_PARTITIONS[1]} ${TMP_DIR}${fstab[1]}"
     if ! output=$(mount -o "${fstab[3]}" "${LSBLK_PARTITIONS[1]}" "${TMP_DIR}${fstab[1]}" 2>&1); then
-      echo -e "${Yellow}$output\n${Red}!! BOOT MOUNT FAILED!!!"
+      echo -e "${Yellow}$output\n${Red}!! IMG BOOT MOUNT FAILED!!!"
       debug 'BREAK'
-      debug 'ERROR' "BOOT MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
+      debug 'ERROR' "IMG BOOT MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
       exit 3
     fi
     # Filter out @ and subvolumes not in fstab
     IMG_SUBVOLUMES=($(btrfs subvol list $TMP_DIR | awk '{print $9}'))
-    echo -e "${White}## ${IWhite}Subvolumes found on image ${Green}${IMG_SUBVOLUMES[@]}"
+    echo -e "${White}## ${IWhite}Subvolumes found on img ${Green}${IMG_SUBVOLUMES[@]}"
     echo -e "${White}## ${IWhite}Filtering out subvolumes not present in fstab"
     $SLEEPING
     debug 'INFO' 'Filtering out @ and subvolumes not in fstab'
@@ -514,13 +522,13 @@ function chrootrun() {
     debug 'INFO' 'Mounting remaining subvolumes'
     for subvol in ${IMG_SUBVOLUMES[@]}; do
       fstab=($(cat "$TMP_DIR"/etc/fstab | grep "$subvol"))
-      echo -e "${White}## ${IWhite}Mounting ${Green}${fstab[1]} ${IWhite}from fstab"
+      echo -e "${White}## ${IWhite}Mounting img ${Green}${fstab[1]} ${IWhite}from fstab"
       $SLEEPING
       debug 'DEBUG' "Running: mount -o ${fstab[3]} ${LSBLK_PARTITIONS[2]} ${TMP_DIR}${fstab[1]}"
       if ! output=$(mount -o "${fstab[3]}" "${LSBLK_PARTITIONS[2]}" "${TMP_DIR}${fstab[1]}" 2>&1); then
         echo -e "${Yellow}$output\n${Red}!! SUBVOLUME MOUNT FAILED!!!"
         debug 'BREAK'
-        debug 'ERROR' "SUBVOLUME MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
+        debug 'ERROR' "IMG SUBVOLUME MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
         exit 3
       fi
     done
@@ -529,11 +537,11 @@ function chrootrun() {
   # Enter chroot environment
   echo -e "${White}## ${IWhite}Running systemd-nspawn, type ${Green}exit ${IWhite}when done to exit chroot environment"
   echo -e "${White}## ${Yellow}YOU ARE RUNNING AS ROOT!!!${NC}"
-  if systemctl is-active -q systemctl-resolved.service; then
-    debug 'DEBUG' "Running: systemd-nspawn --resolv-conf=replace-stub -D $TMP_DIR bin/bash"
+  if systemctl is-active -q systemd-resolved.service; then
+    debug 'DEBUG' "systemd-resolved.service is active, running: systemd-nspawn --resolv-conf=replace-stub -D $TMP_DIR bin/bash"
     systemd-nspawn --resolv-conf=replace-stub -D "$TMP_DIR" bin/bash
   else
-    debug 'DEBUG' "Running: systemd-nspawn --resolv-conf=copy-host -D $TMP_DIR bin/bash"
+    debug 'DEBUG' "systemd-resolved.service is not active, running: systemd-nspawn --resolv-conf=copy-host -D $TMP_DIR bin/bash"
     systemd-nspawn --resolv-conf=copy-host -D "$TMP_DIR" bin/bash
   fi
 exit 0
@@ -863,14 +871,14 @@ function check_dependencies() {
           pacman -Syu --noconfirm && pacman -S --noconfirm gptfdisk
         fi
 
-      # Neither apt nor pacman available
+      # Installation failed or neither apt nor pacman is available
       else
-        echo -e "${Red}!! Error! ${Yellow}Installing gdisk failed! ${Green}Please install gdisk manually and retry script..."
-        debug 'ERROR' 'Installing gdisk failed, aborting exit 3'
+        echo -e "${Red}!! Error! ${Yellow}Installing sgdisk failed! ${Green}Please install sgdisk manually and retry script..."
+        debug 'ERROR' 'Installing sgdisk failed, aborting exit 3'
         echo -e "${Red}!! Aborting..."
         exit 3
       fi
-      echo -e "${White}## ${Green}gdisk installed successfully, ${IWhite}resuming backup..."
+      echo -e "${White}## ${Green}sgdisk installed successfully, ${IWhite}resuming backup..."
       debug 'INFO' 'gdisk installed successfully'
       $SLEEPING
 
@@ -882,7 +890,7 @@ function check_dependencies() {
     fi
   fi
 
-  # f2fs conversion
+  # f2fs conversion (only apt)
   if [ "$F2FS_CONVERSION" = true ]; then
     echo -e "${White}## ${Green}--f2fs option selected, mkfs.f2fs is needed, ${IWhite}checking for application..."
     $SLEEPING
@@ -917,9 +925,9 @@ function check_dependencies() {
           apt update -y && apt upgrade -y && apt install f2fs-tools -y
         fi
 
-      # apt not available
+      # Installation failed
       else
-        echo -e "${Red}!! Error! ${Yellow}Installing gdisk failed! ${Green}Please install mkfs.f2fs manually and retry script..."
+        echo -e "${Red}!! Error! ${Yellow}Installing mkfs.f2fs (f2fs-tools) failed! ${Green}Please install f2fs-tools manually and retry script..."
         debug 'ERROR' 'Installing f2fs-tools failed, aborting exit 3'
         echo -e "${Red}!! Aborting..."
         exit 3
@@ -933,12 +941,12 @@ function check_dependencies() {
     fi
   fi
 
-  # btrfs conversion
+  # btrfs conversion (work in progress)
   if [ "$BTRFS_CONVERSION" = true ]; then
     echo 'btrfs'
   fi
 
-  # --chroot selected
+  # --chroot selected (only apt)
   if [ "$CHROOTRUN" = true ]; then
     echo -e "${White}## ${Green}--chrootrun ${IWhite}selected, ${Yellow}systemd-nspawn needed, ${IWhite}checking for application..."
     $SLEEPING
@@ -975,6 +983,13 @@ function check_dependencies() {
         echo -e "${White}## ${Green}systemd-container installed successfully, ${IWhite}resuming..."
         debug 'INFO' 'systemd-container installed successfully'
         $SLEEPING
+
+      # Installation failed
+      else
+        echo -e "${Red}!! Error! ${Yellow}Installing systemd-nspawn (systemd-container) failed! ${Green}Please install systemd-container manually and retry script..."
+        debug 'ERROR' 'Installing systemd-container failed, aborting exit 3'
+        echo -e "${Red}!! Aborting..."
+        exit 3
       fi
 
     # systemd-nspawn already installed
