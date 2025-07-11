@@ -2331,7 +2331,7 @@ function print_result() {
   debug 'BREAK'
 
   # Make sure boot partition was not unmounted during backup
-  if grep -q 'boot' /etc/fstab && ! mount --fake | grep -q "$IMG_DEV_BOOT_PATH"; then
+  if grep -q 'boot' /etc/fstab && ! mount --fake | grep -q "$LOCAL_DEV_BOOT_PATH"; then
     debug 'ERROR' "Boot partition ($IMG_DEV_BOOT_PATH) became unmounted during backup"
     echo -e "${Red}!! BOOT PARTITION BECAME UNMOUNTED DURING BACKUP!!"
     echo -e "${Red}!! RE-RUN SHRINK-BACKUP WITH -U OPTION!!"
