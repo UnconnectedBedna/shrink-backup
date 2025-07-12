@@ -138,6 +138,9 @@ function cleanup() {
   if [ "$DEBUG" = true ]; then
     echo '#####################################################################################' >> "$LOG_FILE"
   fi
+  
+  # kill tail operation hindering unmounting of boot partition
+  pkill tail
 }
 trap cleanup EXIT SIGTERM
 trap "exit 10" SIGINT
@@ -2331,13 +2334,13 @@ function print_result() {
   debug 'BREAK'
 
   # Make sure boot partition was not unmounted during backup
-  if grep -q 'boot' /etc/fstab && ! mount --fake | grep -q "$LOCAL_DEV_BOOT_PATH"; then
-    debug 'ERROR' "Boot partition ($IMG_DEV_BOOT_PATH) became unmounted during backup"
-    echo -e "${Red}!! BOOT PARTITION BECAME UNMOUNTED DURING BACKUP!!"
-    echo -e "${Red}!! RE-RUN SHRINK-BACKUP WITH -U OPTION!!"
-    echo -e "$Yellow## shrink-backup will mount the partition for you if you don't do so yourself"
-    echo -e "$Yellow sudo ./shrink-backup -Ul $IMG_FILE"
-  fi
+#   if grep -q 'boot' /etc/fstab && ! mount --fake | grep -q "$LOCAL_DEV_BOOT_PATH"; then
+#     debug 'ERROR' "Boot partition ($IMG_DEV_BOOT_PATH) became unmounted during backup"
+#     echo -e "${Red}!! BOOT PARTITION BECAME UNMOUNTED DURING BACKUP SO THE IMG IS MOST LIKELY CORRUPT!!"
+#     echo -e "${Red}!! RE-RUN SHRINK-BACKUP WITH -U OPTION!!"
+#     echo -e "$Yellow## shrink-backup will mount the partition for you if you don't do so yourself"
+#     echo -e "$Yellow sudo ./shrink-backup -Ul $IMG_FILE"
+#   fi
 return 0
 }
 
@@ -2474,6 +2477,15 @@ if grep -q 'boot' /etc/fstab; then
       mount "${fstab[0]}" "${fstab[1]}"
     fi
   sleep 1
+  fi
+
+  # tail a file on boot partition to hinder unmount operations
+  if [ -f '/boot/firmware/cmdline.txt' ]; then
+    debug 'DEBUG' 'tailing cmdline.txt on boot partition to hinder unmount operations: tail -f /boot/firmware/cmdline.txt > /dev/null &'
+    tail -f /boot/firmware/cmdline.txt > /dev/null &
+  elif [ -f '/boot/cmdline.txt' ]; then
+    debug 'DEBUG' 'tailing cmdline.txt on boot partition to hinder unmount operations: tail -f /boot/cmdline.txt > /dev/null &'
+    tail -f /boot/cmdline.txt > /dev/null &
   fi
 fi
 
