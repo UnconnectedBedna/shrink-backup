@@ -138,6 +138,10 @@ function cleanup() {
   if [ "$DEBUG" = true ]; then
     echo '#####################################################################################' >> "$LOG_FILE"
   fi
+
+  # kill tail operation hindering unmounting of boot partition & delete lock file
+  pkill tail
+  rm "$BOOT_PATH"/shrink-backup.lock
 }
 trap cleanup EXIT SIGTERM
 trap "exit 10" SIGINT
@@ -1361,18 +1365,18 @@ function do_rsync() {
   debug 'DEBUG' "tmp_file=$tmp_file"
 
   if [ "$EXCLUDE_FILE" = true ]; then
-    debug 'DEBUG' "Running: rsync -ahvHAX --exclude-from="$EXCLUDE_FILE_LOCATION" --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded --timeout=30 / $TMP_DIR"
+    debug 'DEBUG' "Running: rsync -ahvHAX --exclude-from="$EXCLUDE_FILE_LOCATION" --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file},${BOOT_PATH}/shrink-backup.lock} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded --timeout=30 / $TMP_DIR"
     if [ "$RSYNC_TTY" = true ]; then
-      rsync -ahvHAX --exclude-from="$EXCLUDE_FILE_LOCATION" --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded --timeout=30 / "$TMP_DIR" 2>&1 | tee "$TTY_AVAILABILITY" > "$tmp_file"
+      rsync -ahvHAX --exclude-from="$EXCLUDE_FILE_LOCATION" --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file},${BOOT_PATH}/shrink-backup.lock} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded --timeout=30 / "$TMP_DIR" 2>&1 | tee "$TTY_AVAILABILITY" > "$tmp_file"
     else
-      rsync -ahvHAX --exclude-from="$EXCLUDE_FILE_LOCATION" --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file}} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded --timeout=30 / "$TMP_DIR" 2>&1 | tee /dev/null > "$tmp_file"
+      rsync -ahvHAX --exclude-from="$EXCLUDE_FILE_LOCATION" --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file},${BOOT_PATH}/shrink-backup.lock} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded --timeout=30 / "$TMP_DIR" 2>&1 | tee /dev/null > "$tmp_file"
     fi
   else
-    debug 'DEBUG' "Running: rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/swap,/snap/*,${IMG_PATH}/*} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded --timeout=30 / $TMP_DIR"
+    debug 'DEBUG' "Running: rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/swap,/snap/*,${IMG_PATH}/*,${BOOT_PATH}/shrink-backup.lock} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded --timeout=30 / $TMP_DIR"
     if [ "$RSYNC_TTY" = true ]; then
-      rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/swap,/snap/*,${IMG_PATH}/*} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded --timeout=30 / "$TMP_DIR" 2>&1 | tee "$TTY_AVAILABILITY" > "$tmp_file"
+      rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/swap,/snap/*,${IMG_PATH}/*,${BOOT_PATH}/shrink-backup.lock} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded --timeout=30 / "$TMP_DIR" 2>&1 | tee "$TTY_AVAILABILITY" > "$tmp_file"
     else
-      rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/swap,/snap/*,${IMG_PATH}/*} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded --timeout=30 / "$TMP_DIR" 2>&1 | tee /dev/null > "$tmp_file"
+      rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/swap,/snap/*,${IMG_PATH}/*,${BOOT_PATH}/shrink-backup.lock} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded --timeout=30 / "$TMP_DIR" 2>&1 | tee /dev/null > "$tmp_file"
     fi
   fi
 
@@ -2331,13 +2335,13 @@ function print_result() {
   debug 'BREAK'
 
   # Make sure boot partition was not unmounted during backup
-  if grep -q 'boot' /etc/fstab && ! mount --fake | grep -q "$LOCAL_DEV_BOOT_PATH"; then
-    debug 'ERROR' "Boot partition ($IMG_DEV_BOOT_PATH) became unmounted during backup"
-    echo -e "${Red}!! BOOT PARTITION BECAME UNMOUNTED DURING BACKUP!!"
-    echo -e "${Red}!! RE-RUN SHRINK-BACKUP WITH -U OPTION!!"
-    echo -e "$Yellow## shrink-backup will mount the partition for you if you don't do so yourself"
-    echo -e "$Yellow sudo ./shrink-backup -Ul $IMG_FILE"
-  fi
+#   if grep -q 'boot' /etc/fstab && ! mount --fake | grep -q "$LOCAL_DEV_BOOT_PATH"; then
+#     debug 'ERROR' "Boot partition ($IMG_DEV_BOOT_PATH) became unmounted during backup"
+#     echo -e "${Red}!! BOOT PARTITION BECAME UNMOUNTED DURING BACKUP SO THE IMG IS MOST LIKELY CORRUPT!!"
+#     echo -e "${Red}!! RE-RUN SHRINK-BACKUP WITH -U OPTION!!"
+#     echo -e "$Yellow## shrink-backup will mount the partition for you if you don't do so yourself"
+#     echo -e "$Yellow sudo ./shrink-backup -Ul $IMG_FILE"
+#   fi
 return 0
 }
 
@@ -2475,6 +2479,11 @@ if grep -q 'boot' /etc/fstab; then
     fi
   sleep 1
   fi
+
+  # Create a lock file on boot partition and tail it to hinder unmount operations
+  touch "$BOOT_PATH"/shrink-backup.lock
+  tail -f "$BOOT_PATH"/shrink-backup.lock > /dev/null &
+  debug 'DEBUG' "${BOOT_PATH}/shrink-backup.lock created, running: tail -f ${BOOT_PATH}/shrink-backup.lock > /dev/null &"
 fi
 
 # If --loop is requested, execute looprun function. Will exit script within the function
