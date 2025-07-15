@@ -46,6 +46,11 @@ function cleanup() {
   # exit 10 = stopped by user (ctrl+c)
   local exit_code="$?"
 
+  # Kill tail operation hindering unmounting of boot partition & delete lock file
+  debug 'DEBUG' "Killing tail operation and removing ${BOOT_PATH}/shrink-backup.lock"
+  pkill tail
+  rm "$BOOT_PATH"/shrink-backup.lock 2>/dev/null
+
   if [ "$exit_code" -ne 1 ] && [ "$exit_code" -ne 2 ]; then
     case $exit_code in
       0) debug 'DEBUG' 'Cleanup function called with exit 0';;
@@ -138,10 +143,6 @@ function cleanup() {
   if [ "$DEBUG" = true ]; then
     echo '#####################################################################################' >> "$LOG_FILE"
   fi
-
-  # kill tail operation hindering unmounting of boot partition & delete lock file
-  pkill tail
-  rm "$BOOT_PATH"/shrink-backup.lock
 }
 trap cleanup EXIT SIGTERM
 trap "exit 10" SIGINT
@@ -457,8 +458,6 @@ function chrootrun() {
       (( count -- ))
       debug 'INFO' 'Boot partition found in fstab, mounting img boot partition'
       fstab=($(cat "$TMP_DIR"/etc/fstab | grep 'boot'))
-#       BOOT_PATH="${fstab[1]}" # Used to find mount in cleanup function
-#       debug 'DEBUG' "BOOT_PATH=$BOOT_PATH"
       echo -e "${White}## ${IWhite}Mounting img ${Green}${fstab[1]} ${IWhite}from fstab"
       $SLEEPING
       debug 'DEBUG' "Running: mount -o ${fstab[3]} ${LSBLK_PARTITIONS[$count]} ${TMP_DIR}${fstab[1]}"
@@ -497,8 +496,6 @@ function chrootrun() {
     fi
     # Assumes boot exists and is on first partition
     fstab=($(cat "$TMP_DIR"/etc/fstab | grep 'boot'))
-#     BOOT_PATH="${fstab[1]}" # Used to find mount in cleanup function
-#     debug 'DEBUG' "BOOT_PATH=$BOOT_PATH"
     debug 'INFO' 'Mounting img boot partition'
     echo -e "${White}## ${IWhite}Mounting img ${Green}${fstab[1]} ${IWhite}from fstab"
     $SLEEPING
@@ -562,7 +559,6 @@ function dev_variables() {
 
   # Check if separate boot and root partition exists and set variables accordingly
   if grep -q 'boot' /etc/fstab; then
-#     debug 'INFO' 'Separate boot partition detected'
     BOOT_PARTITION=true
     LOCAL_DEV_BOOT_PATH=$(mount --fake | grep 'boot' | awk '{print $1}')
     LOCAL_DEV_ROOT_PATH=$(mount --fake | grep ' / ' | awk '{print $1}')
@@ -571,8 +567,6 @@ function dev_variables() {
     LOCAL_ROOT_UUID=$(lsblk -no uuid "$LOCAL_DEV_ROOT_PATH")
     LOCAL_ROOT_PARTUUID=$(lsblk -no partuuid "$LOCAL_DEV_ROOT_PATH")
     debug 'DEBUG' "LOCAL_BOOT_UUID=$LOCAL_BOOT_UUID | LOCAL_ROOT_UUID=$LOCAL_ROOT_UUID | LOCAL_ROOT_PARTUUID=$LOCAL_ROOT_PARTUUID"
-#     BOOT_PATH=$(cat /etc/fstab | grep 'boot' | awk '{print $2}')
-#     debug 'DEBUG' "BOOT_PATH=$BOOT_PATH"
   else
     debug 'INFO' 'No boot partition detected'
     BOOT_PARTITION=false
@@ -1101,24 +1095,6 @@ function do_mount() {
 
   # Mount boot partition if exists
   if [ -n "$BOOT_PATH" ]; then
-#     if ! mount --fake | grep -q 'boot'; then
-#       while true; do
-#         if [ "$COLORS" = true ]; then
-#           echo -e "${Red}!! Boot found in fstab but partition not mounted..."
-#           debug 'WARNING' 'Boot found in fstab but partition not mounted'
-#           debug 'INFO' 'Do you want to mount boot partition?'
-#           read -r -p $'\e[0;37m## \e[0;97mDo you want to mount boot partition? \e[0;92m[y/n] \e[0m' input
-#         else
-#           read -r -p '## Do you want to mount boot partition? [y/n] ' input
-#         fi
-#         case $input in
-#           [Yy]) debug 'DEBUG' "Y or y pressed to confirm, running: mount $LOCAL_DEV_BOOT_PATH $BOOT_PATH"; mount "$LOCAL_DEV_BOOT_PATH" "$BOOT_PATH"; break;;
-#           [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
-#           *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"; debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
-#         esac
-#       done
-#     sleep 1
-#     fi
     echo -e "${White}## ${IWhite}Mounting img boot partition..."
     $SLEEPING
     debug 'INFO' 'Mounting boot inside root'
@@ -2333,15 +2309,6 @@ function print_result() {
   echo -e "${Purple}${BREAK}"
   debug 'INFO' 'Backup done'
   debug 'BREAK'
-
-  # Make sure boot partition was not unmounted during backup
-#   if grep -q 'boot' /etc/fstab && ! mount --fake | grep -q "$LOCAL_DEV_BOOT_PATH"; then
-#     debug 'ERROR' "Boot partition ($IMG_DEV_BOOT_PATH) became unmounted during backup"
-#     echo -e "${Red}!! BOOT PARTITION BECAME UNMOUNTED DURING BACKUP SO THE IMG IS MOST LIKELY CORRUPT!!"
-#     echo -e "${Red}!! RE-RUN SHRINK-BACKUP WITH -U OPTION!!"
-#     echo -e "$Yellow## shrink-backup will mount the partition for you if you don't do so yourself"
-#     echo -e "$Yellow sudo ./shrink-backup -Ul $IMG_FILE"
-#   fi
 return 0
 }
 
