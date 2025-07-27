@@ -25,8 +25,10 @@ function debug() {
         echo -e "$(date +"%Y-%m-%d %H:%M:%S") [$log_level]    - $log_message" >> "$LOG_FILE"
       elif [ $log_level = 'ERROR' ]; then
         echo -e "$(date +"%Y-%m-%d %H:%M:%S") [$log_level]   - $log_message" >> "$LOG_FILE"
-      else
+      elif [ $log_level = 'WARNING' ]; then
         echo -e "$(date +"%Y-%m-%d %H:%M:%S") [$log_level] - $log_message" >> "$LOG_FILE"
+      else
+        echo -e "$(date +"%Y-%m-%d %H:%M:%S") [$log_level]   - $log_message" >> "$LOG_FILE"
       fi
     fi
   fi
@@ -67,46 +69,69 @@ function cleanup() {
     if [ -n "$BOOT_PATH" ] && [ -n "$TMP_DIR" ] && grep -qs "${TMP_DIR}${BOOT_PATH} " /proc/mounts; then
       # Loop until the mount point is not busy
       while true; do
-        # Check if the mount point is still busy
-        if ! umount "${TMP_DIR}${BOOT_PATH}" && [ -n "$BOOT_PATH" ] && [ -n "$TMP_DIR" ] && grep -qs "${TMP_DIR}${BOOT_PATH} " /proc/mounts; then
+        # Check if the mount point is busy
+        if ! umount "${TMP_DIR}${BOOT_PATH}" && grep -qs "${TMP_DIR}${BOOT_PATH} " /proc/mounts; then
           # If it is, sleep for 5 seconds and try again
           echo -e "${Yellow}!! ${Green}${TMP_DIR}${BOOT_PATH} ${Yellow}is busy, retrying in 5 seconds..."
           debug 'DEBUG' "${TMP_DIR}${BOOT_PATH} is busy, retrying in 5 seconds"
           sleep 5
         else
-          # If it's not busy, provide debug info
           debug 'DEBUG' "Unmounting boot partition in cleanup function: umount ${TMP_DIR}${BOOT_PATH}"
           break
         fi
       done
     fi
 
-    # Unmount img home (only relevant for btrfs)
-    if [ -n "$TMP_DIR" ] && grep -qs "${TMP_DIR}/home " /proc/mounts; then
-      while true; do
-        if ! umount "${TMP_DIR}/home" && [ -n "$TMP_DIR" ] && grep -qs "${TMP_DIR}/home " /proc/mounts; then
-          echo -e "${Yellow}!! ${Green}${TMP_DIR}/home ${Yellow}is busy, retrying in 5 seconds..."
-          debug 'DEBUG' "${TMP_DIR}/home is busy, retrying in 5 seconds"
-          sleep 5
-        else
-          debug 'DEBUG' "Unmounting home partition in cleanup function: umount ${TMP_DIR}/home"
-          break
+    # btrfs
+    if [ "$FSTYPE" == 'btrfs' ]; then
+      # Non-root subvolumes
+      for subvol in "${LOCAL_TOP_SUBVOLUMES[@]}"; do
+        if grep -q "$subvol" /etc/fstab && [[ "$subvol" != '@' ]]; then
+          path=$(cat /etc/fstab | grep "$subvol" | awk '{print $2}')
+          if [ -n "$TMP_DIR" ] && grep -qs "${TMP_DIR}${path} " /proc/mounts; then
+            while true; do
+              if ! umount "${TMP_DIR}${path}" && grep -qs "${TMP_DIR}${path} " /proc/mounts; then
+                echo -e "${Yellow}!! ${Green}${TMP_DIR}${path} ${Yellow}is busy, retrying in 5 seconds..."
+                debug 'DEBUG' "${TMP_DIR}${path} is busy, retrying in 5 seconds"
+                sleep 5
+              else
+                debug 'DEBUG' "Unmounting subvolume $subvol in cleanup function: umount ${TMP_DIR}${path}"
+                break
+              fi
+            done
+          fi
         fi
       done
-    fi
 
-    # Unmount img root
-    if [ -n "$TMP_DIR" ] && grep -qs "$TMP_DIR " /proc/mounts; then
-      while true; do
-        if ! umount "${TMP_DIR}" && [ -n "$TMP_DIR" ] && grep -qs "$TMP_DIR " /proc/mounts; then
-          echo -e "${Yellow}!! ${Green}${TMP_DIR} ${Yellow}is busy, retrying in 5 seconds..."
-          debug 'DEBUG' "${TMP_DIR} is busy, retrying in 5 seconds"
-          sleep 5
-        else
-          debug 'DEBUG' "Unmounting root partition in cleanup function: umount ${TMP_DIR}"
-          break
-        fi
-      done
+      # Root subvolume
+      if [ -n "$TMP_DIR" ] && grep -qs "${TMP_DIR} " /proc/mounts; then
+        while true; do
+          if ! umount "${TMP_DIR}" && grep -qs "${TMP_DIR} " /proc/mounts; then
+            echo -e "${Yellow}!! ${Green}${TMP_DIR} ${Yellow}is busy, retrying in 5 seconds..."
+            debug 'DEBUG' "${TMP_DIR} is busy, retrying in 5 seconds"
+            sleep 5
+          else
+            debug 'DEBUG' "Unmounting root subvolume (@) in cleanup function: umount ${TMP_DIR}"
+            break
+          fi
+        done
+      fi
+
+    # All other filesystems
+    else
+      # Unmount img root
+      if [ -n "$TMP_DIR" ] && grep -qs "$TMP_DIR " /proc/mounts; then
+        while true; do
+          if ! umount "${TMP_DIR}" && grep -qs "$TMP_DIR " /proc/mounts; then
+            echo -e "${Yellow}!! ${Green}${TMP_DIR} ${Yellow}is busy, retrying in 5 seconds..."
+            debug 'DEBUG' "${TMP_DIR} is busy, retrying in 5 seconds"
+            sleep 5
+          else
+            debug 'DEBUG' "Unmounting root partition in cleanup function: umount ${TMP_DIR}"
+            break
+          fi
+        done
+      fi
     fi
 
     # Remove loop
@@ -482,6 +507,7 @@ function chrootrun() {
       debug 'ERROR' "IMG ROOT SUBVOLUME (@) MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
       exit 3
     fi
+
     # Remount with flags from fstab
     fstab=($(cat "$TMP_DIR"/etc/fstab | grep ' / '))
     echo -e "${White}## ${IWhite}Remounting img ${Green}@ ${IWhite}subvolume with flags from fstab"
@@ -494,6 +520,7 @@ function chrootrun() {
       debug 'ERROR' "REMOUNTING IMG ROOT SUBVOLUME (@) FAILED:\n$output\n-------------------------------------------------------------------------------------"
       exit 3
     fi
+
     # Assumes boot exists and is on first partition
     fstab=($(cat "$TMP_DIR"/etc/fstab | grep 'boot'))
     debug 'INFO' 'Mounting img boot partition'
@@ -506,6 +533,7 @@ function chrootrun() {
       debug 'ERROR' "IMG BOOT MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
       exit 3
     fi
+
     # Filter out @ and subvolumes not in fstab
     IMG_SUBVOLUMES=($(btrfs subvol list $TMP_DIR | awk '{print $9}'))
     echo -e "${White}## ${IWhite}Subvolumes found on img ${Green}${IMG_SUBVOLUMES[@]}"
@@ -670,19 +698,48 @@ function btrfs_variables() {
     LOCAL_AUTORESIZE_MIN=$(( LOCAL_USED_SPACE + 536870912 ))
     debug 'DEBUG' "LOCAL_AUTORESIZE_MIN=$LOCAL_AUTORESIZE_MIN bytes"
   fi
-  debug 'DEBUG' "Running: btrfs subvolume list / | awk '{print \$9}'"
-  declare -ag LOCAL_SUBVOLUMES=( $(btrfs subvolume list / | awk '{print $9}') ) # -g = make variable global
-  debug 'DEBUG' "LOCAL_SUBVOLUMES=$(echo ${LOCAL_SUBVOLUMES[@]})"
+
+  # Get subvolumes
+  debug 'DEBUG' "Running: btrfs subvolume list / | grep ' 5 ' | awk '{print \$9}'"
+  declare -ag LOCAL_TOP_SUBVOLUMES=( $(btrfs subvolume list / | grep ' 5 ' | awk '{print $9}') ) # -g = make variable global
+  debug 'DEBUG' "LOCAL_TOP_SUBVOLUMES=$(echo ${LOCAL_TOP_SUBVOLUMES[@]})"
+  debug 'DEBUG' "Running: btrfs subvolume list / --sort=path | grep -v ' 5 ' | awk '{print \$9}'"
+  declare -ag LOCAL_NESTED_SUBVOLUMES=( $(btrfs subvolume list / --sort=path | grep -v ' 5 ' | awk '{print $9}') )
+  debug 'DEBUG' "LOCAL_NESTED_SUBVOLUMES=$(echo ${LOCAL_NESTED_SUBVOLUMES[@]})"
+
   if [ "$EXCLUDE_FILE" = true ]; then
-    debug 'INFO' 'Filtering out volumes to exclude from exclude.txt or shrink-backup.conf'
-    for i in ${!LOCAL_SUBVOLUMES[@]}; do
-      subvol=${LOCAL_SUBVOLUMES[i]}
-      if $(echo $subvol | grep -q -f "$EXCLUDE_FILE_LOCATION"); then
+    # Filter out top subvolumes not in fstab
+    debug 'INFO' 'Filtering out top level 5 subvolumes not existing in fstab'
+    for i in ${!LOCAL_TOP_SUBVOLUMES[@]}; do
+      subvol=${LOCAL_TOP_SUBVOLUMES[i]}
+      if $(echo $subvol | grep -q -v -f /etc/fstab); then
         debug 'DEBUG' "Filtering out subvolume: $subvol"
-        unset LOCAL_SUBVOLUMES[i]
+        unset LOCAL_TOP_SUBVOLUMES[i]
       fi
     done
-    debug 'DEBUG' "After filtering: LOCAL_SUBVOLUMES=$(echo ${LOCAL_SUBVOLUMES[@]})"
+    debug 'DEBUG' "After filtering: LOCAL_TOP_SUBVOLUMES=$(echo ${LOCAL_TOP_SUBVOLUMES[@]})"
+
+    # Filter out top subvolumes from exclude.txt or shrink-backup.conf
+    debug 'INFO' 'Filtering out top level 5 subvolumes to exclude from exclude.txt or shrink-backup.conf'
+    for i in ${!LOCAL_TOP_SUBVOLUMES[@]}; do
+      subvol=${LOCAL_TOP_SUBVOLUMES[i]}
+      if $(echo $subvol | grep -q -f "$EXCLUDE_FILE_LOCATION"); then
+        debug 'DEBUG' "Filtering out subvolume: $subvol"
+        unset LOCAL_TOP_SUBVOLUMES[i]
+      fi
+    done
+    debug 'DEBUG' "After filtering: LOCAL_TOP_SUBVOLUMES=$(echo ${LOCAL_TOP_SUBVOLUMES[@]})"
+
+    # Filter out nested subvolumes from exclude.txt or shrink-backup.conf
+    debug 'INFO' 'Filtering out nested subvolumes to exclude from exclude.txt or shrink-backup.conf'
+    for i in ${!LOCAL_NESTED_SUBVOLUMES[@]}; do
+      subvol=${LOCAL_NESTED_SUBVOLUMES[i]}
+      if $(echo $subvol | grep -q -f "$EXCLUDE_FILE_LOCATION"); then
+        debug 'DEBUG' "Filtering out subvolume: $subvol"
+        unset LOCAL_NESTED_SUBVOLUMES[i]
+      fi
+    done
+    debug 'DEBUG' "After filtering: LOCAL_NESTED_SUBVOLUMES=$(echo ${LOCAL_NESTED_SUBVOLUMES[@]})"
   fi
 return 0
 }
@@ -770,37 +827,6 @@ function img_variables() {
       exit 3
     fi
   fi
-
-  # Check for btrfs subvolumes on img
-  # None of this is needed unless creation of new voumes during update will be implemented
-#   if [ "$FSTYPE" == 'btrfs' ] && [ "$UPDATE" = true ]; then
-#     # Check for temp directory and create if needed
-#     if ! [ -d "$TMP_DIR" ]; then
-#       echo -e "${White}## ${IWhite}Creating temp directory..."
-#       $SLEEPING
-#       debug 'INFO' 'Creating temp directory'
-#       debug 'DEBUG' "Running: mktemp -d -t backup-XXX"
-#       TMP_DIR=$(mktemp -d -t backup-XXX)
-#       debug 'DEBUG' "TMP_DIR=$TMP_DIR"
-#     fi
-#     $SLEEPING
-#     partprobe "$LOOP"
-#     fstab=($(cat /etc/fstab | grep ' / '))
-#     debug 'INFO' 'Mounting btrfs filesystem to find subvolumes'
-#     debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH $TMP_DIR"
-#     if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
-#       echo -e "${Yellow}$output\n${Red}!! ROOT MOUNT FAILED!!!"
-#       debug 'BREAK'
-#       debug 'ERROR' "ROOT MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
-#       exit 3
-#     fi
-#     $SLEEPING
-#     debug 'DEBUG' "Running: btrfs subvolume list $TMP_DIR | awk '{print \$9}'"
-#     declare -a IMG_SUBVOLUMES=( $(btrfs subvolume list "$TMP_DIR" | awk '{print $9}') )
-#     debug 'DEBUG' "IMG_SUBVOLUMES=$(echo ${IMG_SUBVOLUMES[@]})"
-#     debug 'DEBUG' "Running: umount $TMP_DIR"
-#     umount "$TMP_DIR"
-#   fi
 return 0
 }
 
@@ -1039,7 +1065,6 @@ function do_mount() {
     TMP_DIR=$(mktemp -d -t backup-XXX)
     debug 'DEBUG' "TMP_DIR=$TMP_DIR"
   fi
-  $SLEEPING
   partprobe "$LOOP"
 
   # ext4 & f2fs
@@ -1059,6 +1084,8 @@ function do_mount() {
   elif [ "$FSTYPE" == 'btrfs' ]; then
     declare -a fstab=( $(cat /etc/fstab | grep ' / ') )
     echo -e "${White}## ${IWhite}Mounting root (${Green}@${IWhite}) subvolume..."
+    $SLEEPING
+    debug 'INFO' 'Mounting root (@) subvolume from loop'
     debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH $TMP_DIR"
     if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
       echo -e "${Yellow}$output\n${Red}!! ROOT SUBVOLUME MOUNT FAILED!!!"
@@ -1066,14 +1093,18 @@ function do_mount() {
       debug 'ERROR' "ROOT SUBVOLUME MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
       exit 3
     fi
-    $SLEEPING
 
-    # New volumes will not be created during an update
-    for subvol in "${LOCAL_SUBVOLUMES[@]}"; do
-      # Excluding root (@) subvolume and mounting all else in fstab, nested volumes are not in fstab
+    # Mount top subvolums (except @). New top volumes will not be created during an update, if new top volumes have been created on device script will exit
+    for subvol in "${LOCAL_TOP_SUBVOLUMES[@]}"; do
+      # Excluding root (@) subvolume and mounting all else in fstab
       if grep -q "$subvol" /etc/fstab && [[ "$subvol" != '@' ]]; then
         declare -a fstab=( $(cat /etc/fstab | grep "$subvol") )
         echo -e "${White}## ${IWhite}Mounting subvolume: ${Green}$subvol"
+        $SLEEPING
+        if ! [ -d "${TMP_DIR}${fstab[1]}" ]; then
+          debug 'DEBUG' "Directory for subvol $subvol did not exist, running: mkdir -p ${TMP_DIR}${fstab[1]}"
+          mkdir -p ${TMP_DIR}${fstab[1]}
+        fi
         debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH ${TMP_DIR}${fstab[1]}"
         if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" "${TMP_DIR}${fstab[1]}" 2>&1); then
           echo -e "${Yellow}$output\n${Red}!! SUBVOLUME MOUNT FAILED!!!"
@@ -1081,16 +1112,75 @@ function do_mount() {
           debug 'ERROR' "SUBVOLUME MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
           exit 3
         fi
-
-      # Make sure directories exist for nested volumes
-      elif [[ "$subvol_path" != '@'* ]]; then
-        if ! [ -d "${TMP_DIR}/${subvol_path}" ]; then
-          debug 'DEBUG' "Running: mkdir -p ${TMP_DIR}/${subvol_path}"
-          mkdir -p "${TMP_DIR}/${subvol_path}"
-        fi
       fi
-      $SLEEPING
     done
+
+    # Check for differences in nested subvolumes & create/remove if necessary
+    if [[ $(echo $(btrfs subvolume list "$TMP_DIR" --sort=path | grep -v ' 5 ' | awk '{print $9}') ) != "${LOCAL_NESTED_SUBVOLUMES[@]}" ]]; then
+      echo -e "${White}## ${IWhite}Managing nested subvolumes..."
+      $SLEEPING
+      IMG_NESTED_SUBVOLUMES=( $(btrfs subvolume list "$TMP_DIR" --sort=path | grep -v ' 5 ' | awk '{print $9}') )
+      debug 'DEBUG' "IMG_NESTED_SUBVOLUMES=$(echo ${IMG_NESTED_SUBVOLUMES[@]})"
+
+      # Create new nested subvolume(s)
+      for subvol in ${LOCAL_NESTED_SUBVOLUMES[@]}; do
+        if ! echo "${IMG_NESTED_SUBVOLUMES[@]}" | grep -q "$subvol"; then
+          echo -e "${White}## ${IWhite}Creating nested subvolume: ${Green}$subvol"
+          $SLEEPING
+          # Fix path if nested subvolume is in other location than root subvolume
+          top_subvols="$(echo ${LOCAL_TOP_SUBVOLUMES[@]} | sed 's/ /|/g')" # convert spaces into |
+          if echo "$subvol" | grep -E "$top_subvols"; then
+            debug 'INFO' 'Nested volume not under root, fixing path'
+            for top_subvol in ${LOCAL_TOP_SUBVOLUMES[@]}; do
+              if echo "$subvol" | grep -qw "$top_subvol"; then
+                break
+              fi
+            done
+            path="$(cat /etc/fstab | grep $top_subvol | awk '{print $2}' | sed 's/^\///')" # remove first slash
+            subvol="$(echo $subvol | sed "s|$top_subvol|$path|g")"
+          fi
+          # Remove directory if existing
+          if [ -d "${TMP_DIR}/${subvol}" ]; then
+            debug 'DEBUG' "Directory for nested volume exists, deleting: rm -rf ${TMP_DIR}/${subvol}"
+            rm -rf "${TMP_DIR}/${subvol}"
+          fi
+          debug 'DEBUG' "Running: btrfs subvolume create ${TMP_DIR}/$subvol"
+          if ! output=$(btrfs subvolume create -p "$TMP_DIR"/"$subvol" 2>&1); then
+            echo -e "${Yellow}$output\n${Red}!! CREATE NESTED SUBVOLUME FAILED!!!"
+            debug 'BREAK'
+            debug 'ERROR' "CREATE NESTED SUBVOLUME FAILED:\n$output\n-------------------------------------------------------------------------------------"
+            exit 3
+          fi
+        fi
+      done
+
+      # Delete nested img subvolume(s)
+      for subvol in ${IMG_NESTED_SUBVOLUMES[@]}; do
+        if ! echo "${LOCAL_NESTED_SUBVOLUMES[@]}" | grep -q "$subvol"; then
+          echo -e "${White}## ${IWhite}Deleting nested subvolume: ${Green}$subvol"
+          $SLEEPING
+          # Fix path if nested subvolume is in other location than root subvolume
+          top_subvols="$(echo ${LOCAL_TOP_SUBVOLUMES[@]} | sed 's/ /|/g')" # convert spaces into |
+          if echo "$subvol" | grep -qE "$top_subvols"; then
+            debug 'INFO' 'Nested volume not under root, fixing path'
+            for top_subvol in ${LOCAL_TOP_SUBVOLUMES[@]}; do
+              if echo "$subvol" | grep -qw "$top_subvol"; then
+                break
+              fi
+            done
+            path="$(cat /etc/fstab | grep $top_subvol | awk '{print $2}' | sed 's/^\///')" # remove first slash
+            subvol="$(echo $subvol | sed "s|$top_subvol|$path|g")"
+          fi
+          debug 'DEBUG' "Running: btrfs subvolume delete ${TMP_DIR}/$subvol"
+          if ! output=$(btrfs subvolume delete "$TMP_DIR"/"$subvol" 2>&1); then
+            echo -e "${Yellow}$output\n${Red}!! DELETE NESTED SUBVOLUME FAILED!!!"
+            debug 'BREAK'
+            debug 'ERROR' "DELETE NESTED SUBVOLUME FAILED:\n$output\n-------------------------------------------------------------------------------------"
+            exit 3
+          fi
+        fi
+      done
+    fi
   fi
 
   # Mount boot partition if exists
@@ -1151,8 +1241,8 @@ function do_e2fsck() {
       do_mount
     fi
 
+  # Normal check
   else
-    # Normal check
     echo -e "${White}## ${IWhite}Checking img filesystem..."
     $SLEEPING
 
@@ -1161,7 +1251,6 @@ function do_e2fsck() {
     debug 'DEBUG' "Running: e2fsck -p -f $IMG_DEV_ROOT_PATH\n$output\n-------------------------------------------------------------------------------------"
     $SLEEPING
   fi
-
 return 0
 }
 
@@ -1190,8 +1279,10 @@ function do_resize() {
   debug 'DEBUG' "IMG_ROOT_PARTN=$IMG_ROOT_PARTN"
 
   # Check img filesystem
-  debug 'INFO' 'Running function: do_e2fsck'
-  do_e2fsck
+  if [ $FSTYPE == 'ext4' ]; then
+    debug 'INFO' 'Running function: do_e2fsck'
+    do_e2fsck
+  fi
 
 
   # Expanding
@@ -1267,8 +1358,10 @@ function do_resize() {
     debug 'DEBUG' "$output\n-------------------------------------------------------------------------------------"
 
     # Check img filesystem
-    debug 'INFO' 'Running function: do_e2fsck'
-    do_e2fsck
+    if [ $FSTYPE == 'ext4' ]; then
+      debug 'INFO' 'Running function: do_e2fsck'
+      do_e2fsck
+    fi
 
 
   # Shrinking
@@ -1313,12 +1406,6 @@ function do_resize() {
       debug 'ERROR' "TRUNCATE FAILED:\n$output\n-------------------------------------------------------------------------------------"
       exit 3
     fi
-
-    # Final check of img filesystem
-    debug 'INFO' 'Finalizing filesystem'
-    debug 'DEBUG' "Running do_e2fsck 'final'"
-    do_e2fsck 'final'
-
   fi
 return 0
 }
@@ -1471,8 +1558,10 @@ function make_img() {
   echo -e "# ${Green}$IMG_FILE ${Purple}$(printf "%+$(( COLS - 2 - $(echo ${IMG_FILE} | wc -m ) ))s" '#')"
   echo -e "# ${Green}$FSTYPE ${IWhite}filesystem detected on root ${Purple}$(printf "%+$(( COLS - 30 - $(echo ${FSTYPE} | wc -m ) ))s" '#')"
   if [ "$FSTYPE" == 'btrfs' ]; then
-    echo -e "# ${Green}${#LOCAL_SUBVOLUMES[@]} ${IWhite}btrfs volumes will be included ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${#LOCAL_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
-    echo -e "${Purple}# ${IWhite}btrfs volumes: ${Green}${LOCAL_SUBVOLUMES[@]} ${Purple}$(printf "%+$(( COLS - 17 - $(echo ${LOCAL_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
+    echo -e "# ${Green}${#LOCAL_TOP_SUBVOLUMES[@]} ${IWhite}btrfs top volumes will be included ${Purple}$(printf "%+$(( COLS - 37 - $(echo ${#LOCAL_TOP_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
+    echo -e "${Purple}# ${IWhite}btrfs top volumes: ${Green}${LOCAL_TOP_SUBVOLUMES[@]} ${Purple}$(printf "%+$(( COLS - 21 - $(echo ${LOCAL_TOP_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
+    echo -e "# ${Green}${#LOCAL_NESTED_SUBVOLUMES[@]} ${IWhite}btrfs nested volumes will be included ${Purple}$(printf "%+$(( COLS - 40 - $(echo ${#LOCAL_NESTED_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
+    echo -e "${Purple}# ${IWhite}btrfs nested volumes: ${Green}${LOCAL_NESTED_SUBVOLUMES[@]} ${Purple}$(printf "%+$(( COLS - 24 - $(echo ${LOCAL_NESTED_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
   elif [ "$FSTYPE" == 'f2fs' ]; then
     echo -e "# ${Yellow}Autoexpand filesystem at boot not available for ${Green}f2fs ${Purple}$(printf "%+$(( COLS - 54 ))s" '#')"
   elif [ "$F2FS_CONVERSION" = true ]; then
@@ -1744,13 +1833,13 @@ function make_img() {
     # btrfs does work with having the same UUID on 2 filesystems at the same time but the PARTUUID is the same anyway since it's transferred with dd
     if ! output=$(mkfs.btrfs -f -m single -L "$LABEL" -v "$IMG_DEV_ROOT_PATH" 2>&1 | tee "$TTY_AVAILABILITY" ); then
       echo -e "${Yellow}$output\n${Red}!! MKFS.BTRFS FAILED!!!"
+      $SLEEPING
       debug 'BREAK'
       debug 'ERROR' "MKFS.BTRFS FAILED:\n$output\n-------------------------------------------------------------------------------------"
       exit 3
     fi
     debug 'BREAK'
     debug 'DEBUG' "Running: mkfs.btrfs -f -m single -L $LABEL -v $IMG_DEV_ROOT_PATH\n$output\n-------------------------------------------------------------------------------------"
-    $SLEEPING
 
     # Check for temp directory and create if needed
     if ! [ -d "$TMP_DIR" ]; then
@@ -1764,6 +1853,7 @@ function make_img() {
 
     # Mount btrfs filesystem and create volumes
     echo -e "${White}## ${IWhite}Creating btrfs subvolumes..."
+    $SLEEPING
     debug 'INFO' 'Mounting btrfs filesystem and creating btrfs subvolumes'
     debug 'DEBUG' "Running: mount -o noatime,compress=zstd $IMG_DEV_ROOT_PATH $TMP_DIR"
     if ! output=$(mount -o noatime,compress=zstd "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
@@ -1772,96 +1862,24 @@ function make_img() {
       debug 'ERROR' "BTRFS FILESYSTEM MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
       exit 3
     fi
-    $SLEEPING
 
-    # Create top level subvolumes, assumes subvols starting with @ are level 5 volumes
-    for subvol in "${LOCAL_SUBVOLUMES[@]}"; do
-      if [[ "$subvol" == '@'* ]]; then
-        echo -e "${White}## ${IWhite}Creating subvolume: ${Green}$subvol"
-        debug 'DEBUG' "Running: btrfs subvolume create ${TMP_DIR}/${subvol}"
-        if ! output=$(btrfs subvolume create "$TMP_DIR"/"$subvol" 2>&1); then
-          echo -e "${Yellow}$output\n${Red}!! CREATE SUBVOLUME FAILED!!!"
-          debug 'BREAK'
-          debug 'ERROR' "CREATE SUBVOLUME FAILED:\n$output\n-------------------------------------------------------------------------------------"
-          exit 3
-        fi
-      fi
+    # Create top level subvolumes
+    for subvol in "${LOCAL_TOP_SUBVOLUMES[@]}"; do
+      echo -e "${White}## ${IWhite}Creating subvolume: ${Green}$subvol"
       $SLEEPING
+      debug 'DEBUG' "Running: btrfs subvolume create ${TMP_DIR}/${subvol}"
+      if ! output=$(btrfs subvolume create "$TMP_DIR"/"$subvol" 2>&1); then
+        echo -e "${Yellow}$output\n${Red}!! CREATE SUBVOLUME FAILED!!!"
+        debug 'BREAK'
+        debug 'ERROR' "CREATE SUBVOLUME FAILED:\n$output\n-------------------------------------------------------------------------------------"
+        exit 3
+      fi
     done
 
-    # Mount root (@) subvolume
-    echo -e "${White}## ${IWhite}Mounting root (${Green}@${IWhite}) subvolume..."
-    debug 'INFO' 'Unmounting btrfs filesystem & mounting root (@) subvolume'
-    debug 'DEBUG' "Running: umount $TMP_DIR"
+    # Nested volumes are created within do_mount function
+    debug 'INFO' 'Unmounting btrfs filesystem & running function: do_mount'
     umount "$TMP_DIR"
-    $SLEEPING
-    partprobe "$LOOP"
-    #fstab=( $(cat /etc/fstab | grep "${LOCAL_SUBVOLUMES[0]}") )
-    declare -a fstab=( $(cat /etc/fstab | grep ' / ') )
-    debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH $TMP_DIR"
-    if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" "$TMP_DIR" 2>&1); then
-      echo -e "${Yellow}$output\n${Red}!! ROOT SUBVOLUME (@) MOUNT FAILED!!!"
-      debug 'BREAK'
-      debug 'ERROR' "ROOT SUBVOLUME (@) MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
-      exit 3
-    fi
-    $SLEEPING
-
-    # Create nested volumes
-    echo -e "${White}## ${IWhite}Creating nested volumes if existing..."
-    debug 'INFO' 'Creating nested volumes'
-    $SLEEPING
-
-    for subvol in "${LOCAL_SUBVOLUMES[@]}"; do
-    if [[ "$subvol" != '@'* ]]; then
-        debug 'DEBUG' "Running: mkdir -p $TMP_DIR/$(dirname $subvol)"
-        mkdir -p "$TMP_DIR"/$(dirname "$subvol")
-        echo -e "${White}## ${IWhite}Creating volume: ${Green}$subvol"
-        debug 'DEBUG' "Running: btrfs subvolume create ${TMP_DIR}/$subvol"
-        if ! output=$(btrfs subvolume create "$TMP_DIR"/"$subvol" 2>&1); then
-          echo -e "${Yellow}$output\n${Red}!! CREATE VOLUME FAILED!!!"
-          debug 'BREAK'
-          debug 'ERROR' "CREATE VOLUME FAILED:\n$output\n-------------------------------------------------------------------------------------"
-          exit 3
-        fi
-      fi
-      $SLEEPING
-    done
-
-    # Mount volumes from fstab
-    echo -e "${White}## ${IWhite}Mounting img btrfs volumes from fstab..."
-    debug 'INFO' 'Mounting volumes'
-    partprobe "$LOOP"
-    $SLEEPING
-
-    for subvol in "${LOCAL_SUBVOLUMES[@]}"; do
-      # Excluding root (@) subvolume and mounting all else in fstab, nested volumes are not in fstab
-      if grep -q "$subvol" /etc/fstab && [[ "$subvol" != '@' ]]; then
-        declare -a fstab=( $(cat /etc/fstab | grep "$subvol") )
-        debug 'DEBUG' "Running: mkdir -p ${TMP_DIR}${fstab[1]}"
-        mkdir -p "${TMP_DIR}${fstab[1]}"
-        echo -e "${White}## ${IWhite}Mounting subvolume: ${Green}$subvol"
-        debug 'DEBUG' "Running: mount -o ${fstab[3]} $IMG_DEV_ROOT_PATH ${TMP_DIR}${fstab[1]}"
-        if ! output=$(mount -o "${fstab[3]}" "$IMG_DEV_ROOT_PATH" "${TMP_DIR}${fstab[1]}" 2>&1); then
-          echo -e "${Yellow}$output\n${Red}!! SUBVOLUME MOUNT FAILED!!!"
-          debug 'BREAK'
-          debug 'ERROR' "SUBVOLUME MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
-          exit 3
-        fi
-      fi
-      $SLEEPING
-    done
-
-    echo -e "${White}## ${IWhite}Mounting boot..."
-    debug 'DEBUG' "Running: mount $IMG_DEV_BOOT_PATH ${TMP_DIR}${BOOT_PATH}"
-    mkdir -p ${TMP_DIR}${BOOT_PATH}
-    if ! output=$(mount "$IMG_DEV_BOOT_PATH" "${TMP_DIR}${BOOT_PATH}" 2>&1); then
-      echo -e "${Yellow}$output\n${Red}!! BOOT MOUNT FAILED!!!"
-      debug 'BREAK'
-      debug 'ERROR' "BOOT MOUNT FAILED:\n$output\n-------------------------------------------------------------------------------------"
-      exit 3
-    fi
-    $SLEEPING
+    do_mount
   fi
 
   # Copy files
@@ -1947,8 +1965,10 @@ function update_img() {
   echo -e "# ${Green}$IMG_FILE ${Purple}$(printf "%+$(( COLS - 2 - $(echo ${IMG_FILE} | wc -m ) ))s" '#')"
   echo -e "# ${Green}$FSTYPE ${IWhite}filesystem detected on root ${Purple}$(printf "%+$(( COLS - 30 - $(echo ${FSTYPE} | wc -m ) ))s" '#')"
   if [ "$FSTYPE" == 'btrfs' ]; then
-    echo -e "# ${Green}${#LOCAL_SUBVOLUMES[@]} ${IWhite}btrfs volumes will be included ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${#LOCAL_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
-    echo -e "${Purple}# ${IWhite}btrfs volumes: ${Green}${LOCAL_SUBVOLUMES[@]} ${Purple}$(printf "%+$(( COLS - 17 - $(echo ${LOCAL_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
+    echo -e "# ${Green}${#LOCAL_TOP_SUBVOLUMES[@]} ${IWhite}btrfs top volumes will be included ${Purple}$(printf "%+$(( COLS - 37 - $(echo ${#LOCAL_TOP_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
+    echo -e "${Purple}# ${IWhite}btrfs top volumes: ${Green}${LOCAL_TOP_SUBVOLUMES[@]} ${Purple}$(printf "%+$(( COLS - 21 - $(echo ${LOCAL_TOP_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
+    echo -e "# ${Green}${#LOCAL_NESTED_SUBVOLUMES[@]} ${IWhite}btrfs nested volumes will be included ${Purple}$(printf "%+$(( COLS - 40 - $(echo ${#LOCAL_NESTED_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
+    echo -e "${Purple}# ${IWhite}btrfs nested volumes: ${Green}${LOCAL_NESTED_SUBVOLUMES[@]} ${Purple}$(printf "%+$(( COLS - 24 - $(echo ${LOCAL_NESTED_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
   elif [ "$FSTYPE" == 'f2fs' ]; then
     echo -e "# ${Yellow}Autoexpand filesystem at boot not available for ${Green}f2fs ${Purple}$(printf "%+$(( COLS - 54 ))s" '#')"
     echo -e "# ${Yellow}Resize operations not available for ${Green}f2fs ${Purple}$(printf "%+$(( COLS - 43 ))s" '#')"
@@ -2030,7 +2050,7 @@ function update_img() {
       debug 'INFO' "Running function: do_resize 'expand'"
       do_resize 'expand'
 
-    # Shrinking
+    # Shrink then exit this function
     elif [ "$RESIZE_FUNCTION" == 'shrink' ]; then
       debug 'INFO' 'Running function: do_mount'
       do_mount
@@ -2039,6 +2059,10 @@ function update_img() {
       do_rsync
       debug 'INFO' "Running function: do_resize 'shrink'"
       do_resize 'shrink'
+      if [ $FSTYPE == 'ext4' ]; then
+        debug 'INFO' "Running function: do_e2fsck 'final'"
+        do_e2fsck 'final'
+      fi
       return 0
 
     else
@@ -2058,9 +2082,9 @@ function update_img() {
   debug 'INFO' 'Running function: do_rsync'
   do_rsync
 
+  # Final check of img filesystem
   if [ $FSTYPE == 'ext4' ]; then
-    # Final check of created img file
-    debug 'INFO' "Running do_e2fsck 'final'"
+    debug 'INFO' "Running function: do_e2fsck 'final'"
     do_e2fsck 'final'
   fi
 return 0
@@ -2153,13 +2177,9 @@ EOF
   debug 'DEBUG' "Creating expansion script ${TMP_DIR}/expand-fs.sh"
   cat << EOF2 > "${TMP_DIR}/expand-fs.sh"
 #!/usr/bin/bash
-#LOCAL_DEV_PTUUID=\$(lsblk -no mountpoint,ptuuid | grep '/ ' | awk '{print \$2}')
 LOCAL_DEV_ROOT_PATH=\$(findmnt -n -o SOURCE /)
 LOCAL_DEV_PATH=/dev/\$(lsblk -no pkname "\$LOCAL_DEV_ROOT_PATH")
-#LOCAL_DEV_PATH=\$(lsblk -no ptuuid,type,path | grep "\$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print \$3}')
 LOCAL_ROOT_PARTN=\$(blkid -s PART_ENTRY_NUMBER -o value -p "\$LOCAL_DEV_ROOT_PATH")
-#LOCAL_ROOT_PARTN=\$(parted -sm "\$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
-#LOCAL_DEV_ROOT_PATH=\$(mount --fake | grep ' / ' | awk '{print \$1}')
 LOCAL_ROOT_START=\$(fdisk -lo start "\$LOCAL_DEV_PATH" | tail -1 | awk '{print \$1}') # blocks, 512B block size
 LOCAL_ROOT_START=\$(( LOCAL_ROOT_START * 512 )) # bytes
 
@@ -2216,13 +2236,9 @@ EOF
   debug 'DEBUG' "Creating expansion script ${TMP_DIR}/expand-fs.sh"
   cat << EOF2 > "${TMP_DIR}/expand-fs.sh"
 #!/usr/bin/bash
-#LOCAL_DEV_PTUUID=\$(lsblk -no mountpoint,ptuuid | grep '/ ' | awk '{print \$2}')
 LOCAL_DEV_ROOT_PATH=\$(findmnt -n -o SOURCE /)
 LOCAL_DEV_PATH=/dev/\$(lsblk -no pkname "\$LOCAL_DEV_ROOT_PATH")
-#LOCAL_DEV_PATH=\$(lsblk -no ptuuid,type,path | grep "\$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print \$3}')
 LOCAL_ROOT_PARTN=\$(blkid -s PART_ENTRY_NUMBER -o value -p "\$LOCAL_DEV_ROOT_PATH")
-#LOCAL_ROOT_PARTN=\$(parted -sm "\$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
-#LOCAL_DEV_ROOT_PATH=\$(mount --fake | grep ' / ' | awk '{print \$1}')
 LOCAL_ROOT_START=\$(fdisk -lo start "\$LOCAL_DEV_PATH" | tail -1 | awk '{print \$1}') # blocks, 512B block size
 LOCAL_ROOT_START=\$(( LOCAL_ROOT_START * 512 )) # bytes
 
@@ -2571,7 +2587,7 @@ if [ "$EXCLUDE_FILE" = true ]; then
   fi
   debug 'DEBUG' "$EXCLUDE_FILE_LOCATION exists"
 else
-  debug 'INFO' '-f NOT selected by user, using default exclude directories'
+  debug 'INFO' '-t NOT selected by user, using default exclude directories'
 fi
 
 # Check dependencies
