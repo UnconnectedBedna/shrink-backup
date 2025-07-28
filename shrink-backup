@@ -4,7 +4,7 @@
 # Version 1.3-beta
 # Backup tool for creating and updating .img files (with autoexpansion function) on various linux operating systems
 #
-#    Copyright (c) 2024, Marcus Johansson
+#    Copyright (c) 2025, Marcus Johansson
 #    https://github.com/UnconnectedBedna/shrink-backup
 #    All rights reserved.
 #
@@ -203,8 +203,9 @@ AUTORESIZE_WARNING=false
 ZOOM=false
 LOOPRUN=false
 CHROOTRUN=false
-RSYNC_DELETE='--delete'
-RSYNC_TTY=true
+RSYNC_DELETE='--delete' # gets set to --delete-before if --fix is selected
+RSYNC_TTY=true # gets set to false if -q|--quiet is selected
+RSYNC_CUSTOM=false
 F2FS_CONVERSION=false
 BTRFS_CONVERSION=false
 #STARTLINE="$0 $*" # will produce double // if script is in $PATH
@@ -267,6 +268,7 @@ Usage: ${Green}sudo $(basename "$0") [options] imagefile.img [extra space (MiB)]
                    Shrink if partition is >=512MiB bigger than autocalculated recommended minimum
   ${Green}-t             ${IWhite}Use exclude.txt in same folder as script to set excluded directories
                    One directory per line: "/dir" or "/dir/*" to only exclude contents
+                   Wildcards work, f.ex "/dir*" will eclude all directories starting with "/dir"
   ${Green}-y             ${IWhite}Disable prompts in script (please use this option with care!)
   ${Green}-e             ${IWhite}Disable autoexpansion on root filesystem when image is booted
   ${Green}-l             ${IWhite}Write debug messages to logfile shrink-backup.log located in same directory as script
@@ -275,6 +277,7 @@ Usage: ${Green}sudo $(basename "$0") [options] imagefile.img [extra space (MiB)]
   ${Green}-q --quiet     ${IWhite}Do not print rsync copy process
   ${Green}--no-color     ${IWhite}Run script without color formatted text
   ${Green}--fix          ${IWhite}Try to fix the img file if -a fails with a "broken pipe" error
+  ${Green}--rsync        ${IWhite}Define custom rsync line manually. Will print rsync line for user to edit
   ${Green}--loop [img]   ${IWhite}Loop img file and exit, works in combination with -l & -z
                    If optional [extra space] is defined, the img file will be extended with the amount before looping
                    NOTE that only the file gets truncated, no partitions
@@ -307,7 +310,7 @@ EOM
 
 
 # Parse command-line options
-options=$(getopt -o Uatyelzhq --long help,version,quiet,fix,f2fs,no-color,loop,chroot: -- "$@")
+options=$(getopt -o Uatyelzhq --long help,version,quiet,fix,f2fs,no-color,rsync,loop,chroot: -- "$@")
 [ $? -eq 0 ] || {
     echo -e "${Red}Incorrect options provided"
     help
@@ -328,6 +331,7 @@ while true; do
     --fix) RSYNC_DELETE='--delete-before'; shift;;
     --f2fs) F2FS_CONVERSION=true; shift;;
     --no-color) unset White IWhite Red Blue Green Yellow Purple NC; COLORS=false; debug 'DEBUG' '--no-color selected by user, unsetting color variables'; shift;;
+    --rsync) RSYNC_CUSTOM=true; shift;;
     --loop) LOOPRUN=true; IMG_FILE="$3"; shift;;
     --chroot) CHROOTRUN=true; IMG_FILE="$2"; shift;;
     --) break;;
@@ -1056,15 +1060,6 @@ return 0
 # Mount img file
 function do_mount() {
 
-  # Check for temp directory and create if needed
-  if ! [ -d "$TMP_DIR" ]; then
-    echo -e "${White}## ${IWhite}Creating temp directory..."
-    $SLEEPING
-    debug 'INFO' 'Creating temp directory'
-    debug 'DEBUG' "Running: mktemp -d -t backup-XXX"
-    TMP_DIR=$(mktemp -d -t backup-XXX)
-    debug 'DEBUG' "TMP_DIR=$TMP_DIR"
-  fi
   partprobe "$LOOP"
 
   # ext4 & f2fs
@@ -1422,26 +1417,9 @@ function do_rsync() {
   fi
   IMG_PATH=$(dirname "$IMG_FILE")
   debug 'DEBUG' "Backing up to ${IMG_PATH}${IMG_FILE}"
-  debug 'INFO' 'Creating temporary file to store rsync output'
-  debug 'DEBUG' 'Running: mktemp -t rsync-XXX'
-  tmp_file=$(mktemp -t rsync-XXX)
-  debug 'DEBUG' "tmp_file=$tmp_file"
 
-  if [ "$EXCLUDE_FILE" = true ]; then
-    debug 'DEBUG' "Running: rsync -ahvHAX --exclude-from="$EXCLUDE_FILE_LOCATION" --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file},${BOOT_PATH}/shrink-backup.lock} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded --timeout=30 / $TMP_DIR"
-    if [ "$RSYNC_TTY" = true ]; then
-      rsync -ahvHAX --exclude-from="$EXCLUDE_FILE_LOCATION" --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file},${BOOT_PATH}/shrink-backup.lock} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded --timeout=30 / "$TMP_DIR" 2>&1 | tee "$TTY_AVAILABILITY" > "$tmp_file"
-    else
-      rsync -ahvHAX --exclude-from="$EXCLUDE_FILE_LOCATION" --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file},${BOOT_PATH}/shrink-backup.lock} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded --timeout=30 / "$TMP_DIR" 2>&1 | tee /dev/null > "$tmp_file"
-    fi
-  else
-    debug 'DEBUG' "Running: rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/swap,/snap/*,${IMG_PATH}/*,${BOOT_PATH}/shrink-backup.lock} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded --timeout=30 / $TMP_DIR"
-    if [ "$RSYNC_TTY" = true ]; then
-      rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/swap,/snap/*,${IMG_PATH}/*,${BOOT_PATH}/shrink-backup.lock} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded --timeout=30 / "$TMP_DIR" 2>&1 | tee "$TTY_AVAILABILITY" > "$tmp_file"
-    else
-      rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/swap,/snap/*,${IMG_PATH}/*,${BOOT_PATH}/shrink-backup.lock} --info=progress2 --stats "$RSYNC_DELETE" --force --partial --delete-excluded --timeout=30 / "$TMP_DIR" 2>&1 | tee /dev/null > "$tmp_file"
-    fi
-  fi
+  # Run rsync
+  eval "$RSYNC_LINE"
 
   # Get the exit status of rsync from PIPESTATUS
   if [ "${PIPESTATUS[0]}" -ne 0 ] && [ "${PIPESTATUS[0]}" -ne 23 ]; then # code 23 = rsync warning: some files vanished before they could be transferred (code 24) at main.c
@@ -1568,6 +1546,10 @@ function make_img() {
     echo -e "# ${Yellow}Converting filesystem into ${Green}f2fs ${Yellow}on img file ${Purple}$(printf "%+$(( COLS - 46 ))s" '#')"
     echo -e "# ${Yellow}Autoexpand filesystem at boot not available for ${Green}f2fs ${Purple}$(printf "%+$(( COLS - 55 ))s" '#')"
   fi
+  if [ "$RSYNC_CUSTOM" = true ]; then
+    echo -e "# ${IWhite}Custom rsync line: ${Purple}$(printf "%+$(( COLS - 21 ))s" '#')"
+    echo -e "  ${Green}$RSYNC_CUSTOM_LINE"
+  fi
   echo -e "${Purple}# $(printf %$(( COLS - 4 ))s | tr ' ' '-') #"
   echo -e "# ${IWhite}Write to logfile:              ${Green}$DEBUG ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${DEBUG} | wc -m ) ))s" '#')"
   echo -e "# ${IWhite}Zoom speed requested:          ${Green}$ZOOM ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${ZOOM} | wc -m ) ))s" '#')"
@@ -1627,13 +1609,11 @@ function make_img() {
         read -r -p '## Do you want to continue? [y/n] ' input
       fi
       case $input in
-        [Yy]) break;;
+        [Yy]) debug 'INFO' 'Y or y pressed to confirm'; debug 'BREAK'; break;;
         [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
         *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"; debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
       esac
     done
-    debug 'INFO' 'Y or y pressed to confirm'
-    debug 'BREAK'
 
     if test -f "$IMG_FILE"; then
       debug 'WARNING' "$IMG_FILE ALREADY EXISTS!"
@@ -1648,12 +1628,11 @@ function make_img() {
           read -r -p '## Do you want to overwrite? [y/n] ' input
         fi
         case $input in
-          [Yy]) break;;
+          [Yy]) debug 'WARNING' 'Overwrite confirmed by user'; break;;
           [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
           *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"; debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
         esac
       done
-      debug 'WARNING' 'Overwrite confirmed by user'
     fi
   else
     echo -e "${Purple}${BREAK}${IWhite}"
@@ -1841,16 +1820,6 @@ function make_img() {
     debug 'BREAK'
     debug 'DEBUG' "Running: mkfs.btrfs -f -m single -L $LABEL -v $IMG_DEV_ROOT_PATH\n$output\n-------------------------------------------------------------------------------------"
 
-    # Check for temp directory and create if needed
-    if ! [ -d "$TMP_DIR" ]; then
-      echo -e "${White}## ${IWhite}Creating temp directory..."
-      $SLEEPING
-      debug 'INFO' 'Creating temp directory'
-      debug 'DEBUG' "Running: mktemp -d -t backup-XXX"
-      TMP_DIR=$(mktemp -d -t backup-XXX)
-      debug 'DEBUG' "TMP_DIR=$TMP_DIR"
-    fi
-
     # Mount btrfs filesystem and create volumes
     echo -e "${White}## ${IWhite}Creating btrfs subvolumes..."
     $SLEEPING
@@ -1976,6 +1945,10 @@ function update_img() {
   if [ "$RSYNC_DELETE" = '--delete-before' ]; then
     echo -e "# ${Green}--fix ${IWhite}option selected, rsync will delete files on img before copy ${Purple}$(printf "%+$(( COLS - 68 ))s" '#')"
     debug 'DEBUG' '--fix selected by user, rsync deleting files before copy'
+  fi
+  if [ "$RSYNC_CUSTOM" = true ]; then
+    echo -e "# ${IWhite}Custom rsync line: ${Purple}$(printf "%+$(( COLS - 21 ))s" '#')"
+    echo -e "  ${Green}$RSYNC_CUSTOM_LINE"
   fi
   echo -e "${Purple}# $(printf %$(( COLS - 4 ))s | tr ' ' '-') #"
   echo -e "# ${IWhite}Write to logfile:              ${Green}$DEBUG ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${DEBUG} | wc -m ) ))s" '#')"
@@ -2404,7 +2377,7 @@ if [ "$UPDATE" = false ] && [ -z "$ADDED_SPACE" ]; then
   else
     read -r -p '## Please input requested [extra space] in MiB (0 is valid): ' ADDED_SPACE
   fi
-  debug 'USER_INPUT' "User requested ${ADDED_SPACE}MiB as ADDED_SPACE"
+  debug 'DEBUG' "User requested ${ADDED_SPACE}MiB as ADDED_SPACE"
 fi
 
 # Regular expression for whole numbers
@@ -2426,7 +2399,7 @@ if ! [[ "$ADDED_SPACE" =~ $RE ]]; then
     read ADDED_SPACE
     (( COUNTER++ ))
     #(( COUNTER += 1 ))
-    debug 'USER_INPUT' "User requested ${ADDED_SPACE}MiB as ADDED_SPACE"
+    debug 'DEBUG' "User requested ${ADDED_SPACE}MiB as ADDED_SPACE"
   done
   typeset -i ADDED_SPACE
 fi
@@ -2571,6 +2544,7 @@ if [ "$DEBUG" = true ]; then
   debug 'DEBUG' "EXCLUDE_FILE=$EXCLUDE_FILE"
   debug 'DEBUG' "AUTOEXPAND=$AUTOEXPAND"
   debug 'DEBUG' "RSYNC_DELETE=$RSYNC_DELETE"
+  debug 'DEBUG' "RSYNC_CUSTOM=$RSYNC_CUSTOM"
   debug 'DEBUG' "F2FS_CONVERSION=$F2FS_CONVERSION"
   debug 'DEBUG' "TTY_AVAILABILITY=$TTY_AVAILABILITY"
   debug 'DEBUG' "ADDED_SPACE=$ADDED_SPACE"
@@ -2589,6 +2563,48 @@ if [ "$EXCLUDE_FILE" = true ]; then
 else
   debug 'INFO' '-t NOT selected by user, using default exclude directories'
 fi
+
+# Set default RSYNC_LINE
+IMG_PATH=$(dirname "$IMG_FILE")
+debug 'INFO' 'Creating temp directory'
+debug 'DEBUG' "Running: mktemp -d -t backup-XXX"
+TMP_DIR=$(mktemp -d -t backup-XXX)
+debug 'DEBUG' "TMP_DIR=$TMP_DIR"
+debug 'INFO' 'Creating temp file to store rsync output'
+debug 'DEBUG' 'Running: mktemp -t rsync-XXX'
+tmp_file=$(mktemp -t rsync-XXX)
+debug 'DEBUG' "tmp_file=$tmp_file"
+if [ "$RSYNC_TTY" = false ]; then
+  RSYNC_PATHS="/ $TMP_DIR 2>&1 | tee /dev/null > $tmp_file"
+else
+  RSYNC_PATHS="/ $TMP_DIR 2>&1 | tee $TTY_AVAILABILITY > $tmp_file"
+fi
+debug 'DEBUG' "RSYNC_PATHS=$RSYNC_PATHS"
+
+if [ "$EXCLUDE_FILE" = true ]; then
+  RSYNC_LINE="rsync -ahvHAX --exclude-from=$EXCLUDE_FILE_LOCATION --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file},${BOOT_PATH}/shrink-backup.lock} --info=progress2 --stats $RSYNC_DELETE --force --partial --delete-excluded --timeout=30"
+else
+  RSYNC_LINE="rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/swap,/snap/*,${IMG_PATH}/*,${BOOT_PATH}/shrink-backup.lock} --info=progress2 --stats $RSYNC_DELETE --force --partial --delete-excluded --timeout=30"
+fi
+debug 'DEBUG' "RSYNC_LINE=$RSYNC_LINE"
+
+# If --rsync is selected, ask for user configuration
+if [ "$RSYNC_CUSTOM" = true ]; then
+  echo -e "${Yellow}## Custom rsync line option selected"
+  echo -e "${White}## ${IWhite}Default rsync line: ${Green}${RSYNC_LINE}"
+  echo -e "${White}## ${IWhite}Edit line to use in script ${Yellow}(press ctrl+c to abort)${NC}"
+  printf %${COLUMNS}s | tr ' ' '#'
+
+  read -e -i "$RSYNC_LINE" input
+  RSYNC_CUSTOM_LINE="$input"
+  RSYNC_LINE="$input"
+  debug 'DEBUG' "RSYNC_CUSTOM_LINE=$RSYNC_CUSTOM_LINE"
+fi
+
+# Add RSYNC_PATHS to RSYNC_LINE
+debug 'INFO' 'Combining RSYNC_LINE & RSYNC_PATHS'
+RSYNC_LINE="$(echo -e $RSYNC_LINE $RSYNC_PATHS)"
+debug 'DEBUG' "RSYNC_LINE=$RSYNC_LINE"
 
 # Check dependencies
 debug 'INFO' 'Running function: check_dependencies'
