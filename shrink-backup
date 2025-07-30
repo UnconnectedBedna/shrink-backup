@@ -195,9 +195,11 @@ UPDATE=false
 if [ "$INSTALL_METHOD" = 'curl' ]; then
   LOG_FILE='/var/log/shrink-backup.log'
   EXCLUDE_FILE_LOCATION='/usr/local/etc/shrink-backup.conf'
+  EXCLUDE_FILE_LOCATION_BTRFS='/usr/local/etc/shrink-backup_btrfs.conf'
 else
   LOG_FILE="$(dirname $0)/shrink-backup.log"
   EXCLUDE_FILE_LOCATION="$(dirname $0)/exclude.txt"
+  EXCLUDE_FILE_LOCATION_BTRFS="$(dirname $0)/exclude_btrfs.txt"
 fi
 AUTORESIZE_WARNING=false
 ZOOM=false
@@ -262,7 +264,7 @@ Directory where .img file is created is automatically excluded in backup
 Usage: ${Green}sudo $(basename "$0") [options] imagefile.img [extra space (MiB)]
   -U             ${IWhite}Update existing img file (rsync to existing img)
                    Optional [extra space] extends img root partition
-  ${Green}-a             ${IWhite}Autocalculate root size partition, [extra space] is ignored
+  ${Green}-a             ${IWhite}Autocalculate root size partition, [extra space] is ignored.
                    When used in combination with -U:
                    Expand if partition is >=256MiB smaller than autocalculated recommended minimum
                    Shrink if partition is >=512MiB bigger than autocalculated recommended minimum
@@ -277,6 +279,7 @@ Usage: ${Green}sudo $(basename "$0") [options] imagefile.img [extra space (MiB)]
   ${Green}-q --quiet     ${IWhite}Do not print rsync copy process
   ${Green}--no-color     ${IWhite}Run script without color formatted text
   ${Green}--fix          ${IWhite}Try to fix the img file if -a fails with a "broken pipe" error
+                   Will activate rsync options --delete-before & --fsync
   ${Green}--rsync        ${IWhite}Define custom rsync line manually. Will print rsync line for user to edit
   ${Green}--loop [img]   ${IWhite}Loop img file and exit, works in combination with -l & -z
                    If optional [extra space] is defined, the img file will be extended with the amount before looping
@@ -328,7 +331,7 @@ while true; do
     -l) DEBUG=true; shift;;
     -z) ZOOM=true; shift;;
     -q|--quiet) RSYNC_TTY=false; shift;;
-    --fix) RSYNC_DELETE='--delete-before'; shift;;
+    --fix) RSYNC_DELETE='--delete-before --fsync'; shift;;
     --f2fs) F2FS_CONVERSION=true; shift;;
     --no-color) unset White IWhite Red Blue Green Yellow Purple NC; COLORS=false; debug 'DEBUG' '--no-color selected by user, unsetting color variables'; shift;;
     --rsync) RSYNC_CUSTOM=true; shift;;
@@ -358,7 +361,7 @@ COLS=85
 if [ $(echo "$IMG_FILE" | wc -m) -gt $(( COLS - 19 )) ]; then
   COLS=$(( $(echo "$IMG_FILE" | wc -m) + 20 ))
 fi
-if [ $(tput cols) -lt "$COLS" ]; then
+if [ -t 0 ] && [ $(tput cols) -lt "$COLS" ]; then # tput will fail in webmin
   COLS=$(tput cols)
 fi
 BREAK="$(printf %${COLS}s | tr ' ' '#')"
@@ -711,38 +714,62 @@ function btrfs_variables() {
   declare -ag LOCAL_NESTED_SUBVOLUMES=( $(btrfs subvolume list / --sort=path | grep -v ' 5 ' | awk '{print $9}') )
   debug 'DEBUG' "LOCAL_NESTED_SUBVOLUMES=$(echo ${LOCAL_NESTED_SUBVOLUMES[@]})"
 
-  if [ "$EXCLUDE_FILE" = true ]; then
-    # Filter out top subvolumes not in fstab
-    debug 'INFO' 'Filtering out top level 5 subvolumes not existing in fstab'
+  # Filter out top subvolumes not in fstab
+  debug 'INFO' 'Filtering out top level 5 subvolumes not existing in fstab'
+  for i in ${!LOCAL_TOP_SUBVOLUMES[@]}; do
+    subvol=${LOCAL_TOP_SUBVOLUMES[i]}
+    if $(echo $subvol | grep -q -v -f /etc/fstab); then
+      debug 'DEBUG' "Filtering out subvolume: $subvol"
+      unset LOCAL_TOP_SUBVOLUMES[i]
+    fi
+  done
+  debug 'DEBUG' "After filtering: LOCAL_TOP_SUBVOLUMES=$(echo ${LOCAL_TOP_SUBVOLUMES[@]})"
+
+  # Filter out top subvolumes from exclude_btrfs.txt or shrink-backup_btrfs.conf
+  if [ -f "$EXCLUDE_FILE_LOCATION_BTRFS" ]; then
+    debug 'INFO' 'Filtering out top level 5 subvolumes to exclude from exclude_btrfs.txt or shrink-backup_btrfs.conf'
     for i in ${!LOCAL_TOP_SUBVOLUMES[@]}; do
       subvol=${LOCAL_TOP_SUBVOLUMES[i]}
-      if $(echo $subvol | grep -q -v -f /etc/fstab); then
+      if $(echo $subvol | grep -q -f "$EXCLUDE_FILE_LOCATION_BTRFS"); then
+        SUBVOLUME_EXCLUDE_PATHS+=( $(cat /etc/fstab | grep $subvol | awk 'print $2') )
+        debug 'DEBUG' "Adding $(cat /etc/fstab | grep $subvol | awk 'print $2') to SUBVOLUME_EXCLUDE_PATHS"
         debug 'DEBUG' "Filtering out subvolume: $subvol"
         unset LOCAL_TOP_SUBVOLUMES[i]
       fi
     done
     debug 'DEBUG' "After filtering: LOCAL_TOP_SUBVOLUMES=$(echo ${LOCAL_TOP_SUBVOLUMES[@]})"
 
-    # Filter out top subvolumes from exclude.txt or shrink-backup.conf
-    debug 'INFO' 'Filtering out top level 5 subvolumes to exclude from exclude.txt or shrink-backup.conf'
-    for i in ${!LOCAL_TOP_SUBVOLUMES[@]}; do
-      subvol=${LOCAL_TOP_SUBVOLUMES[i]}
-      if $(echo $subvol | grep -q -f "$EXCLUDE_FILE_LOCATION"); then
-        debug 'DEBUG' "Filtering out subvolume: $subvol"
-        unset LOCAL_TOP_SUBVOLUMES[i]
-      fi
-    done
-    debug 'DEBUG' "After filtering: LOCAL_TOP_SUBVOLUMES=$(echo ${LOCAL_TOP_SUBVOLUMES[@]})"
-
-    # Filter out nested subvolumes from exclude.txt or shrink-backup.conf
-    debug 'INFO' 'Filtering out nested subvolumes to exclude from exclude.txt or shrink-backup.conf'
+    # Filter out nested subvolumes from exclude_btrfs.txt or shrink-backup_btrfs.conf
+    debug 'INFO' 'Filtering out nested subvolumes to exclude from exclude_btrfs.txt or shrink-backup_btrfs.conf'
     for i in ${!LOCAL_NESTED_SUBVOLUMES[@]}; do
       subvol=${LOCAL_NESTED_SUBVOLUMES[i]}
-      if $(echo $subvol | grep -q -f "$EXCLUDE_FILE_LOCATION"); then
+      if $(echo $subvol | grep -qxE -f "$EXCLUDE_FILE_LOCATION_BTRFS"); then
         debug 'DEBUG' "Filtering out subvolume: $subvol"
+
+        # Fix path if nested subvolume is in other location than root subvolume
+        top_subvols="$(echo ${LOCAL_TOP_SUBVOLUMES[@]} | sed 's/ /|/g')" # convert spaces into |
+        if echo "$subvol" | grep -qE "$top_subvols"; then
+          debug 'INFO' 'Nested volume not under root, fixing path'
+          for top_subvol in ${LOCAL_TOP_SUBVOLUMES[@]}; do
+            if echo "$subvol" | grep -qw "$top_subvol"; then
+              break
+            fi
+          done
+          path="$(cat /etc/fstab | grep $top_subvol | awk '{print $2}')"
+          subvol="$(echo $subvol | sed "s|$top_subvol|$path|g")"
+        fi
+        if [[ "$subvol" != /* ]]; then
+          subvol="/$subvol"
+        fi
+        debug 'DEBUG' "Adding $subvol to SUBVOLUME_EXCLUDE_PATHS"
+        SUBVOLUME_EXCLUDE_PATHS+=($subvol)
         unset LOCAL_NESTED_SUBVOLUMES[i]
       fi
     done
+    if [ -n "$SUBVOLUME_EXCLUDE_PATHS" ]; then
+      SUBVOLUME_EXCLUDE_PATHS=",$(echo ${SUBVOLUME_EXCLUDE_PATHS[@]} | sed 's/ /,/g')"
+      debug 'DEBUG' "SUBVOLUME_EXCLUDE_PATHS=$SUBVOLUME_EXCLUDE_PATHS)"
+    fi
     debug 'DEBUG' "After filtering: LOCAL_NESTED_SUBVOLUMES=$(echo ${LOCAL_NESTED_SUBVOLUMES[@]})"
   fi
 return 0
@@ -831,6 +858,54 @@ function img_variables() {
       exit 3
     fi
   fi
+return 0
+}
+
+
+
+# Set default RSYNC_LINE
+function rsync_line() {
+
+  IMG_PATH=$(dirname "$IMG_FILE")
+  debug 'INFO' 'Creating temp directory'
+  debug 'DEBUG' "Running: mktemp -d -t backup-XXX"
+  TMP_DIR=$(mktemp -d -t backup-XXX)
+  debug 'DEBUG' "TMP_DIR=$TMP_DIR"
+  debug 'INFO' 'Creating temp file to store rsync output'
+  debug 'DEBUG' 'Running: mktemp -t rsync-XXX'
+  tmp_file=$(mktemp -t rsync-XXX)
+  debug 'DEBUG' "tmp_file=$tmp_file"
+  if [ "$RSYNC_TTY" = false ]; then
+    RSYNC_PATHS="/ $TMP_DIR 2>&1 | tee /dev/null > $tmp_file"
+  else
+    RSYNC_PATHS="/ $TMP_DIR 2>&1 | tee $TTY_AVAILABILITY > $tmp_file"
+  fi
+  debug 'DEBUG' "RSYNC_PATHS=$RSYNC_PATHS"
+
+  if [ "$EXCLUDE_FILE" = true ]; then
+    RSYNC_LINE="rsync -ahvHAX --exclude-from=$EXCLUDE_FILE_LOCATION --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file},${BOOT_PATH}/shrink-backup.lock${SUBVOLUME_EXCLUDE_PATHS}} --info=progress2 --stats $RSYNC_DELETE --force --partial --delete-excluded --timeout=30"
+  else
+    RSYNC_LINE="rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/swap,/snap/*,${IMG_PATH}/*,${BOOT_PATH}/shrink-backup.lock${SUBVOLUME_EXCLUDE_PATHS}} --info=progress2 --stats $RSYNC_DELETE --force --partial --delete-excluded --timeout=30"
+  fi
+  debug 'DEBUG' "RSYNC_LINE=$RSYNC_LINE"
+
+  # If --rsync is selected, ask for user configuration
+  if [ "$RSYNC_CUSTOM" = true ]; then
+    echo -e "${Yellow}## Custom rsync line option selected"
+    echo -e "${White}## ${IWhite}Default rsync line: ${Green}${RSYNC_LINE}"
+    echo -e "${White}## ${IWhite}Edit line to use in script ${Yellow}(press ctrl+c to abort)${NC}"
+    printf %${COLUMNS}s | tr ' ' '#'
+
+    read -e -i "$RSYNC_LINE" input
+    RSYNC_CUSTOM_LINE="$input"
+    RSYNC_LINE="$input"
+    debug 'DEBUG' "RSYNC_CUSTOM_LINE=$RSYNC_CUSTOM_LINE"
+  fi
+
+  # Add RSYNC_PATHS to RSYNC_LINE
+  debug 'INFO' 'Combining RSYNC_LINE & RSYNC_PATHS'
+  RSYNC_LINE="$(echo -e $RSYNC_LINE $RSYNC_PATHS)"
+  debug 'DEBUG' "RSYNC_LINE=$RSYNC_LINE"
 return 0
 }
 
@@ -1089,7 +1164,8 @@ function do_mount() {
       exit 3
     fi
 
-    # Mount top subvolums (except @). New top volumes will not be created during an update, if new top volumes have been created on device script will exit
+    # Mount top subvolumes (except @). New top volumes will not be created during an update, if new top volumes have been created on device script will fail and exit
+    debug 'INFO' 'Mounting non-root subvolumes from loop (if existing)'
     for subvol in "${LOCAL_TOP_SUBVOLUMES[@]}"; do
       # Excluding root (@) subvolume and mounting all else in fstab
       if grep -q "$subvol" /etc/fstab && [[ "$subvol" != '@' ]]; then
@@ -1114,17 +1190,18 @@ function do_mount() {
     if [[ $(echo $(btrfs subvolume list "$TMP_DIR" --sort=path | grep -v ' 5 ' | awk '{print $9}') ) != "${LOCAL_NESTED_SUBVOLUMES[@]}" ]]; then
       echo -e "${White}## ${IWhite}Managing nested subvolumes..."
       $SLEEPING
+      debug 'INFO' 'Managing nested subvolumes'
       IMG_NESTED_SUBVOLUMES=( $(btrfs subvolume list "$TMP_DIR" --sort=path | grep -v ' 5 ' | awk '{print $9}') )
       debug 'DEBUG' "IMG_NESTED_SUBVOLUMES=$(echo ${IMG_NESTED_SUBVOLUMES[@]})"
 
-      # Create new nested subvolume(s)
+      # Create new nested subvolume(s) if needed
       for subvol in ${LOCAL_NESTED_SUBVOLUMES[@]}; do
-        if ! echo "${IMG_NESTED_SUBVOLUMES[@]}" | grep -q "$subvol"; then
+        if ! printf '%s\n' "${IMG_NESTED_SUBVOLUMES[@]}" | grep -qx $subvol; then
           echo -e "${White}## ${IWhite}Creating nested subvolume: ${Green}$subvol"
           $SLEEPING
           # Fix path if nested subvolume is in other location than root subvolume
           top_subvols="$(echo ${LOCAL_TOP_SUBVOLUMES[@]} | sed 's/ /|/g')" # convert spaces into |
-          if echo "$subvol" | grep -E "$top_subvols"; then
+          if echo "$subvol" | grep -qE "$top_subvols"; then
             debug 'INFO' 'Nested volume not under root, fixing path'
             for top_subvol in ${LOCAL_TOP_SUBVOLUMES[@]}; do
               if echo "$subvol" | grep -qw "$top_subvol"; then
@@ -1147,11 +1224,13 @@ function do_mount() {
             exit 3
           fi
         fi
+        IMG_NESTED_SUBVOLUMES=( $(btrfs subvolume list "$TMP_DIR" --sort=path | grep -v ' 5 ' | awk '{print $9}') )
+        debug 'DEBUG' "IMG_NESTED_SUBVOLUMES=$(echo ${IMG_NESTED_SUBVOLUMES[@]})"
       done
 
-      # Delete nested img subvolume(s)
+      # Delete nested img subvolume(s) if needed
       for subvol in ${IMG_NESTED_SUBVOLUMES[@]}; do
-        if ! echo "${LOCAL_NESTED_SUBVOLUMES[@]}" | grep -q "$subvol"; then
+        if ! printf '%s\n' "${LOCAL_NESTED_SUBVOLUMES[@]}" | grep -qx $subvol; then
           echo -e "${White}## ${IWhite}Deleting nested subvolume: ${Green}$subvol"
           $SLEEPING
           # Fix path if nested subvolume is in other location than root subvolume
@@ -1175,6 +1254,8 @@ function do_mount() {
           fi
         fi
       done
+      IMG_NESTED_SUBVOLUMES=( $(btrfs subvolume list "$TMP_DIR" --sort=path | grep -v ' 5 ' | awk '{print $9}') )
+      debug 'DEBUG' "IMG_NESTED_SUBVOLUMES=$(echo ${IMG_NESTED_SUBVOLUMES[@]})"
     fi
   fi
 
@@ -1415,7 +1496,6 @@ function do_rsync() {
   if [ "$TTY_AVAILABILITY" == '/dev/null' ] || [ "$RSYNC_TTY" = false ]; then
     echo -e "${White}## ${Yellow}This might take some time, please stand by..."
   fi
-  IMG_PATH=$(dirname "$IMG_FILE")
   debug 'DEBUG' "Backing up to ${IMG_PATH}${IMG_FILE}"
 
   # Run rsync
@@ -1431,6 +1511,7 @@ function do_rsync() {
   elif [ "${PIPESTATUS[0]}" -eq 23 ]; then
     echo -e "${White}## ${Yellow}Warning, rsync code 23, some files vanished before they could be transferred (code 24) at main.c"
     echo -e "${White}## ${Yellow}This does NOT mean the backup failed"
+    $SLEEPING
     debug 'WARNING' 'rsync code 23, some files vanished before they could be transferred (code 24) at main.c'
   fi
 
@@ -1523,7 +1604,10 @@ return 0
 function make_img() {
 
   debug 'INFO' 'Running function: dev_variables'
+  # btrfs_variables is run within dev_variables
   dev_variables
+  debug 'INFO' 'Running function: rsync_line'
+  rsync_line
 
   # Display information
   echo -e "${Purple}$BREAK"
@@ -1885,10 +1969,10 @@ function update_img() {
   debug 'INFO' 'Running function: dev_variables'
   # btrfs_variables is run within dev_variables
   dev_variables
-
+  debug 'INFO' 'Running function: rsync_line'
+  rsync_line
   debug 'INFO' 'Running function: do_loop'
   do_loop
-
   debug 'INFO' 'Running function: img_variables'
   img_variables
 
@@ -2563,48 +2647,6 @@ if [ "$EXCLUDE_FILE" = true ]; then
 else
   debug 'INFO' '-t NOT selected by user, using default exclude directories'
 fi
-
-# Set default RSYNC_LINE
-IMG_PATH=$(dirname "$IMG_FILE")
-debug 'INFO' 'Creating temp directory'
-debug 'DEBUG' "Running: mktemp -d -t backup-XXX"
-TMP_DIR=$(mktemp -d -t backup-XXX)
-debug 'DEBUG' "TMP_DIR=$TMP_DIR"
-debug 'INFO' 'Creating temp file to store rsync output'
-debug 'DEBUG' 'Running: mktemp -t rsync-XXX'
-tmp_file=$(mktemp -t rsync-XXX)
-debug 'DEBUG' "tmp_file=$tmp_file"
-if [ "$RSYNC_TTY" = false ]; then
-  RSYNC_PATHS="/ $TMP_DIR 2>&1 | tee /dev/null > $tmp_file"
-else
-  RSYNC_PATHS="/ $TMP_DIR 2>&1 | tee $TTY_AVAILABILITY > $tmp_file"
-fi
-debug 'DEBUG' "RSYNC_PATHS=$RSYNC_PATHS"
-
-if [ "$EXCLUDE_FILE" = true ]; then
-  RSYNC_LINE="rsync -ahvHAX --exclude-from=$EXCLUDE_FILE_LOCATION --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file},${BOOT_PATH}/shrink-backup.lock} --info=progress2 --stats $RSYNC_DELETE --force --partial --delete-excluded --timeout=30"
-else
-  RSYNC_LINE="rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/swap,/snap/*,${IMG_PATH}/*,${BOOT_PATH}/shrink-backup.lock} --info=progress2 --stats $RSYNC_DELETE --force --partial --delete-excluded --timeout=30"
-fi
-debug 'DEBUG' "RSYNC_LINE=$RSYNC_LINE"
-
-# If --rsync is selected, ask for user configuration
-if [ "$RSYNC_CUSTOM" = true ]; then
-  echo -e "${Yellow}## Custom rsync line option selected"
-  echo -e "${White}## ${IWhite}Default rsync line: ${Green}${RSYNC_LINE}"
-  echo -e "${White}## ${IWhite}Edit line to use in script ${Yellow}(press ctrl+c to abort)${NC}"
-  printf %${COLUMNS}s | tr ' ' '#'
-
-  read -e -i "$RSYNC_LINE" input
-  RSYNC_CUSTOM_LINE="$input"
-  RSYNC_LINE="$input"
-  debug 'DEBUG' "RSYNC_CUSTOM_LINE=$RSYNC_CUSTOM_LINE"
-fi
-
-# Add RSYNC_PATHS to RSYNC_LINE
-debug 'INFO' 'Combining RSYNC_LINE & RSYNC_PATHS'
-RSYNC_LINE="$(echo -e $RSYNC_LINE $RSYNC_PATHS)"
-debug 'DEBUG' "RSYNC_LINE=$RSYNC_LINE"
 
 # Check dependencies
 debug 'INFO' 'Running function: check_dependencies'
