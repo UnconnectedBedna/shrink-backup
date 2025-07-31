@@ -1309,7 +1309,7 @@ function do_e2fsck() {
     $SLEEPING
 
     # Remounting if autoexpansion is requested
-    if [ "$AUTOEXPAND" = true ] && [ "$OS" != 'unknown' ]; then
+    if [ "$AUTOEXPAND" = true ] && [ "$OS" != 'unknown' ] || [ "$AUTOEXPAND" = false ] && [ "$OS" == 'ubuntu' ]; then
       echo -e "${White}## ${IWhite}Remounting for autoexpansion..."
       debug 'INFO' 'Remounting for autoexpansion function'
       debug 'INFO' 'Running function: do_mount'
@@ -1619,6 +1619,9 @@ function make_img() {
   echo -e "# ${IWhite}A backup will be created at: ${Purple}$(printf "%+$(( COLS - 31 ))s" '#')"
   echo -e "# ${Green}$IMG_FILE ${Purple}$(printf "%+$(( COLS - 2 - $(echo ${IMG_FILE} | wc -m ) ))s" '#')"
   echo -e "# ${Green}$FSTYPE ${IWhite}filesystem detected on root ${Purple}$(printf "%+$(( COLS - 30 - $(echo ${FSTYPE} | wc -m ) ))s" '#')"
+  if [ "$RSYNC_DELETE" != '--delete' ]; then
+    echo -e "# ${Green}--fix ${IWhite}option selected, ${Green}rsync using --fsync option${Purple}$(printf "%+$(( COLS - 51 ))s" '#')"
+  fi
   if [ "$FSTYPE" == 'btrfs' ]; then
     echo -e "# ${Green}${#LOCAL_TOP_SUBVOLUMES[@]} ${IWhite}btrfs top volumes will be included ${Purple}$(printf "%+$(( COLS - 37 - $(echo ${#LOCAL_TOP_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
     echo -e "${Purple}# ${IWhite}btrfs top volumes: ${Green}${LOCAL_TOP_SUBVOLUMES[@]} ${Purple}$(printf "%+$(( COLS - 21 - $(echo ${LOCAL_TOP_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
@@ -2017,6 +2020,9 @@ function update_img() {
   echo -e "# ${IWhite}Updating backup img: ${Purple}$(printf "%+$(( COLS - 23 ))s" '#')"
   echo -e "# ${Green}$IMG_FILE ${Purple}$(printf "%+$(( COLS - 2 - $(echo ${IMG_FILE} | wc -m ) ))s" '#')"
   echo -e "# ${Green}$FSTYPE ${IWhite}filesystem detected on root ${Purple}$(printf "%+$(( COLS - 30 - $(echo ${FSTYPE} | wc -m ) ))s" '#')"
+  if [ "$RSYNC_DELETE" != '--delete' ]; then
+    echo -e "# ${Green}--fix ${IWhite}option selected, ${Green}rsync using --delete-before & --fsync options${Purple}$(printf "%+$(( COLS - 70 ))s" '#')"
+  fi
   if [ "$FSTYPE" == 'btrfs' ]; then
     echo -e "# ${Green}${#LOCAL_TOP_SUBVOLUMES[@]} ${IWhite}btrfs top volumes will be included ${Purple}$(printf "%+$(( COLS - 37 - $(echo ${#LOCAL_TOP_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
     echo -e "${Purple}# ${IWhite}btrfs top volumes: ${Green}${LOCAL_TOP_SUBVOLUMES[@]} ${Purple}$(printf "%+$(( COLS - 21 - $(echo ${LOCAL_TOP_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
@@ -2376,7 +2382,7 @@ function print_result() {
     echo -e "# ${IWhite}Image size: ${Green}${AFTER_SIZE}MiB ${IWhite}with a ${Green}root partition ${IWhite}of ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 45 - $(echo ${AFTER_SIZE} | wc -m ) - $(echo ${print_temp} | wc -m ) ))s" '#')"
     debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MiB"
   fi
-  if [ "$AUTOEXPAND" = true ] && [ "$OS" != 'armbian' ] && [ "$OS" != 'kali' ]; then
+  if [ "$AUTOEXPAND" = true ] && [ "$OS" != 'armbian' ] && [ "$OS" != 'kali' ] && [ "$OS" != 'ubuntu' ]; then
     echo -e "# ${Yellow}Please wait for the system to reboot after restoring an image with autoexpansion ${Purple}$(printf "%+$(( COLS - 83 ))s" '#')"
   fi
   echo -e "${Purple}${BREAK}"
@@ -2603,12 +2609,17 @@ elif grep -qsi 'archlinuxarm' /etc/os-release; then
   debug 'INFO' 'ArchLinux-arm detected'
   $SLEEPING
 elif grep -qsi 'kali' /etc/os-release; then
-  echo -e "${White}## ${Green}Kali-ARM detected"
+  echo -e "${White}## ${Green}Kali-arm detected"
   OS='kali'
-  debug 'INFO' 'Kali-ARM detected'
+  debug 'INFO' 'Kali-arm detected'
+  $SLEEPING
+elif grep -qsi 'ubuntu' /etc/os-release; then
+  echo -e "${White}## ${Green}Ubuntu detected"
+  OS='ubuntu'
+  debug 'INFO' 'Ubuntu detected'
   $SLEEPING
 else
-  echo -e "${Yellow}!! Unknown OS"
+  echo -e "${Yellow}!! Unknown OS, no autoexpansion available"
   OS='unknown'
   debug 'INFO' 'Unknown OS'
   $SLEEPING
@@ -2635,7 +2646,7 @@ if [ "$DEBUG" = true ]; then
   debug 'BREAK'
 fi
 
-# Check if usage of exclude.txt is requested
+# Check if exclude.txt exists when usage is requested
 if [ "$EXCLUDE_FILE" = true ]; then
   debug 'INFO' "-t selected by user, using $EXCLUDE_FILE_LOCATION"
   if ! [ -f "$EXCLUDE_FILE_LOCATION" ]; then
@@ -2673,8 +2684,17 @@ if [ "$AUTOEXPAND" = true ]; then
     manjaro-arm) echo -e "${White}## ${IWhite}Enabling autoexpansion for ${Green}Manjaro-arm..."; debug 'INFO' 'Running function: autoexpansion_manjaro'; autoexpansion_manjaro;;
     archlinux-arm) echo -e "${White}## ${IWhite}Enabling autoexpansion for ${Green}ArchLinux-arm..."; debug 'INFO' 'Running function: autoexpansion_arch'; autoexpansion_arch;;
     kali) echo -e "${White}## ${IWhite}Enabling autoexpansion for ${Green}Kali-ARM..."; debug 'INFO' 'Running function: autoexpansion_kali'; autoexpansion_kali;;
+    ubuntu) echo -e "${White}## ${Green}Making sure autoexpansion is enabled in /etc/cloud/cloud.cfg on img"; debug 'INFO' "Making sure autoexpansion is enabled in ${TMP_DIR}/etc/cloud/cloud.cfg"
+      sed -i 's/^[# ]*- growpart/  - growpart/' ${TMP_DIR}/etc/cloud/cloud.cfg
+      sed -i 's/^[# ]*- resizefs/  - resizefs/' ${TMP_DIR}/etc/cloud/cloud.cfg;;
     unknown) echo -e "${Yellow}!! No autoexpand option available for this OS!"; debug 'WARNING' 'No autoexpand option available for this OS'; AUTOEXPAND='failed';;
   esac
+elif [ "$AUTOEXPAND" = false ] && [ "$OS" == 'ubuntu' ]; then
+  debug 'INFO' "Disable autoexpansion requested & Ubuntu detected, making sure autoexpansion is disabled in ${TMP_DIR}/etc/cloud/cloud.cfg"
+  echo -e "${White}## ${Green}Making sure autoexpansion is disabled in /etc/cloud/cloud.cfg on img"
+  $SLEEPING
+  sed -i 's/^[ ]*- growpart/# - growpart/' ${TMP_DIR}/etc/cloud/cloud.cfg
+  sed -i 's/^[ ]*- resizefs/# - resizefs/' ${TMP_DIR}/etc/cloud/cloud.cfg
 fi
 
 print_result
