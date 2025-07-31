@@ -4,11 +4,26 @@ _I made this script because I wanted a universal method of backing up my SBC:s i
 
 shrink-backup is a very fast utility for backing up your SBC:s into minimal bootable img files for easy restore with autoexpansion at boot.
 
-Supports backing up `root` & `boot` (if existing) partitions. Data from other partitions will be written to `root` if not excluded (exception for [`btrfs`](#btrfs), all existing subvolumes in `/etc/fstab` will be created).  
-Please see [`Info`](#info) section.
+Can backup any device with or without a `boot` partition as long as the filesystem is `ext4`, [`f2fs`](#f2fs) or [`btrfs`](#btrfs) (with subvolumes).
 
-Autoexpansion tested on **Raspberry Pi OS** (bookworm and older), **Armbian**, **Manjaro-arm**, **DietPi** & **ArchLinuxARM** for rpi with `ext4` or [`f2fs`](#f2fs) root partition.  
-(Also **experimental** [`btrfs`](#btrfs) functionality, please read further down)  
+Supports backing up `root` & `boot` (if existing) partitions. Data from other partitions will be written to `root` if not [excluded](#-t-excludetxt).  
+For [`btrfs`](#btrfs), all existing top level 5 subvolumes in `/etc/fstab` will be created with new backups, nested subvolumes will be created and can also be removed/added in an [update](#image-update) of the backup img.  
+Please read [Info](#info) section for more information.
+
+Autoexpansion tested & supported on following operating systems:
+- Raspberry Pi OS (bookworm and older)
+- Armbian
+- Manjaro-arm
+- DietPi
+- ArchLinuxArm
+- Kali-arm
+- Ubuntu-server-arm (Ubuntu autoexpands by default, but that can be disabled with `-e` option)
+
+Autoexpansion does not work on [`f2fs`](#f2fs) due to filesystem limitations.  
+Other operating systems will most likely work too, but autoexpansion will not.  
+The script will report the operating system as "unknown" but that does not mean the script will fail.  
+Feel free to make a [feature request](https://github.com/UnconnectedBedna/shrink-backup/issues/new/choose) if you use an operating system not on this list.
+
 Full functionality for usage inside [webmin](https://webmin.com/) (including "custom command" button). Thank you to [iliajie](https://github.com/iliajie) for helping out. ❤️
 
 **Latest release:** [shrink-backup.v1.2](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v1.2/shrink-backup.v1.2.tar.gz)  
@@ -16,7 +31,6 @@ Full functionality for usage inside [webmin](https://webmin.com/) (including "cu
 
 **Very fast restore thanks to minimal size of img file.**
 
-**Can backup any device as long as filesystem on root is `ext4`** or **[`f2fs`](#f2fs)** (experimental [`btrfs`](#btrfs))  
 Default device that will be backed up is determined by scanning what disk-device `root` resides on.  
 This means that **if** `boot` is a partition, that partition must be on the **same device and before the `root` partition**.  
 The script considers everything on the device before `root` as the bootsector.
@@ -27,11 +41,11 @@ Backing up/restoring, to/from: usb-stick `/dev/sdX` with Raspberry pi os has bee
 
 See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for information about [installation methods](https://github.com/UnconnectedBedna/shrink-backup/wiki/Installing), usage and examples.  
 [Ideas and feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) is always appreciated, whether it's positive or negative. Please just keep it civil. :)  
-If you find a bug or think something is missing in the script, please file a [Bug report or Feature request](https://github.com/UnconnectedBedna/shrink-backup/issues/new/choose)
+If you find a bug or think something is missing in the script, please file a [bug report or Feature request](https://github.com/UnconnectedBedna/shrink-backup/issues/new/choose)
 
 **To restore a backup, simply "burn" the img file to a device using your favorite method.**
 
-When booting a restored image with autoresize active, **please wait until the the reboot sequence has occurred.** The login prompt _may_ very well become visible before the autoresize function has rebooted.
+When booting a restored image with autoresize active, on some operating systems a reboot will occur after resizing is made (you will be informed at the end of the script if your operating system is affected by this), **please wait until the the reboot sequence has occurred.** The login prompt _may_ very well become visible before the autoresize function has rebooted.
 
 <hr>
 
@@ -41,10 +55,10 @@ shrink-backup -h
 Script for creating an .img file and subsequently keeing it updated (-U), autoexpansion is enabled by default
 Directory where .img file is created is automatically excluded in backup
 ########################################################################
-Usage: sudo shrink-backup [-Uatyelhz] [--fix] [--loop] [--f2fs] imagefile.img [extra space (MiB)]
+Usage: sudo shrink-backup [options] imagefile.img [extra space (MiB)]
   -U              Update existing img file (rsync to existing img)
                     Optional [extra space] extends img root partition
-  -a              Autocalculate root size partition, [extra space] is ignored
+  -a              Autocalculate root size partition, [extra space] is ignored.
                     When used in combination with -U:
                     Expand if partition is >=256MiB smaller than autocalculated recommended minimum
                     Shrink if partition is >=512MiB bigger than autocalculated recommended minimum
@@ -58,6 +72,8 @@ Usage: sudo shrink-backup [-Uatyelhz] [--fix] [--loop] [--f2fs] imagefile.img [e
   -q --quiet      Do not print rsync copy process
   --no-color      Run script without color formatted text
   --fix           Try to fix the img file if -a fails with a "broken pipe" error
+                    Will activate rsync options --delete-before & --fsync
+  --rsync         Define custom rsync line manually. Will print rsync line for user to edit
   --loop [img]    Loop img file and exit, works in combination with -l & -z
                     If optional [extra space] is defined, the img file will be extended with the amount before looping
                     NOTE that only the file gets truncated, no partitions
@@ -71,8 +87,8 @@ Usage: sudo shrink-backup [-Uatyelhz] [--fix] [--loop] [--f2fs] imagefile.img [e
                     Only works on new img file, not in combination with -U
                     Will make backups of fstab & cmdline.txt to: fstab.shrink-backup.bak & cmdline.txt.shrink-backup.bak
                     Then change ext4 to f2fs in both files and add discard to options on root partition in fstab
-  --version       Print version and exit
-  -h --help       Show this help snippet
+  --version      Print version and exit
+  -h --help      Show this help snippet
 ########################################################################
 Examples:
 sudo shrink-backup -a /path/to/backup.img (create img, resize2fs calcualtes size)
@@ -89,11 +105,17 @@ The folder where the img file is created will **ALWAYS be excluded in the backup
 If `-t` option is selected, `exclude.txt` **MUST exist** (but can be empty) within the **directory where the script is located** or the script will exit with an error.
 
 > [!NOTE]
-> If installed using `curl`, location and name of file is different. Please read [install with curl](https://github.com/UnconnectedBedna/shrink-backup/wiki/Installing#curl---shrink-backup-install-script) for more information.
+> If installed using `curl`, location and name of file is different. See [install with curl](https://github.com/UnconnectedBedna/shrink-backup/wiki/Installing#curl---shrink-backup-install-script) for information.
 
 Use one directory per line in `exclude.txt`.  
 `/directory/*` = create directory but exclude content.  
-`/directory` = exclude the directory completely.
+`/directory` = exclude the directory completely.  
+`/directory*` = exclude all directories starting with name `/directory`.
+
+> [!NOTE]
+> `btrfs` uses another file to exclude subvolumes, see [btrfs](#btrfs) for information.
+
+The paths must be absolute, ie `~/directory` will not work.
 
 If `-t` is **NOT** selected the following will be excluded:
 ```
@@ -108,18 +130,19 @@ If `-t` is **NOT** selected the following will be excluded:
 /var/swap
 /snap/*
 ```
-
+Please read [info](#info) section for more information.
+<br>
 #### `-l` (Log file)
 Use `-l` to write debug info into `shrink-backup.log` file located in the same directory as the script.  
-Please provide this file if filing a [Bug report](https://github.com/UnconnectedBedna/shrink-backup/issues/new/choose)
+Please provide this file if filing a [bug report](https://github.com/UnconnectedBedna/shrink-backup/issues/new/choose)
 
 > [!NOTE]
-> If installed using `curl`, location and name of file is different. Please read [install with curl](https://github.com/UnconnectedBedna/shrink-backup/wiki/Installing#curl---shrink-backup-install-script) for more information.
+> If installed using `curl`, location and name of file is different. See [install with curl](https://github.com/UnconnectedBedna/shrink-backup/wiki/Installing#curl---shrink-backup-install-script) for information.
 <br>
 
 #### `-z` (Zoom speed)
 The `-z` "zoom" option simply removes the one second sleep at each info prompt to give the user time to read.  
-By using the option, you save 15-25s when running the script.
+By using the option, you save 15-25s when running the script.  
 
 > [!CAUTION]
 > When used in combination with `-y` **warnings will also be bypassed! PLEASE use with care!**  
@@ -127,7 +150,8 @@ By using the option, you save 15-25s when running the script.
 <br>
 
 #### `--fix` (Broken pipe)
-Add `--fix` to your options if a backup fails during `rsync` with a "broken pipe" error. You can also _manually add_ `[extra space]` instead of using `-Ua` to solve this.
+Add `--fix` to your options if a backup fails during `rsync` with a "broken pipe" error. This will make `rsync` use options `--delete-before` & `--fsync`.  
+You can also manually add `[extra space]` instead of using `-Ua --fix` to solve this.
 
 **Example:** `sudo shrink-backup -Ua --fix /path/to/backup.img`
 
@@ -138,7 +162,6 @@ Using `--fix` configures `rsync` create a file-list and delete data **before** s
 Having a "broken pipe" error during backup has in my experience never broken an img backup after either using `--fix` or adding `[extra space]` while updating the backup with `-U`.
 <br>
 <br>
-
 #### `--loop` (Loop img file)
 Use `--loop` to loop an img file to your `/dev`.  
 This functionality works on any linux system, just use the script on any img type file (not limited to `.img` extension files) anywhere available to the computer.
@@ -159,7 +182,23 @@ To remove the loop: `sudo losetup -d /dev/loop0`, (use correct `loop` it got ass
 To remind yourself: `lsblk /dev/loop*` (if you forgot what `loop` it got assigned to)
 <br>
 <br>
+#### --chroot
+Use `systemd-nspawn` to chroot into an img created from the system you are currently running.  
+Works on all supported filesystems but you have to run the command on the system you created the img from, the script looks at the system you are running to create mountpoint(s) and chroot into.  
+A dependency check will be made and if you lack any of the packages needed the script will ask if you want to install them.  
+Then a temp directory will be created inside `/tmp` to use as mountpoint, loop the img and mount partitions from the loop appropriately.
 
+**Example:** `sudo shrink-backup --chroot /path/to/backup.img`
+
+With this you can for example experiment with things you don't want to do on your running system, do changes to kernel, rebuild initramfs, update/install packages etc.  
+You will run as `root` user inside the img so unless you `su` to another user there is no reason to use `sudo`.
+
+When done, type `exit`. The script will unmount img, remove loop, delete temp directory and exit shrink-backup.  
+You can then write the img file and test if things work without risking corruption of the system you run.
+
+Systemd logs will not register changes made on the img though because the log-id:s on the mounted img will be the same as on the system you run (but can probably be made to work, if you feel like helping out, creating pr:s to the testing branch of shrink-backup would be highly appreciated)
+<br>
+<br>
 #### `--f2fs` (Convert `ext4` into `f2fs` on img file)
 > [!IMPORTANT]
 > ONLY use this for **CONVERTING** filesystem into img file, **if you already have `f2fs` on the system you backup from, do not use this option.**
@@ -176,11 +215,13 @@ It will then change from `ext4` to `f2fs` in `fstab` & `cmdline.txt` and add `di
 Please read information about [`f2fs`](#f2fs) further down.
 <br>
 <br>
-
 ### Info
 
-The script works on any device as long as root filesystem is `ext4`, [`f2fs`](#f2fs) or **experimental** [`btrfs`](#btrfs).  
+The script works on any device as long as root filesystem is `ext4`, [`f2fs`](#f2fs) or [`btrfs`](#btrfs) with subvolumes.  
 Since the script uses `lsblk` to crosscheck with `/etc/fstab` to figure out where `root` resides it does not matter what device it is located on.
+
+If `boot` is a partition, that partition must be on the **same device and before the `root` partition**.  
+The script considers everything on the device before `root` as the bootsector.
 
 Even if you forget to disable autoexpansion on a non supported OS, the backup will not fail, it will just skip creating the autoresize script.
 
@@ -190,13 +231,12 @@ Even if you forget to disable autoexpansion on a non supported OS, the backup wi
 - The script will **ONLY** create `boot` (if exits) and `root` partitions on the img file.
 - The script will **ONLY** look at your `root` partition when calculating sizes.
 
-**Not excluding other mounts will copy that data to the img `root` partition, not create more partitions,** so make sure to **_manually add_ `[extra space]`** if you do this.  
-Experimental [`btrfs`](#btrfs) is an exception to this, all subvolumes will be created.
+**Not excluding other mounts will copy that data to the img `root` partition, not create more partitions,** so make sure to [manually add](#manually-configure-size) `[extra space]` if you do this.  
+[`btrfs`](#btrfs) is an exception, all subvolumes (unless [excluded](#exclude_btrfstxt)) will be created.
 
 See [--loop](#--loop-loop-img-file) for how to manually include more partitions on the img.
 <br>
 <br>
-
 #### Applications used in the script:
 - fdisk
 - sfdisk
@@ -204,9 +244,9 @@ See [--loop](#--loop-loop-img-file) for how to manually include more partitions 
 - parted
 - e2fsck
 - truncate
-- mkfs.ext4
+- mkfs.ext4/f2fs/btrfs (depends on fileystem used)
 - rsync
-- gdisk (sgdisk is needed if the partition table is GPT, the script will inform you)
+- gdisk (sgdisk is only required if the partition table is GPT, the script will inform you)
 
 <hr>
 
@@ -321,6 +361,7 @@ Resizing operations are not supported with  [`f2fs`](#f2fs).
 <hr>
 
 ## f2fs
+
 The script will detect `f2fs` on `root` automatically and act accordingly.
 
 > [!NOTE]
@@ -339,21 +380,78 @@ This is something planned to be implemented further down the line.
 > [!NOTE]
 > **THIS IS NOT A CLONE, IT IS A BACKUP OF REQUIRED FILES FOR A BOOTABLE BTRFS SYSTEM!**  
 > Deduplication will not follow from the system you backup from to the img.  
-> The script does NOT utilize `btrfs send|recieve`
+> The script does NOT utilize `btrfs send|recieve`  
+> The script utilizes `rsync` witch is significantly faster, but that means deduplication does not work.
 
-All options in script should work just as on `ext4`. The script will detect `btrfs` and act accordingly.
+All options in script will work just as on `ext4`. The script will detect `btrfs` and act accordingly.
 
-As of now, top level subvolumes are checked for in `/etc/fstab` and are created (on img creation) and mounted accordingly, mount options should be preserved (if you for example changed compression).  
-Updating img and autoresize function has been tested and works on **Manjaro-arm**.
+Top level 5 subvolumes are checked for in `/etc/fstab` and are created (only at img creation) and mounted accordingly.  
+Mount options will be preserved (if you for example changed compression).  
+Top level 5 subvolumes NOT in `/etc/fstab` will not be created.  
+This means that for example top level 5 snapshots (unless mounted in fstab) will not be included.  
+If you however have the snapshots mounted in `/etc/fstab` they will be created as subvolumes and files copied as "normal" files and take up space, NOT deduplicated!  
+Simply mounting the snapshot somewhere will not create the snapshot, only copy the files like from a normal directory.
 
-> [!WARNING]
-> The script will treat snapshots as nested volumes, so make sure to exclude snapshots if you have any, or directories and **nested volumes** will be created on the img file (not as copy-on-write snapshots).  
-> This can be done in `exclude.txt`, wildcards (`*`) works. 
-> When creating an img, the initial report window will tell you what volumes will be created. **Make sure these are correct before pressing Y.**
+The initial report window will show all top and nested subvolumes that will be included, **make sure these are correct before pressing y**.
+
+> [!IMPORTANT]
+> You should not use `subvolid` in mount options in `/etc/fstab`. This is because the subvolumes created on the img might get different subvolid and therefore fail to mount.  
+> You can also not use `UUID`, `PARTUUID` is ok. This is because the linux kernel will not let you have two btrfs filesystems with the same `UUID` mounted at the same time.  
+> The preferred option is `subvol=@` (or `subvol=/@` for example for root, using leading slash or not does not matter)  
+> 
+> This means that if you restore an img, you can not update that same img with `-U` from that restored system, the img mounting will fail during backup due to both having the same `UUID`.  
+> If you have restored a backup, create a new backup from that system that can then be updated.
+
+All nested subvolumes will be created unless excluded in a file called `exclude_btrfs.txt`, please see below.  
+Nested subvolumes can also be both created and removed with an [update](#image-update) of the backup.  
+Autoresize function has only been tested and works on **Manjaro-arm**.
+
+When creating an img, the initial report window will tell you what volumes will be created. **Make sure these are correct before pressing Y.**
+<br>
+<br>
+### exclude_btrfs.txt
+
+Because of how snapshots are named, a special file for excluding is necessary. `rsync` uses `PATTERNS` witch means undesired results can occur in certain situations.
+
+If for example a nested subvolume exists at `/temp`, the name of that subvolume will be `temp` (without leading `/`), and by excluding that in `exclude.txt`, `rsync` will interpret that as a `PATTERN`, therefore exclude and delete ALL directories called `temp` on the entire img.
+
+If you want to exclude subvolumes, both top level 5 and nested subvolumes, create the file `exclude_btrfs.txt` in the same directory as `shrink-backup` and add subvolumes, one per line.  
+Wildcards (`*`) will not work in this scenario, but regex will, see tip below.
+
+> [!NOTE]
+> If installed using `curl`, the location to be used is different. See [install with curl](https://github.com/UnconnectedBedna/shrink-backup/wiki/Installing#curl---shrink-backup-install-script) for information.
+
+For example:
+```
+@subvolume1
+@home/user/nested_volume
+```
+
+There is no need to use `-t` option in this scenario (unless you also want to exclude other files/directories), the script will detect the existence of the file and add the paths for the subvolumes to be excluded and deleted on the img with `rsync`.
+
+> [!TIP]
+> For detecting subvolumes in `exclude_btrfs.txt`, regex is used (`grep -xE`)  
+> So if you for example have a collection of nested subvolumes or snapshots somewhere, all starting with the same directory name, let's say a date, you can choose witch to exclude by date and exclude them all:  
+> ```
+> path/to/snapshots/2025(.+)
+> ```
+> The path to be used is what is shown by using `sudo btrfs subvolume list /`, ie the subvolume without a leading `/`, so if you have nested subvolumes in for example `@home`, the path will be:
+> ```
+> @home/path/to/subvolume
+> ```
+> And if they are nested subvolumes on root (`@`), the path will be:
+> ```
+> path/to/subvolume
+> ```
+> To exclude an entire top level 5 subvolume, the path will be:
+> ```
+> @subvolume
+> ```
+> The initial report window will show all top and nested subvolumes by path and how they should be excluded if so is desired.
 
 <details>
 <summary><i>Fun fact about shrink-backup & btrfs</i></summary>
-I used the script to create a backup of my Arch linux (BTW) desktop installation using `btrfs` with grub as bootloader (separate `/home` subvolume included in the image)<br>
+I used the script to create a backup of my Arch linux (BTW) desktop installation using btrfs with grub as bootloader (separate `/home` subvolume included in the image)<br>
 Wrote that image to a usb stick, and it booted and autoexpanded without problems.<br>
 <br>
 <b>I do NOT recommend using shrink-backup as your main backup software for a desktop computer!</b>
