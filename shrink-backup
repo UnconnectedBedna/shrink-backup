@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
 # shrink-backup
-# Version 1.3-beta
+# Version 1.3
 # Backup tool for creating and updating .img files (with autoexpansion function) on various linux operating systems
 #
-#    Copyright (c) 2025, Marcus Johansson
+#    Copyright (c) 2024-present, Marcus Johansson
 #    https://github.com/UnconnectedBedna/shrink-backup
 #    All rights reserved.
 #
@@ -239,9 +239,9 @@ fi
 version() {
   echo -e "${Purple}#########################################################################
 #                                                                       #
-# ${Green}shrink-backup version 1.3-beta                                        ${Purple}#
+# ${Green}shrink-backup version 1.3                                             ${Purple}#
 #                                                                       #
-# ${IWhite}Copyright (c) 2024, Marcus Johansson                                  ${Purple}#
+# ${IWhite}Copyright (c) 2024-present, Marcus Johansson                          ${Purple}#
 # ${White}https://github.com/UnconnectedBedna/shrink-backup                     ${Purple}#
 # ${White}All rights reserved.                                                  ${Purple}#
 #                                                                       #
@@ -315,7 +315,7 @@ EOM
 # Parse command-line options
 options=$(getopt -o Uatyelzhq --long help,version,quiet,fix,f2fs,no-color,rsync,loop,chroot: -- "$@")
 [ $? -eq 0 ] || {
-    echo -e "${Red}Incorrect options provided"
+    echo -e "${Red}Invalid options provided"
     help
 }
 eval set -- "$options"
@@ -346,6 +346,7 @@ done
 while [ "$#" -gt 0 ]; do
   if [[ "$1" =~ ^- ]]; then
     shift
+  # If --loop or --chroot is used, IMG_FILE is already set
   elif [ -n "$IMG_FILE" ]; then
     ADDED_SPACE="$2"
     break
