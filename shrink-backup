@@ -1310,7 +1310,7 @@ function do_e2fsck() {
     $SLEEPING
 
     # Remounting if autoexpansion is requested
-    if [ "$AUTOEXPAND" = true ] && [ "$OS" != 'unknown' ] || [ "$AUTOEXPAND" = false ] && [ "$OS" == 'ubuntu' ]; then
+    if [[ ( "$AUTOEXPAND" == true  && "$OS" != unknown ) || ( "$AUTOEXPAND" == false && "$OS" == ubuntu ) ]]; then
       echo -e "${White}## ${IWhite}Remounting for autoexpansion..."
       debug 'INFO' 'Remounting for autoexpansion function'
       debug 'INFO' 'Running function: do_mount'
