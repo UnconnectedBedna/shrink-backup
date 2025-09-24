@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # shrink-backup
-# Version 1.3
+# Version 1.4-beta
 # Backup tool for creating and updating .img files (with autoexpansion function) on various linux operating systems
 #
 #    Copyright (c) 2024-present, Marcus Johansson
@@ -179,7 +179,7 @@ function pause() {
   read -p "$*"
 }
 # Uncomment the following line to enable the pause function
-#pause 'Press [Enter] key to continue...'
+#pause 'Press [any] key to continue...'
 
 
 
@@ -239,7 +239,7 @@ fi
 version() {
   echo -e "${Purple}#########################################################################
 #                                                                       #
-# ${Green}shrink-backup version 1.3                                             ${Purple}#
+# ${Green}shrink-backup version 1.4-beta                                        ${Purple}#
 #                                                                       #
 # ${IWhite}Copyright (c) 2024-present, Marcus Johansson                          ${Purple}#
 # ${White}https://github.com/UnconnectedBedna/shrink-backup                     ${Purple}#
@@ -748,8 +748,8 @@ function btrfs_variables() {
         debug 'DEBUG' "Filtering out subvolume: $subvol"
 
         # Fix path if nested subvolume is in other location than root subvolume
-        top_subvols="$(echo ${LOCAL_TOP_SUBVOLUMES[@]} | sed 's/ /|/g')" # convert spaces into |
-        if echo "$subvol" | grep -qE "$top_subvols"; then
+        top_subvolumes="$(echo ${LOCAL_TOP_SUBVOLUMES[@]} | sed 's/ /|/g')" # convert spaces into |
+        if echo "$subvol" | grep -qE "$top_subvolumes"; then
           debug 'INFO' 'Nested volume not under root, fixing path'
           for top_subvol in ${LOCAL_TOP_SUBVOLUMES[@]}; do
             if echo "$subvol" | grep -qw "$top_subvol"; then
@@ -768,7 +768,7 @@ function btrfs_variables() {
       fi
     done
     if [ -n "$SUBVOLUME_EXCLUDE_PATHS" ]; then
-      SUBVOLUME_EXCLUDE_PATHS=",$(echo ${SUBVOLUME_EXCLUDE_PATHS[@]} | sed 's/ /,/g')"
+      SUBVOLUME_EXCLUDE_PATHS="$(echo ${SUBVOLUME_EXCLUDE_PATHS[@]} | sed 's/ /,/g')"
       debug 'DEBUG' "SUBVOLUME_EXCLUDE_PATHS=$SUBVOLUME_EXCLUDE_PATHS)"
     fi
     debug 'DEBUG' "After filtering: LOCAL_NESTED_SUBVOLUMES=$(echo ${LOCAL_NESTED_SUBVOLUMES[@]})"
@@ -1201,8 +1201,8 @@ function do_mount() {
           echo -e "${White}## ${IWhite}Creating nested subvolume: ${Green}$subvol"
           $SLEEPING
           # Fix path if nested subvolume is in other location than root subvolume
-          top_subvols="$(echo ${LOCAL_TOP_SUBVOLUMES[@]} | sed 's/ /|/g')" # convert spaces into |
-          if echo "$subvol" | grep -qE "$top_subvols"; then
+          top_subvolumes="$(echo ${LOCAL_TOP_SUBVOLUMES[@]} | sed 's/ /|/g')" # convert spaces into |
+          if echo "$subvol" | grep -qE "$top_subvolumes"; then
             debug 'INFO' 'Nested volume not under root, fixing path'
             for top_subvol in ${LOCAL_TOP_SUBVOLUMES[@]}; do
               if echo "$subvol" | grep -qw "$top_subvol"; then
@@ -1235,8 +1235,8 @@ function do_mount() {
           echo -e "${White}## ${IWhite}Deleting nested subvolume: ${Green}$subvol"
           $SLEEPING
           # Fix path if nested subvolume is in other location than root subvolume
-          top_subvols="$(echo ${LOCAL_TOP_SUBVOLUMES[@]} | sed 's/ /|/g')" # convert spaces into |
-          if echo "$subvol" | grep -qE "$top_subvols"; then
+          top_subvolumes="$(echo ${LOCAL_TOP_SUBVOLUMES[@]} | sed 's/ /|/g')" # convert spaces into |
+          if echo "$subvol" | grep -qE "$top_subvolumes"; then
             debug 'INFO' 'Nested volume not under root, fixing path'
             for top_subvol in ${LOCAL_TOP_SUBVOLUMES[@]}; do
               if echo "$subvol" | grep -qw "$top_subvol"; then
@@ -1310,7 +1310,7 @@ function do_e2fsck() {
     $SLEEPING
 
     # Remounting if autoexpansion is requested
-    if [ "$AUTOEXPAND" = true ] && [ "$OS" != 'unknown' ] || [ "$AUTOEXPAND" = false ] && [ "$OS" == 'ubuntu' ]; then
+    if [[ ( "$AUTOEXPAND" = true  && "$OS" != 'unknown' ) || ( "$AUTOEXPAND" = false && "$OS" == 'ubuntu' ) ]]; then
       echo -e "${White}## ${IWhite}Remounting for autoexpansion..."
       debug 'INFO' 'Remounting for autoexpansion function'
       debug 'INFO' 'Running function: do_mount'
@@ -1365,7 +1365,7 @@ function do_resize() {
   # Expanding
   if [ "$*" = 'expand' ]; then
 
-    echo -e "${White}## ${IWhite}Expanding img filesystem..."
+    echo -e "${White}## ${Yellow}Expanding img filesystem..."
     $SLEEPING
 
     # Removing loop for truncate to take effect
@@ -1375,7 +1375,7 @@ function do_resize() {
     debug 'DEBUG' "Running: losetup -d $LOOP"
     losetup -d "$LOOP"
 
-    echo -e "${White}## ${IWhite}Resizing image file..."
+    echo -e "${White}## ${Yellow}Expanding image file..."
     $SLEEPING
     debug 'INFO' "Using truncate to resize img file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
     debug 'DEBUG' "Running: truncate --size=$TRUNCATE_TOTAL $IMG_FILE"
@@ -1421,7 +1421,7 @@ function do_resize() {
       exit 3
     fi
 
-    echo -e "${White}## ${IWhite}Resizing filesystem..."
+    echo -e "${White}## ${Yellow}Expanding filesystem..."
     $SLEEPING
     debug 'INFO' 'Using resize2fs to expand filesystem'
     debug 'BREAK'
@@ -1444,7 +1444,7 @@ function do_resize() {
   # Shrinking
   elif [ "$*" = 'shrink' ]; then
 
-    echo -e "${White}## ${IWhite}Shrinking filesystem..."
+    echo -e "${White}## ${Yellow}Shrinking filesystem..."
     $SLEEPING
     debug 'INFO' 'Using resize2fs to shrink filesystem'
     debug 'BREAK'
@@ -1457,7 +1457,7 @@ function do_resize() {
     fi
     debug 'DEBUG' "$output\n-------------------------------------------------------------------------------------"
 
-    echo -e "${White}## ${IWhite}Shrinking partition..."
+    echo -e "${White}## ${Yellow}Shrinking partition..."
     $SLEEPING
     debug 'INFO' 'Using parted to shrink partition'
     debug 'BREAK'
@@ -1473,7 +1473,7 @@ function do_resize() {
     fi
     debug 'DEBUG' "$output\n-------------------------------------------------------------------------------------"
 
-    echo -e "${White}## ${IWhite}Shrinking img file..."
+    echo -e "${White}## ${Yellow}Shrinking img file..."
     $SLEEPING
     debug 'INFO' "Using truncate to shrink img file to $(( TRUNCATE_TOTAL / 1024 / 1024 ))MiB"
     debug 'DEBUG' "Running: truncate --size=$TRUNCATE_TOTAL $IMG_FILE"
