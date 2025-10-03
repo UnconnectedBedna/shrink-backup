@@ -185,6 +185,7 @@ function pause() {
 
 # Set default variables
 unset diff_small
+VERSION='1.4-beta'
 INSTALL_METHOD='default'
 PROMPTS=true
 DEBUG=false
@@ -239,7 +240,7 @@ fi
 version() {
   echo -e "${Purple}#########################################################################
 #                                                                       #
-# ${Green}shrink-backup version 1.4-beta                                        ${Purple}#
+# ${Green}shrink-backup version $VERSION                                        ${Purple}#
 #                                                                       #
 # ${IWhite}Copyright (c) 2024-present, Marcus Johansson                          ${Purple}#
 # ${White}https://github.com/UnconnectedBedna/shrink-backup                     ${Purple}#
@@ -2400,6 +2401,7 @@ if [ "$DEBUG" = true ]; then
   debug 'INFO' "Debugging requested, writing to log file $LOG_FILE"
 fi
 
+debug 'INFO' "Version=$VERSION"
 debug 'INFO' "Script started with: $STARTLINE"
 
 # Make sure absolute path is used on img file
