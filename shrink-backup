@@ -1639,6 +1639,7 @@ function make_img() {
     echo -e "# ${IWhite}Custom rsync line: ${Purple}$(printf "%+$(( COLS - 21 ))s" '#')"
     echo -e "  ${Green}$RSYNC_CUSTOM_LINE"
   fi
+
   echo -e "${Purple}# $(printf %$(( COLS - 4 ))s | tr ' ' '-') #"
   echo -e "# ${IWhite}Write to logfile:              ${Green}$DEBUG ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${DEBUG} | wc -m ) ))s" '#')"
   echo -e "# ${IWhite}Zoom speed requested:          ${Green}$ZOOM ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${ZOOM} | wc -m ) ))s" '#')"
@@ -1646,9 +1647,24 @@ function make_img() {
   echo -e "# ${IWhite}Autocalculate img root size:   ${Green}$AUTORESIZE_RUN ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${AUTORESIZE_RUN} | wc -m ) ))s" '#')"
   echo -e "# ${IWhite}Autoexpand filesystem at boot: ${Green}$AUTOEXPAND ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${AUTOEXPAND} | wc -m ) ))s" '#')"
   echo -e "# ${IWhite}Use exclude.txt:               ${Green}$EXCLUDE_FILE ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${EXCLUDE_FILE} | wc -m ) ))s" '#')"
+  if [ "$F2FS_CONVERSION" = true ]; then
+    echo -e "${Yellow}# $(printf %$(( COLS - 4 ))s | tr ' ' '-') #"
+    echo -e "! WARNING!!! --f2fs option selected. f2fs filesystem will be created on img file $(printf "%+$(( COLS - 81 ))s" '!')"
+    echo -e "! This option is only for CONVERTING existing filesystem into f2fs on img file $(printf "%+$(( COLS - 79 ))s" '!')"
+    echo -e "! This option is NOT needed for normal backups from f2fs on root $(printf "%+$(( COLS - 65 ))s" '!')"
+    echo -e "! ${IWhite}Only tested on Raspberry pi OS ${Yellow}$(printf "%+$(( COLS - 33 ))s" '!')"
+  fi
+
+  echo -e "${Purple}# $(printf %$(( COLS - 4 ))s | tr ' ' '-') #"
+  echo -e "# ${Green}Device info: ${Purple}$(printf "%+$(( COLS - 15 ))s" '#')"
   echo -e "# ${IWhite}Boot partition:                ${Green}$BOOT_PARTITION ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${BOOT_PARTITION} | wc -m ) ))s" '#')"
+  if [ "$BOOT_PARTITION" = true ]; then
+    echo -e "# ${IWhite}Boot device:                   ${Green}$LOCAL_DEV_BOOT_PATH ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${LOCAL_DEV_BOOT_PATH} | wc -m ) ))s" '#')"
+    echo -e "# ${IWhite}Boot location:                 ${Green}$BOOT_PATH ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${BOOT_PATH} | wc -m ) ))s" '#')"
+  fi
   print_temp="$(( LOCAL_BOOTSECTOR / 1024 / 1024 ))"
   echo -e "# ${IWhite}Bootsector size:               ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+  echo -e "# ${IWhite}Root device:                   ${Green}$LOCAL_DEV_ROOT_PATH ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${LOCAL_DEV_ROOT_PATH} | wc -m ) ))s" '#')"
   print_temp="$(( $(df / -k --sync --output=used | tail -1) / 1024 ))"
   echo -e "# ${IWhite}Estimated root usage:          ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
   if [ "$AUTORESIZE_RUN" = true ]; then
@@ -1670,13 +1686,6 @@ function make_img() {
       print_temp="$(( TOTAL / 1024 / 1024 ))"
       echo -e "! ${IWhite}Requested root size:            ${Yellow}${print_temp}MiB $(printf "%+$(( COLS - 37 - $(echo ${print_temp} | wc -m ) ))s" '!')"
     fi
-  fi
-  if [ "$F2FS_CONVERSION" = true ]; then
-    echo -e "${Yellow}# $(printf %$(( COLS - 4 ))s | tr ' ' '-') #"
-    echo -e "! WARNING!!! --f2fs option selected. f2fs filesystem will be created on img file $(printf "%+$(( COLS - 81 ))s" '!')"
-    echo -e "! This option is only for CONVERTING existing filesystem into f2fs on img file $(printf "%+$(( COLS - 79 ))s" '!')"
-    echo -e "! This option is NOT needed for normal backups from f2fs on root $(printf "%+$(( COLS - 65 ))s" '!')"
-    echo -e "! ${IWhite}Only tested on Raspberry pi OS ${Yellow}$(printf "%+$(( COLS - 33 ))s" '!')"
   fi
 
   # Disabled prompts
@@ -2591,7 +2600,7 @@ if [ "$FSTYPE" == 'f2fs' ] || [ "$F2FS_CONVERSION" = true ]; then
 fi
 
 # Detect OS
-if [ -e /etc/apt/sources.list.d/raspi.list ]; then
+if [ -e /etc/apt/sources.list.d/raspi.list ] || [ -e /etc/apt/sources.list.d/raspi.sources ]; then
   echo -e "${White}## ${Green}Raspberry pi detected"
   OS='rpi'
   debug 'INFO' 'Raspberry pi detected'
