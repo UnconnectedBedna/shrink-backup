@@ -240,7 +240,7 @@ fi
 version() {
   echo -e "${Purple}#########################################################################
 #                                                                       #
-# ${Green}shrink-backup version $VERSION                                             ${Purple}#
+# ${Green}shrink-backup version $VERSION                                   ${Purple}#
 #                                                                       #
 # ${IWhite}Copyright (c) 2024-present, Marcus Johansson                          ${Purple}#
 # ${White}https://github.com/UnconnectedBedna/shrink-backup                     ${Purple}#
