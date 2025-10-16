@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # shrink-backup
-# Version 1.3-hotfix
+# Version 1.4
 # Backup tool for creating and updating .img files (with autoexpansion function) on various linux operating systems
 #
 #    Copyright (c) 2024-present, Marcus Johansson
@@ -17,15 +17,15 @@
 function debug() {
   local log_level="$1"
   local log_message="$2"
-  if [ "$DEBUG" = true ]; then
-    if [ "$log_level" = 'BREAK' ]; then
+  if [ "$DEBUG" == true ]; then
+    if [ "$log_level" == 'BREAK' ]; then
       echo '-------------------------------------------------------------------------------------' >> "$LOG_FILE"
     else
-      if [ $log_level = 'INFO' ]; then
+      if [ $log_level == 'INFO' ]; then
         echo -e "$(date +"%Y-%m-%d %H:%M:%S") [$log_level]    - $log_message" >> "$LOG_FILE"
-      elif [ $log_level = 'ERROR' ]; then
+      elif [ $log_level == 'ERROR' ]; then
         echo -e "$(date +"%Y-%m-%d %H:%M:%S") [$log_level]   - $log_message" >> "$LOG_FILE"
-      elif [ $log_level = 'WARNING' ]; then
+      elif [ $log_level == 'WARNING' ]; then
         echo -e "$(date +"%Y-%m-%d %H:%M:%S") [$log_level] - $log_message" >> "$LOG_FILE"
       else
         echo -e "$(date +"%Y-%m-%d %H:%M:%S") [$log_level]   - $log_message" >> "$LOG_FILE"
@@ -165,7 +165,7 @@ function cleanup() {
     debug 'INFO' "Elapsed time: $(date -d@$SECONDS -u +%M.%S)"
     debug 'DEBUG' 'Exiting script'
   fi
-  if [ "$DEBUG" = true ]; then
+  if [ "$DEBUG" == true ]; then
     echo '#####################################################################################' >> "$LOG_FILE"
   fi
 }
@@ -185,6 +185,7 @@ function pause() {
 
 # Set default variables
 unset diff_small
+VERSION='1.4'
 INSTALL_METHOD='default'
 PROMPTS=true
 DEBUG=false
@@ -192,7 +193,7 @@ EXCLUDE_FILE=false
 AUTOEXPAND=true
 AUTORESIZE_RUN=false
 UPDATE=false
-if [ "$INSTALL_METHOD" = 'curl' ]; then
+if [ "$INSTALL_METHOD" == 'curl' ]; then
   LOG_FILE='/var/log/shrink-backup.log'
   EXCLUDE_FILE_LOCATION='/usr/local/etc/shrink-backup.conf'
   EXCLUDE_FILE_LOCATION_BTRFS='/usr/local/etc/shrink-backup_btrfs.conf'
@@ -239,7 +240,7 @@ fi
 version() {
   echo -e "${Purple}#########################################################################
 #                                                                       #
-# ${Green}shrink-backup version 1.3-hotfix                                      ${Purple}#
+# ${Green}shrink-backup version $VERSION                                             ${Purple}#
 #                                                                       #
 # ${IWhite}Copyright (c) 2024-present, Marcus Johansson                          ${Purple}#
 # ${White}https://github.com/UnconnectedBedna/shrink-backup                     ${Purple}#
@@ -381,11 +382,11 @@ function looprun() {
   debug 'DEBUG' "ADDED_SPACE=$ADDED_SPACE"
   if [ "$ADDED_SPACE" -ne 0 ]; then
     debug 'INFO' 'ADDED_SPACE not 0, truncating img file'
-    if [ "$PROMPTS" = true ]; then
+    if [ "$PROMPTS" == true ]; then
       echo -e "${Yellow}!! ${Red}WARNING! ${Yellow}You have requested to add ${Green}${ADDED_SPACE}MiB ${Yellow}to the img file (NOT partition)"
       debug 'INFO' 'Do you want to continue with the truncate operation? [y/n]'
       while true; do
-        if [ "$COLORS" = true ]; then
+        if [ "$COLORS" == true ]; then
           read -r -p $'\e[0;37m## \e[0;97mDo you want to continue with the truncate operation? \e[0;92m[y/n] \e[0m' input
         else
           read -r -p '## Do you want to continue with the truncate operation? [y/n] ' input
@@ -426,7 +427,7 @@ function looprun() {
   echo -e "${White}## ${Green}Done."
   echo -e "${White}## ${IWhite}To remove loop, type: ${Green}sudo losetup -d ${LOOP}"
   debug 'DEBUG' 'Exiting script, exit 2'
-  if [ "$DEBUG" = true ]; then
+  if [ "$DEBUG" == true ]; then
     echo '#####################################################################################' >> "$LOG_FILE"
   fi
 exit 2
@@ -627,7 +628,7 @@ function dev_variables() {
   debug 'DEBUG' "LOCAL_ROOT_START=$LOCAL_ROOT_START bytes | LOCAL_BOOTSECTOR=$LOCAL_BOOTSECTOR bytes | LOCAL_DDBOOTSECTOR=$LOCAL_DDBOOTSECTOR 512B blocks"
 
   # Set automated calculated size (btrfs_variables if btrfs filesystem)
-  if [ "$AUTORESIZE_RUN" = true ] || [ "$UPDATE" = false ] || [ "$FSTYPE" == 'btrfs' ]; then
+  if [ "$AUTORESIZE_RUN" == true ] || [ "$UPDATE" == false ] || [ "$FSTYPE" == 'btrfs' ]; then
     debug 'INFO' 'Calculating recommended root size'
     BLOCKSIZE=$(stat -fc %s /) # bytes
     debug 'DEBUG' "BLOCKSIZE=${BLOCKSIZE} bytes"
@@ -663,11 +664,11 @@ function dev_variables() {
   #LOCAL_USED_SPACE=$(du -xsb / | awk '{print $1}') # bytes
 
   # Set recommended size if option is selected
-  if [ "$AUTORESIZE_RUN" = true ]; then
+  if [ "$AUTORESIZE_RUN" == true ]; then
     debug 'INFO' 'Setting TOTAL (space needed for files on root) to autocalculated size'
     TOTAL=$LOCAL_AUTORESIZE_MIN # bytes
     # Add 512MiB if f2fs conversion
-    if [ "$F2FS_CONVERSION" = true ]; then
+    if [ "$F2FS_CONVERSION" == true ]; then
       debug 'INFO' 'Adding 512MiB because of f2fs conversion'
       TOTAL=$(( $TOTAL + 536870912 ))
     fi
@@ -682,7 +683,7 @@ function dev_variables() {
   debug 'DEBUG' "TRUNCATE_TOTAL=${TRUNCATE_TOTAL} bytes"
 
   # Add 128MiB extra space if autocalculated size reports bigger minimum than created on new img
-  if [ "$UPDATE" = false ] && [ "$TOTAL" -lt "$LOCAL_AUTORESIZE_MIN" ]; then
+  if [ "$UPDATE" == false ] && [ "$TOTAL" -lt "$LOCAL_AUTORESIZE_MIN" ]; then
     debug 'WARNING' 'Adding WIGGLEROOM (128MiB) because manually requested ADDED_SPACE is less than autocaluclated size'
     AUTORESIZE_WARNING=true
     WIGGLEROOM=134217728 # 128MiB = 134217728B, 192MiB = 201326592B
@@ -701,7 +702,7 @@ function btrfs_variables() {
   declare -a BTRFS_USAGE=($(btrfs fi us -T --raw / | tail -1)) # bytes
   LOCAL_USED_SPACE=$(( BTRFS_USAGE[1] + BTRFS_USAGE[2] + BTRFS_USAGE[3] )) # adding Data single, Metadata single & System single
   debug 'DEBUG' "LOCAL_USED_SPACE=$LOCAL_USED_SPACE"
-  if [ "$AUTORESIZE_RUN" = true ]; then
+  if [ "$AUTORESIZE_RUN" == true ]; then
     debug 'INFO' 'Adding 512MiB to LOCAL_USED_SPACE as recommended minimum size'
     LOCAL_AUTORESIZE_MIN=$(( LOCAL_USED_SPACE + 536870912 ))
     debug 'DEBUG' "LOCAL_AUTORESIZE_MIN=$LOCAL_AUTORESIZE_MIN bytes"
@@ -781,7 +782,7 @@ return 0
 # Gather image information
 function img_variables() {
 
-  if [ "$UPDATE" = true ]; then
+  if [ "$UPDATE" == true ]; then
     debug 'DEBUG' "Running: stat -c %s $IMG_FILE"
     IMG_SIZE=$(stat -c %s "$IMG_FILE")
     debug 'DEBUG' "IMG_SIZE=$IMG_SIZE bytes"
@@ -876,14 +877,14 @@ function rsync_line() {
   debug 'DEBUG' 'Running: mktemp -t rsync-XXX'
   tmp_file=$(mktemp -t rsync-XXX)
   debug 'DEBUG' "tmp_file=$tmp_file"
-  if [ "$RSYNC_TTY" = false ]; then
+  if [ "$RSYNC_TTY" == false ]; then
     RSYNC_PATHS="/ $TMP_DIR 2>&1 | tee /dev/null > $tmp_file"
   else
     RSYNC_PATHS="/ $TMP_DIR 2>&1 | tee $TTY_AVAILABILITY > $tmp_file"
   fi
   debug 'DEBUG' "RSYNC_PATHS=$RSYNC_PATHS"
 
-  if [ "$EXCLUDE_FILE" = true ]; then
+  if [ "$EXCLUDE_FILE" == true ]; then
     RSYNC_LINE="rsync -ahvHAX --exclude-from=$EXCLUDE_FILE_LOCATION --exclude={${IMG_PATH}/*,${TMP_DIR},${tmp_file},${BOOT_PATH}/shrink-backup.lock${SUBVOLUME_EXCLUDE_PATHS}} --info=progress2 --stats $RSYNC_DELETE --force --partial --delete-excluded --timeout=30"
   else
     RSYNC_LINE="rsync -ahvHAX --exclude={/lost+found,/proc/*,/sys/*,/dev/*,/tmp/*,/run/*,/mnt/*,/media/*,/var/swap,/snap/*,${IMG_PATH}/*,${BOOT_PATH}/shrink-backup.lock${SUBVOLUME_EXCLUDE_PATHS}} --info=progress2 --stats $RSYNC_DELETE --force --partial --delete-excluded --timeout=30"
@@ -891,7 +892,7 @@ function rsync_line() {
   debug 'DEBUG' "RSYNC_LINE=$RSYNC_LINE"
 
   # If --rsync is selected, ask for user configuration
-  if [ "$RSYNC_CUSTOM" = true ]; then
+  if [ "$RSYNC_CUSTOM" == true ]; then
     echo -e "${Yellow}## Custom rsync line option selected"
     echo -e "${White}## ${IWhite}Default rsync line: ${Green}${RSYNC_LINE}"
     echo -e "${White}## ${IWhite}Edit line to use in script ${Yellow}(press ctrl+c to abort)${NC}"
@@ -912,6 +913,170 @@ return 0
 
 
 
+# Print confirmation window
+function print_confirmation() {
+
+  # Display information
+  #echo -e "# ${IWhite}A backup will be created at ${Green}$IMG_FILE $(while [ $x -lt $(( COLS - 31 - $(echo ${IMG_FILE} | wc -m ) )) ]; do echo -n ' '; let x=$x+1; done; echo)${Purple}#"
+  echo -e "${Purple}$BREAK"
+  if [ "$PROMPTS" == false ]; then
+    debug 'INFO' '-y selected by user. prompts are disabled'
+    echo -e "# ${Yellow}DISABLE PROMPTS SELECTED (${Green}-y${Yellow}), NO WARNINGS ABOUT DELETION!!! ${Purple}$(printf "%+$(( COLS - 63 ))s" '#')"
+  fi
+
+  if [ "$UPDATE" == false ]; then
+    echo -e "# ${IWhite}A backup will be created at: ${Purple}$(printf "%+$(( COLS - 31 ))s" '#')"
+  else
+    echo -e "# ${IWhite}Updating backup img: ${Purple}$(printf "%+$(( COLS - 23 ))s" '#')"
+  fi
+
+  echo -e "# ${Green}$IMG_FILE ${Purple}$(printf "%+$(( COLS - 2 - $(echo ${IMG_FILE} | wc -m ) ))s" '#')"
+  echo -e "# ${Green}$FSTYPE ${IWhite}filesystem detected on root ${Purple}$(printf "%+$(( COLS - 30 - $(echo ${FSTYPE} | wc -m ) ))s" '#')"
+
+  if [ "$RSYNC_DELETE" != '--delete' ] && [ "$UPDATE" == false ]; then
+    echo -e "# ${Green}--fix ${IWhite}option selected, ${Green}rsync using --fsync option${Purple}$(printf "%+$(( COLS - 51 ))s" '#')"
+  elif [ "$RSYNC_DELETE" != '--delete' ] && [ "$UPDATE" == true ]; then
+    echo -e "# ${Green}--fix ${IWhite}option selected, ${Green}rsync using --delete-before & --fsync options${Purple}$(printf "%+$(( COLS - 70 ))s" '#')"
+  fi
+
+  if [ "$FSTYPE" == 'btrfs' ]; then
+    echo -e "# ${Green}${#LOCAL_TOP_SUBVOLUMES[@]} ${IWhite}btrfs top volumes will be included ${Purple}$(printf "%+$(( COLS - 37 - $(echo ${#LOCAL_TOP_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
+    echo -e "${Purple}# ${IWhite}btrfs top volumes: ${Green}${LOCAL_TOP_SUBVOLUMES[@]} ${Purple}$(printf "%+$(( COLS - 21 - $(echo ${LOCAL_TOP_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
+    echo -e "# ${Green}${#LOCAL_NESTED_SUBVOLUMES[@]} ${IWhite}btrfs nested volumes will be included ${Purple}$(printf "%+$(( COLS - 40 - $(echo ${#LOCAL_NESTED_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
+    echo -e "${Purple}# ${IWhite}btrfs nested volumes: ${Green}${LOCAL_NESTED_SUBVOLUMES[@]} ${Purple}$(printf "%+$(( COLS - 24 - $(echo ${LOCAL_NESTED_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
+  elif [ "$FSTYPE" == 'f2fs' ]; then
+    echo -e "# ${Yellow}Autoexpand filesystem at boot not available for ${Green}f2fs ${Purple}$(printf "%+$(( COLS - 54 ))s" '#')"
+    if [ "$UPDATE" == true ]; then
+      echo -e "# ${Yellow}Resize operations not available for ${Green}f2fs ${Purple}$(printf "%+$(( COLS - 43 ))s" '#')"
+    fi
+  # Will have exited before if both F2FS_CONVERSION & UPDATE are true
+  elif [ "$F2FS_CONVERSION" == true ]; then
+    echo -e "# ${Yellow}Converting filesystem into ${Green}f2fs ${Yellow}on img file ${Purple}$(printf "%+$(( COLS - 46 ))s" '#')"
+    echo -e "# ${Yellow}Autoexpand filesystem at boot not available for ${Green}f2fs ${Purple}$(printf "%+$(( COLS - 55 ))s" '#')"
+  fi
+
+  if [ "$UPDATE" == true ] && [ "$RSYNC_DELETE" == '--delete-before' ]; then
+    echo -e "# ${Green}--fix ${IWhite}option selected, rsync will delete files on img before copy ${Purple}$(printf "%+$(( COLS - 68 ))s" '#')"
+    debug 'DEBUG' '--fix selected by user, rsync deleting files before copy'
+  fi
+
+  if [ "$RSYNC_CUSTOM" == true ]; then
+    echo -e "# ${IWhite}Custom rsync line: ${Purple}$(printf "%+$(( COLS - 21 ))s" '#')"
+    echo -e "  ${Green}$RSYNC_CUSTOM_LINE"
+  fi
+
+  echo -e "${Purple}# $(printf %$(( COLS - 4 ))s | tr ' ' '-') #"
+  echo -e "# ${IWhite}Write to logfile:               | ${Green}$DEBUG ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${DEBUG} | wc -m ) ))s" '#')"
+  echo -e "# ${IWhite}Zoom speed requested:           | ${Green}$ZOOM ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${ZOOM} | wc -m ) ))s" '#')"
+  echo -e "# ${IWhite}rsync tty output:               | ${Green}$RSYNC_TTY ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${RSYNC_TTY} | wc -m ) ))s" '#')"
+  echo -e "# ${IWhite}Autocalculate img root size:    | ${Green}$AUTORESIZE_RUN ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${AUTORESIZE_RUN} | wc -m ) ))s" '#')"
+  echo -e "# ${IWhite}Autoexpand filesystem at boot:  | ${Green}$AUTOEXPAND ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${AUTOEXPAND} | wc -m ) ))s" '#')"
+  echo -e "# ${IWhite}Use exclude.txt:                | ${Green}$EXCLUDE_FILE ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${EXCLUDE_FILE} | wc -m ) ))s" '#')"
+  # Will have exited before if both F2FS_CONVERSION & UPDATE are true
+  if [ "$F2FS_CONVERSION" == true ]; then
+    echo -e "# $(printf %$(( COLS - 4 ))s | tr ' ' '-') #"
+    echo -e "# ${Yellow}!!WARNING!! --f2fs option selected. f2fs filesystem will be created on img file. ${Purple}$(printf "%+$(( COLS - 83 ))s" '#')"
+    echo -e "# ${IWhite}This option is only for CONVERTING existing filesystem into f2fs on img file. ${Purple}$(printf "%+$(( COLS - 80 ))s" '#')"
+    echo -e "# ${IWhite}This option is NOT needed for normal backups from f2fs on root. ${Purple}$(printf "%+$(( COLS - 66 ))s" '#')"
+    echo -e "# ${Yellow}Only tested on Raspberry pi OS. ${Purple}$(printf "%+$(( COLS - 34 ))s" '#')"
+  fi
+
+  echo -e "${Purple}# $(printf %$(( COLS - 4 ))s | tr ' ' '-') #"
+  echo -e "# ${Green}Device info: ${Purple}$(printf "%+$(( COLS - 15 ))s" '#')"
+  echo -e "# ${IWhite}Boot partition:                 | ${Green}$BOOT_PARTITION ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${BOOT_PARTITION} | wc -m ) ))s" '#')"
+  if [ "$BOOT_PARTITION" == true ]; then
+    echo -e "# ${IWhite}Boot device:                    | ${Green}$LOCAL_DEV_BOOT_PATH ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${LOCAL_DEV_BOOT_PATH} | wc -m ) ))s" '#')"
+    echo -e "# ${IWhite}Boot location:                  | ${Green}$BOOT_PATH ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${BOOT_PATH} | wc -m ) ))s" '#')"
+  fi
+  print_temp="$(( LOCAL_BOOTSECTOR / 1024 / 1024 ))"
+  echo -e "# ${IWhite}Bootsector size:                | ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 39 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+  echo -e "# ${IWhite}Root device:                    | ${Green}$LOCAL_DEV_ROOT_PATH ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${LOCAL_DEV_ROOT_PATH} | wc -m ) ))s" '#')"
+  print_temp="$(( $(df / -k --sync --output=used | tail -1) / 1024 ))"
+  echo -e "# ${IWhite}Estimated root usage:           | ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 39 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+
+  if [ "$AUTORESIZE_RUN" == true ]; then
+    print_temp="$(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))"
+    echo -e "# ${IWhite}Auto calculated root size:      | ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 39 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+    if [ "$UPDATE" == false ]; then
+      print_temp="$(( TRUNCATE_TOTAL / 1024 / 1024 ))"
+      echo -e "# ${IWhite}Total img size:                 | ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 40 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+    else
+      print_temp="$(( IMG_SIZE / 1024 / 1024 ))"
+      echo -e "# ${IWhite}Old img size:                   | ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 39 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+      print_temp="$(( TRUNCATE_TOTAL / 1024 / 1024 ))"
+      echo -e "# ${IWhite}New img size:                   | ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 39 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+      if [ -z "$diff_small" ]; then
+        echo -e "# ${IWhite}Difference:                     | ${Green}$DIFFERENCE ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${DIFFERENCE} | wc -m ) ))s" '#')"
+      else
+        echo -e "# ${IWhite}Difference:                     | ${Green}$DIFFERENCE ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${DIFFERENCE} | wc -m ) ))s" '#')"
+      fi
+    fi
+
+  elif [ "$UPDATE" == false ] && [ "$AUTORESIZE_RUN" == false ]; then
+    print_temp="$(( TRUNCATE_TOTAL / 1024 / 1024 ))"
+    print_temp2="$(( ADDED_SPACE / 1024 / 1024 ))"
+    echo -e "# ${IWhite}Total img size:                 | ${Green}${print_temp}MiB ${IWhite}with ${Green}${print_temp2}MiB [extra space] ${IWhite}included ${Purple}$(printf "%+$(( COLS - 72 - $(echo ${print_temp} | wc -m ) - $(echo ${print_temp2} | wc -m ) ))s" '#')"
+    if [ "$AUTORESIZE_WARNING" == true ]; then
+      echo -e "${Purple}# $(printf %$(( COLS - 4 ))s | tr ' ' '-') #"
+      echo -e "# ${Yellow}!!WARNING!! Manually added space is smaller than calculated recommended minimum ${Purple}$(printf "%+$(( COLS - 82 ))s" '#')"
+      echo -e "# This does NOT mean the backup WILL fail, but CAN fail due to lack of space ${Purple}$(printf "%+$(( COLS - 77 ))s" '#')"
+      echo -e "# Consider using the -a option or manually adding more space ${Purple}$(printf "%+$(( COLS - 61 ))s" '#')"
+      print_temp="$(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))"
+      echo -e "# ${IWhite}Calculated recommended minimum: | ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 40 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+      print_temp="$(( TOTAL / 1024 / 1024 ))"
+      echo -e "# ${IWhite}Requested root size:            | ${Yellow}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 40 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+    fi
+
+  elif [ "$UPDATE" == true ] && [ "$ADDED_SPACE" -eq 0 ]; then
+    print_temp="$(( IMG_SIZE / 1024 / 1024 ))"
+    echo -e "# ${IWhite}Total img size:                 | ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 40 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+  elif [ "$UPDATE" == true ] && [ "$ADDED_SPACE" -ne 0 ]; then
+    print_temp="$(( ADDED_SPACE / 1024 / 1024 ))"
+    echo -e "# ${IWhite}Added [extra space]:            | ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 40 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+    print_temp="$(( IMG_SIZE / 1024 / 1024 ))"
+    echo -e "# ${IWhite}Old img size:                   | ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 40 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+    print_temp="$(( TRUNCATE_TOTAL / 1024 / 1024 ))"
+    echo -e "# ${IWhite}New img size:                   | ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 40 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+  fi
+
+  # Disabled prompts
+  if [ "$PROMPTS" == false ] && [ "$ZOOM" == false ]; then
+    echo -e "${Red}# !! PRESS CTRL+C WITHIN 5s TO CANCEL !! $(printf "%+$(( COLS - 41 ))s" '#')"
+    echo -e "${BREAK}"
+    i=5
+    while [ "$i" -gt 0 ]; do
+      echo -ne "\r${Red}## ${IWhite}Cancel? ${Green}${i}s"
+      sleep 1
+      ((i--))
+    done
+    echo -e "\n${White}## ${IWhite}Starting backup..."
+    debug 'INFO' '5 seconds passed, user did not stop operation'
+    debug 'BREAK'
+
+  # Confirm with user input
+  elif [ "$PROMPTS" == true ]; then
+    echo -e "${Purple}${BREAK}${IWhite}"
+    debug 'INFO' 'Do you want to continue? [y/n]'
+    while true; do
+      if [ "$COLORS" == true ]; then
+        read -r -p $'\e[0;37m## \e[0;97mDo you want to continue? \e[0;92m[y/n] \e[0m' input
+      else
+        read -r -p '## Do you want to continue? [y/n] ' input
+      fi
+      case $input in
+        [Yy]) debug 'INFO' 'Y or y pressed to confirm'; debug 'BREAK'; break;;
+        [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
+        *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"; debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
+      esac
+    done
+  else
+    echo -e "${Purple}${BREAK}${IWhite}"
+  fi
+return 0
+}
+
+
+
 # Check for required dependencies
 function check_dependencies() {
 
@@ -927,10 +1092,10 @@ function check_dependencies() {
       if command -v apt > /dev/null 2>&1; then
         echo -e "${White}## ${Green}apt found, ${IWhite}trying to install gdisk..."
         # Confirm with user input
-        if [ "$PROMPTS" = true ]; then
+        if [ "$PROMPTS" == true ]; then
           debug 'INFO' 'Do you want to use apt to install gdisk? (will upgrade system first) [y/n]'
           while true; do
-            if [ "$COLORS" = true ]; then
+            if [ "$COLORS" == true ]; then
               read -r -p $'\e[0;37m## \e[0;93mDo you want to use apt to install gdisk? \e[0;97m(will upgrade system first) \e[0;92m[y/n] \e[0m' input
             else
               read -r -p '## Do you want to use apt to install gdisk? (will upgrade system first) [y/n] ' input
@@ -954,10 +1119,10 @@ function check_dependencies() {
       elif command -v pacman > /dev/null 2>&1; then
         echo -e "${White}## ${Green}pacman found, ${IWhite}trying to install gdisk..."
         # Confirm with user input
-        if [ "$PROMPTS" = true ]; then
+        if [ "$PROMPTS" == true ]; then
           debug 'INFO' 'Do you want to use pacman to install gptfdisk? (will run pacman -Syu first) [y/n]'
           while true; do
-            if [ "$COLORS" = true ]; then
+            if [ "$COLORS" == true ]; then
               read -r -p $'\e[0;37m## \e[0;93mDo you want to use pacman to install gptfdisk? \e[0;97m(will run pacman -Syu first) \e[0;92m[y/n] \e[0m' input
             else
               read -r -p '## Do you want to use pacman to install gptfdisk? (will run pacman -Syu first) [y/n] ' input
@@ -997,7 +1162,7 @@ function check_dependencies() {
   fi
 
   # f2fs conversion (only apt)
-  if [ "$F2FS_CONVERSION" = true ]; then
+  if [ "$F2FS_CONVERSION" == true ]; then
     echo -e "${White}## ${Green}--f2fs option selected, mkfs.f2fs is needed, ${IWhite}checking for application..."
     $SLEEPING
     if ! command -v mkfs.f2fs > /dev/null 2>&1; then
@@ -1008,10 +1173,10 @@ function check_dependencies() {
       if command -v apt > /dev/null 2>&1; then
         echo -e "${White}## ${Green}apt found, ${IWhite}trying to install f2fs-tools..."
         # Confirm with user input
-        if [ "$PROMPTS" = true ]; then
+        if [ "$PROMPTS" == true ]; then
           debug 'INFO' 'Do you want to use apt to install f2fs-tools? (will upgrade system first) [y/n]'
           while true; do
-            if [ "$COLORS" = true ]; then
+            if [ "$COLORS" == true ]; then
               read -r -p $'\e[0;37m## \e[0;93mDo you want to use apt to install f2fs-tools? \e[0;97m(will upgrade system first) \e[0;92m[y/n] \e[0m' input
             else
               read -r -p '## Do you want to use apt to install f2fs-tools? (will upgrade system first) [y/n] ' input
@@ -1048,12 +1213,12 @@ function check_dependencies() {
   fi
 
   # btrfs conversion (work in progress)
-  if [ "$BTRFS_CONVERSION" = true ]; then
+  if [ "$BTRFS_CONVERSION" == true ]; then
     echo 'btrfs'
   fi
 
   # --chroot selected (only apt)
-  if [ "$CHROOTRUN" = true ]; then
+  if [ "$CHROOTRUN" == true ]; then
     echo -e "${White}## ${Green}--chrootrun ${IWhite}selected, ${Yellow}systemd-nspawn needed, ${IWhite}checking for application..."
     $SLEEPING
     if ! command -v systemd-nspawn > /dev/null 2>&1; then
@@ -1064,10 +1229,10 @@ function check_dependencies() {
       if command -v apt > /dev/null 2>&1; then
         echo -e "${White}## ${Green}apt found, ${IWhite}trying to install systemd-container..."
         # Confirm with user input
-        if [ "$PROMPTS" = true ]; then
+        if [ "$PROMPTS" == true ]; then
           debug 'INFO' 'Do you want to use apt to install systemd-container? (will upgrade system first) [y/n]'
           while true; do
-            if [ "$COLORS" = true ]; then
+            if [ "$COLORS" == true ]; then
               read -r -p $'\e[0;37m## \e[0;93mDo you want to use apt to install systemd-container? \e[0;97m(will upgrade system first) \e[0;92m[y/n] \e[0m' input
             else
               read -r -p '## Do you want to use apt to install systemd-container? (will upgrade system first) [y/n] ' input
@@ -1139,7 +1304,7 @@ function do_mount() {
   partprobe "$LOOP"
 
   # ext4 & f2fs
-  if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ] || [ "$F2FS_CONVERSION" = true ]; then
+  if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ] || [ "$F2FS_CONVERSION" == true ]; then
     echo -e "${White}## ${IWhite}Mounting img root partition..."
     $SLEEPING
     debug 'INFO' 'Mounting root partition from loop'
@@ -1310,7 +1475,7 @@ function do_e2fsck() {
     $SLEEPING
 
     # Remounting if autoexpansion is requested
-    if [[ ( "$AUTOEXPAND" = true  && "$OS" != 'unknown' ) || ( "$AUTOEXPAND" = false && "$OS" == 'ubuntu' ) ]]; then
+    if [[ ( "$AUTOEXPAND" == true  && "$OS" != 'unknown' ) || ( "$AUTOEXPAND" == false && "$OS" == 'ubuntu' ) ]]; then
       echo -e "${White}## ${IWhite}Remounting for autoexpansion..."
       debug 'INFO' 'Remounting for autoexpansion function'
       debug 'INFO' 'Running function: do_mount'
@@ -1363,7 +1528,7 @@ function do_resize() {
 
 
   # Expanding
-  if [ "$*" = 'expand' ]; then
+  if [ "$*" == 'expand' ]; then
 
     echo -e "${White}## ${Yellow}Expanding img filesystem..."
     $SLEEPING
@@ -1442,7 +1607,7 @@ function do_resize() {
 
 
   # Shrinking
-  elif [ "$*" = 'shrink' ]; then
+  elif [ "$*" == 'shrink' ]; then
 
     echo -e "${White}## ${Yellow}Shrinking filesystem..."
     $SLEEPING
@@ -1494,7 +1659,7 @@ function do_rsync() {
 
   echo -e "${White}## ${IWhite}Backing up files..."
   $SLEEPING
-  if [ "$TTY_AVAILABILITY" == '/dev/null' ] || [ "$RSYNC_TTY" = false ]; then
+  if [ "$TTY_AVAILABILITY" == '/dev/null' ] || [ "$RSYNC_TTY" == false ]; then
     echo -e "${White}## ${Yellow}This might take some time, please stand by..."
   fi
   debug 'DEBUG' "Backing up to ${IMG_PATH}${IMG_FILE}"
@@ -1535,7 +1700,7 @@ function do_conversion() {
   if [ "$*" == 'create_partition' ]; then
 
     # f2fs
-    if [ "$F2FS_CONVERSION" = true ]; then
+    if [ "$F2FS_CONVERSION" == true ]; then
       debug 'INFO' '--f2fs selected by user, creating f2fs partition on img file'
       debug 'DEBUG' "Running: parted -s -a none $LOOP unit B mkpart primary f2fs $LOCAL_ROOT_START 100%"
       if ! output=$(parted -s -a none "$LOOP" unit B mkpart primary f2fs "$LOCAL_ROOT_START" 100% 2>&1); then
@@ -1550,7 +1715,7 @@ function do_conversion() {
   elif [ "$*" == 'format_filesystem' ]; then
 
     # f2fs
-    if [ "$F2FS_CONVERSION" = true ]; then
+    if [ "$F2FS_CONVERSION" == true ]; then
       debug 'INFO' "Using mkfs.f2fs to format root filesystem"
       if ! output=$(mkfs.f2fs -f -U "$UUID" -l "$LABEL" "$IMG_DEV_ROOT_PATH" 2>&1 | tee "$TTY_AVAILABILITY" ); then
         echo -e "${Yellow}$output\n${Red}!! MKFS.F2FS FAILED!!!"
@@ -1570,7 +1735,7 @@ function do_conversion() {
   elif [ "$*" == 'edit_configs' ]; then
 
     # f2fs
-    if [ "$F2FS_CONVERSION" = true ]; then
+    if [ "$F2FS_CONVERSION" == true ]; then
       echo -e "${White}## ${IWhite}Editing img configurations for f2fs..."
       $SLEEPING
       echo -e "${White}## ${IWhite}Backups will be created: ${Green}/etc/fstab.shrink-backup.bak ${IWhite}& ${Green}${BOOT_PATH}/cmdline.txt.shrink-backup.bak"
@@ -1609,121 +1774,26 @@ function make_img() {
   dev_variables
   debug 'INFO' 'Running function: rsync_line'
   rsync_line
+  print_confirmation
 
-  # Display information
-  echo -e "${Purple}$BREAK"
-  if [ "$PROMPTS" = false ]; then
-    debug 'INFO' '-y selected by user. prompts are disabled'
-    echo -e "# ${Yellow}DISABLE PROMPTS SELECTED (${Green}-y${Yellow}), NO WARNINGS ABOUT DELETION!!! ${Purple}$(printf "%+$(( COLS - 63 ))s" '#')"
-  fi
-  #echo -e "# ${IWhite}A backup will be created at ${Green}$IMG_FILE $(while [ $x -lt $(( COLS - 31 - $(echo ${IMG_FILE} | wc -m ) )) ]; do echo -n ' '; let x=$x+1; done; echo)${Purple}#"
-  echo -e "# ${IWhite}A backup will be created at: ${Purple}$(printf "%+$(( COLS - 31 ))s" '#')"
-  echo -e "# ${Green}$IMG_FILE ${Purple}$(printf "%+$(( COLS - 2 - $(echo ${IMG_FILE} | wc -m ) ))s" '#')"
-  echo -e "# ${Green}$FSTYPE ${IWhite}filesystem detected on root ${Purple}$(printf "%+$(( COLS - 30 - $(echo ${FSTYPE} | wc -m ) ))s" '#')"
-  if [ "$RSYNC_DELETE" != '--delete' ]; then
-    echo -e "# ${Green}--fix ${IWhite}option selected, ${Green}rsync using --fsync option${Purple}$(printf "%+$(( COLS - 51 ))s" '#')"
-  fi
-  if [ "$FSTYPE" == 'btrfs' ]; then
-    echo -e "# ${Green}${#LOCAL_TOP_SUBVOLUMES[@]} ${IWhite}btrfs top volumes will be included ${Purple}$(printf "%+$(( COLS - 37 - $(echo ${#LOCAL_TOP_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
-    echo -e "${Purple}# ${IWhite}btrfs top volumes: ${Green}${LOCAL_TOP_SUBVOLUMES[@]} ${Purple}$(printf "%+$(( COLS - 21 - $(echo ${LOCAL_TOP_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
-    echo -e "# ${Green}${#LOCAL_NESTED_SUBVOLUMES[@]} ${IWhite}btrfs nested volumes will be included ${Purple}$(printf "%+$(( COLS - 40 - $(echo ${#LOCAL_NESTED_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
-    echo -e "${Purple}# ${IWhite}btrfs nested volumes: ${Green}${LOCAL_NESTED_SUBVOLUMES[@]} ${Purple}$(printf "%+$(( COLS - 24 - $(echo ${LOCAL_NESTED_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
-  elif [ "$FSTYPE" == 'f2fs' ]; then
-    echo -e "# ${Yellow}Autoexpand filesystem at boot not available for ${Green}f2fs ${Purple}$(printf "%+$(( COLS - 54 ))s" '#')"
-  elif [ "$F2FS_CONVERSION" = true ]; then
-    echo -e "# ${Yellow}Converting filesystem into ${Green}f2fs ${Yellow}on img file ${Purple}$(printf "%+$(( COLS - 46 ))s" '#')"
-    echo -e "# ${Yellow}Autoexpand filesystem at boot not available for ${Green}f2fs ${Purple}$(printf "%+$(( COLS - 55 ))s" '#')"
-  fi
-  if [ "$RSYNC_CUSTOM" = true ]; then
-    echo -e "# ${IWhite}Custom rsync line: ${Purple}$(printf "%+$(( COLS - 21 ))s" '#')"
-    echo -e "  ${Green}$RSYNC_CUSTOM_LINE"
-  fi
-  echo -e "${Purple}# $(printf %$(( COLS - 4 ))s | tr ' ' '-') #"
-  echo -e "# ${IWhite}Write to logfile:              ${Green}$DEBUG ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${DEBUG} | wc -m ) ))s" '#')"
-  echo -e "# ${IWhite}Zoom speed requested:          ${Green}$ZOOM ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${ZOOM} | wc -m ) ))s" '#')"
-  echo -e "# ${IWhite}rsync tty output:              ${Green}$RSYNC_TTY ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${RSYNC_TTY} | wc -m ) ))s" '#')"
-  echo -e "# ${IWhite}Autocalculate img root size:   ${Green}$AUTORESIZE_RUN ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${AUTORESIZE_RUN} | wc -m ) ))s" '#')"
-  echo -e "# ${IWhite}Autoexpand filesystem at boot: ${Green}$AUTOEXPAND ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${AUTOEXPAND} | wc -m ) ))s" '#')"
-  echo -e "# ${IWhite}Use exclude.txt:               ${Green}$EXCLUDE_FILE ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${EXCLUDE_FILE} | wc -m ) ))s" '#')"
-  echo -e "# ${IWhite}Boot partition:                ${Green}$BOOT_PARTITION ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${BOOT_PARTITION} | wc -m ) ))s" '#')"
-  print_temp="$(( LOCAL_BOOTSECTOR / 1024 / 1024 ))"
-  echo -e "# ${IWhite}Bootsector size:               ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
-  print_temp="$(( $(df / -k --sync --output=used | tail -1) / 1024 ))"
-  echo -e "# ${IWhite}Estimated root usage:          ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
-  if [ "$AUTORESIZE_RUN" = true ]; then
-    print_temp="$(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))"
-    echo -e "# ${IWhite}Auto calculated root size:     ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
-    print_temp="$(( TRUNCATE_TOTAL / 1024 / 1024 ))"
-    echo -e "# ${IWhite}Total img size:                ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
-  else
-    print_temp="$(( TRUNCATE_TOTAL / 1024 / 1024 ))"
-    print_temp2="$(( ADDED_SPACE / 1024 / 1024 ))"
-    echo -e "# ${IWhite}Total img size:                ${Green}${print_temp}MiB ${IWhite}with ${Green}${print_temp2}MiB [extra space] ${IWhite}included ${Purple}$(printf "%+$(( COLS - 67 - $(echo ${print_temp} | wc -m ) - $(echo ${print_temp2} | wc -m ) ))s" '#')"
-    if [ "$AUTORESIZE_WARNING" = true ]; then
-      echo -e "${Yellow}# $(printf %$(( COLS - 4 ))s | tr ' ' '-') #"
-      echo -e "! WARNING!!! Manually added space is smaller than calculated recommended minimum $(printf "%+$(( COLS - 81 ))s" '!')"
-      echo -e "! This does NOT mean the backup WILL fail, but CAN fail due to lack of space $(printf "%+$(( COLS - 77 ))s" '!')"
-      echo -e "! Consider using the -a option or manually adding more space $(printf "%+$(( COLS - 61 ))s" '!')"
-      print_temp="$(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))"
-      echo -e "! ${IWhite}Calculated recommended minimum: ${Green}${print_temp}MiB ${Yellow}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '!')"
-      print_temp="$(( TOTAL / 1024 / 1024 ))"
-      echo -e "! ${IWhite}Requested root size:            ${Yellow}${print_temp}MiB $(printf "%+$(( COLS - 37 - $(echo ${print_temp} | wc -m ) ))s" '!')"
-    fi
-  fi
-  if [ "$F2FS_CONVERSION" = true ]; then
-    echo -e "${Yellow}# $(printf %$(( COLS - 4 ))s | tr ' ' '-') #"
-    echo -e "! WARNING!!! --f2fs option selected. f2fs filesystem will be created on img file $(printf "%+$(( COLS - 81 ))s" '!')"
-    echo -e "! This option is only for CONVERTING existing filesystem into f2fs on img file $(printf "%+$(( COLS - 79 ))s" '!')"
-    echo -e "! This option is NOT needed for normal backups from f2fs on root $(printf "%+$(( COLS - 65 ))s" '!')"
-    echo -e "! ${IWhite}Only tested on Raspberry pi OS ${Yellow}$(printf "%+$(( COLS - 33 ))s" '!')"
-  fi
-
-  # Disabled prompts
-  if [ "$PROMPTS" = false ] && [ "$ZOOM" = false ]; then
-    echo -e "${Red}!! PRESS CTRL+C WITHIN 5s TO CANCEL !! $(printf "%+$(( COLS - 39 ))s" '#')"
-    echo -e "${Red}${BREAK}"
-    sleep 6
-    debug 'INFO' '6 seconds passed, user did not stop operation'
-    debug 'BREAK'
-
-  # Confirm with user input
-  elif [ "$PROMPTS" = true ]; then
-    echo -e "${Purple}${BREAK}${IWhite}"
-    debug 'INFO' 'Do you want to continue? [y/n]'
+  if [ "$PROMPTS" == true ] && [ -f "$IMG_FILE" ]; then
+    debug 'WARNING' "$IMG_FILE ALREADY EXISTS!"
+    echo -e "${Yellow}!! ${Red}WARNING!!! WARNING!!! WARNING!!!"
+    echo -e "${Yellow}!! ${Green}$IMG_FILE"
+    echo -e "${Yellow}!! FILE ALREADY EXISTS!!!"
+    debug 'WARNING' 'Do you want to overwrite? [y/n]'
     while true; do
-      if [ "$COLORS" = true ]; then
-        read -r -p $'\e[0;37m## \e[0;97mDo you want to continue? \e[0;92m[y/n] \e[0m' input
+      if [ "$COLORS" == true ]; then
+        read -r -p $'\e[0;93m!! \e[0;97mDo you want to overwrite? \e[0;92m[y/n] \e[0m' input
       else
-        read -r -p '## Do you want to continue? [y/n] ' input
+        read -r -p '!! Do you want to overwrite? [y/n] ' input
       fi
       case $input in
-        [Yy]) debug 'INFO' 'Y or y pressed to confirm'; debug 'BREAK'; break;;
+        [Yy]) debug 'WARNING' 'Overwrite confirmed by user'; break;;
         [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
         *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"; debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
       esac
     done
-
-    if test -f "$IMG_FILE"; then
-      debug 'WARNING' "$IMG_FILE ALREADY EXISTS!"
-      echo -e "${Yellow}!! ${Red}WARNING!!! WARNING!!! WARNING!!!"
-      echo -e "${Yellow}!! ${Green}$IMG_FILE"
-      echo -e "${Yellow}!! FILE ALREADY EXISTS!!!"
-      debug 'WARNING' 'Do you want to overwrite? [y/n]'
-      while true; do
-        if [ "$COLORS" = true ]; then
-          read -r -p $'\e[0;37m## \e[0;97mDo you want to overwrite? \e[0;92m[y/n] \e[0m' input
-        else
-          read -r -p '## Do you want to overwrite? [y/n] ' input
-        fi
-        case $input in
-          [Yy]) debug 'WARNING' 'Overwrite confirmed by user'; break;;
-          [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
-          *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"; debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
-        esac
-      done
-    fi
-  else
-    echo -e "${Purple}${BREAK}${IWhite}"
   fi
 
   # Delete existing file if user validation above passed
@@ -1813,7 +1883,7 @@ function make_img() {
   debug 'INFO' 'Using parted to recreate root partition'
 
   # Converting
-  if [ "$F2FS_CONVERSION" = true ]; then
+  if [ "$F2FS_CONVERSION" == true ]; then
     debug 'INFO' "Running function: do_conversion 'create_partition'"
     do_conversion 'create_partition'
 
@@ -1854,7 +1924,7 @@ function make_img() {
   debug 'DEBUG' "LABEL=$LABEL | UUID=$UUID"
 
   # Converting
-  if [ "$F2FS_CONVERSION" = true ]; then
+  if [ "$F2FS_CONVERSION" == true ]; then
     debug 'INFO' "Running function: do_conversion 'format_filesystem'"
     do_conversion 'format_filesystem'
 
@@ -1945,13 +2015,13 @@ function make_img() {
   do_rsync
 
   # Edit config files for conversion
-  if [ "$F2FS_CONVERSION" = true ]; then
+  if [ "$F2FS_CONVERSION" == true ]; then
     debug 'INFO' "Running function: do_conversion 'edit_configs'"
     do_conversion 'edit_configs'
   fi
 
   # Final check of created img file
-  if [ "$FSTYPE" == 'ext4' ] && [ "$F2FS_CONVERSION" = false ]; then
+  if [ "$FSTYPE" == 'ext4' ] && [ "$F2FS_CONVERSION" == false ]; then
     debug 'INFO' "Running function: do_e2fsck 'final'"
     do_e2fsck 'final'
   fi
@@ -1981,7 +2051,7 @@ function update_img() {
   img_variables
 
   # Check if resizing should be performed
-  if [ "$AUTORESIZE_RUN" = true ]; then
+  if [ "$AUTORESIZE_RUN" == true ]; then
     debug 'DEBUG' "Running: fdisk --bytes -lo device,size "$LOOP" | grep "$IMG_DEV_ROOT_PATH" | awk '{print \$2}'"
     IMG_ROOT_SIZE=$(fdisk --bytes -lo device,size "$LOOP" | grep "$IMG_DEV_ROOT_PATH" | awk '{print $2}' )
     diff=$(( (LOCAL_AUTORESIZE_MIN - IMG_ROOT_SIZE) / 1024 / 1024 ))
@@ -2011,104 +2081,10 @@ function update_img() {
     debug 'DEBUG' "TRUNCATE_TOTAL=${TRUNCATE_TOTAL} bytes"
   fi
 
-  # Display information
-  echo -e "${Purple}${BREAK}"
-  if [ "$PROMPTS" = false ]; then
-    debug 'INFO' '-y selected by user. prompts are disabled'
-    echo -e "# ${Yellow}DISABLE PROMPTS SELECTED (${Green}-y${Yellow}), NO WARNINGS ABOUT DELETION!!! ${Purple}$(printf "%+$(( COLS - 63 ))s" '#')"
-  fi
-  #echo -e "# ${IWhite}Updating ${Green}$IMG_FILE ${Purple}$(printf "%+$(( COLS - 11 - $(echo ${IMG_FILE} | wc -m ) ))s" '#')"
-  echo -e "# ${IWhite}Updating backup img: ${Purple}$(printf "%+$(( COLS - 23 ))s" '#')"
-  echo -e "# ${Green}$IMG_FILE ${Purple}$(printf "%+$(( COLS - 2 - $(echo ${IMG_FILE} | wc -m ) ))s" '#')"
-  echo -e "# ${Green}$FSTYPE ${IWhite}filesystem detected on root ${Purple}$(printf "%+$(( COLS - 30 - $(echo ${FSTYPE} | wc -m ) ))s" '#')"
-  if [ "$RSYNC_DELETE" != '--delete' ]; then
-    echo -e "# ${Green}--fix ${IWhite}option selected, ${Green}rsync using --delete-before & --fsync options${Purple}$(printf "%+$(( COLS - 70 ))s" '#')"
-  fi
-  if [ "$FSTYPE" == 'btrfs' ]; then
-    echo -e "# ${Green}${#LOCAL_TOP_SUBVOLUMES[@]} ${IWhite}btrfs top volumes will be included ${Purple}$(printf "%+$(( COLS - 37 - $(echo ${#LOCAL_TOP_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
-    echo -e "${Purple}# ${IWhite}btrfs top volumes: ${Green}${LOCAL_TOP_SUBVOLUMES[@]} ${Purple}$(printf "%+$(( COLS - 21 - $(echo ${LOCAL_TOP_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
-    echo -e "# ${Green}${#LOCAL_NESTED_SUBVOLUMES[@]} ${IWhite}btrfs nested volumes will be included ${Purple}$(printf "%+$(( COLS - 40 - $(echo ${#LOCAL_NESTED_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
-    echo -e "${Purple}# ${IWhite}btrfs nested volumes: ${Green}${LOCAL_NESTED_SUBVOLUMES[@]} ${Purple}$(printf "%+$(( COLS - 24 - $(echo ${LOCAL_NESTED_SUBVOLUMES[@]} | wc -m ) ))s" '#')"
-  elif [ "$FSTYPE" == 'f2fs' ]; then
-    echo -e "# ${Yellow}Autoexpand filesystem at boot not available for ${Green}f2fs ${Purple}$(printf "%+$(( COLS - 54 ))s" '#')"
-    echo -e "# ${Yellow}Resize operations not available for ${Green}f2fs ${Purple}$(printf "%+$(( COLS - 43 ))s" '#')"
-  fi
-  if [ "$RSYNC_DELETE" = '--delete-before' ]; then
-    echo -e "# ${Green}--fix ${IWhite}option selected, rsync will delete files on img before copy ${Purple}$(printf "%+$(( COLS - 68 ))s" '#')"
-    debug 'DEBUG' '--fix selected by user, rsync deleting files before copy'
-  fi
-  if [ "$RSYNC_CUSTOM" = true ]; then
-    echo -e "# ${IWhite}Custom rsync line: ${Purple}$(printf "%+$(( COLS - 21 ))s" '#')"
-    echo -e "  ${Green}$RSYNC_CUSTOM_LINE"
-  fi
-  echo -e "${Purple}# $(printf %$(( COLS - 4 ))s | tr ' ' '-') #"
-  echo -e "# ${IWhite}Write to logfile:              ${Green}$DEBUG ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${DEBUG} | wc -m ) ))s" '#')"
-  echo -e "# ${IWhite}Zoom speed requested:          ${Green}$ZOOM ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${ZOOM} | wc -m ) ))s" '#')"
-  echo -e "# ${IWhite}rsync tty output:              ${Green}$RSYNC_TTY ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${RSYNC_TTY} | wc -m ) ))s" '#')"
-  echo -e "# ${IWhite}Autocalculate img root size:   ${Green}$AUTORESIZE_RUN ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${AUTORESIZE_RUN} | wc -m ) ))s" '#')"
-  echo -e "# ${IWhite}Autoexpand filesystem at boot: ${Green}$AUTOEXPAND ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${AUTOEXPAND} | wc -m ) ))s" '#')"
-  echo -e "# ${IWhite}Use exclude.txt:               ${Green}$EXCLUDE_FILE ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${EXCLUDE_FILE} | wc -m ) ))s" '#')"
-  echo -e "# ${IWhite}Boot partition:                ${Green}$BOOT_PARTITION ${Purple}$(printf "%+$(( COLS - 33 - $(echo ${BOOT_PARTITION} | wc -m ) ))s" '#')"
-  print_temp="$(( LOCAL_BOOTSECTOR / 1024 / 1024 ))"
-  echo -e "# ${IWhite}Bootsector size:               ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
-  if [ "$AUTORESIZE_RUN" = true ]; then
-    print_temp="$(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))"
-    echo -e "# ${IWhite}Auto calculated root size:     ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
-    print_temp="$(( IMG_SIZE / 1024 / 1024 ))"
-    echo -e "# ${IWhite}Old img size:                  ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
-    print_temp="$(( TRUNCATE_TOTAL / 1024 / 1024 ))"
-    echo -e "# ${IWhite}New img size:                  ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
-    if [ -z "$diff_small" ]; then
-      echo -e "# ${IWhite}Difference:                   ${Green}$DIFFERENCE ${Purple}$(printf "%+$(( COLS - 32 - $(echo ${DIFFERENCE} | wc -m ) ))s" '#')"
-    else
-      echo -e "# ${IWhite}Difference: ${Green}$DIFFERENCE ${Purple}$(printf "%+$(( COLS - 14 - $(echo ${DIFFERENCE} | wc -m ) ))s" '#')"
-    fi
-  elif [ "$ADDED_SPACE" -ne 0 ]; then
-    print_temp="$(( $(df / -k --sync --output=used | tail -1) / 1024 ))"
-    echo -e "# ${IWhite}Estimated root usage:          ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
-    print_temp="$(( ADDED_SPACE / 1024 / 1024 ))"
-    echo -e "# ${IWhite}Added [extra space]:           ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
-    print_temp="$(( IMG_SIZE / 1024 / 1024 ))"
-    echo -e "# ${IWhite}Old img size:                  ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
-    print_temp="$(( TRUNCATE_TOTAL / 1024 / 1024 ))"
-    echo -e "# ${IWhite}New img size:                  ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
-  else
-    print_temp="$(( $(df / -k --sync --output=used | tail -1) / 1024 ))"
-    echo -e "# ${IWhite}Estimated root usage:          ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
-    print_temp="$(( IMG_SIZE / 1024 / 1024 ))"
-    echo -e "# ${IWhite}Total img size:                ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${print_temp} | wc -m ) ))s" '#')"
-  fi
-  echo -e "${Purple}${BREAK}${IWhite}"
-
-  # Disabled prompts
-  if [ "$PROMPTS" = false ] && [ "$ZOOM" = false ]; then
-    echo -e "${Red}!! PRESS CTRL+C WITHIN 5s TO CANCEL !! $(printf "%+$(( COLS - 39 ))s" '#')"
-    echo -e "${Red}${BREAK}"
-    sleep 6
-    debug 'INFO' '6 seconds passed, user did not stop operation'
-    debug 'BREAK'
-
-  # Confirm with user input
-  elif [ "$PROMPTS" = true ]; then
-    debug 'INFO' 'Do you want to continue? [y/n]'
-    while true; do
-      if [ "$COLORS" = true ]; then
-        read -r -p $'\e[0;37m## \e[0;97mDo you want to continue? \e[0;92m[y/n] \e[0m' input
-      else
-        read -r -p '## Do you want to continue? [y/n] ' input
-      fi
-      case $input in
-        [Yy]) break;;
-        [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
-        *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"; debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
-      esac
-    done
-    debug 'INFO' 'Y or y pressed to confirm'
-    debug 'BREAK'
-  fi
+  print_confirmation
 
   # Resize if needed
-  if [ "$AUTORESIZE_RUN" = true ]; then
+  if [ "$AUTORESIZE_RUN" == true ]; then
     # Expanding
     if [ "$RESIZE_FUNCTION" == 'expand' ]; then
       debug 'INFO' "Running function: do_resize 'expand'"
@@ -2258,8 +2234,13 @@ EOF2
   debug 'DEBUG' 'Making expand-fs.sh executable'
   chmod +x ${TMP_DIR}/expand-fs.sh
 
-  echo -e "${White}## ${Green}Raspberry pi filesystem autoresizing at boot..."
-  debug 'INFO' 'Raspberry pi filesystem autoresizing at boot'
+  if [ "$OS" == 'dietpi' ]; then
+    echo -e "${White}## ${Green}DietPi filesystem autoresizing at boot..."
+    debug 'INFO' 'DietPi filesystem autoresizing at boot'
+  else
+    echo -e "${White}## ${Green}Raspberry pi filesystem autoresizing at boot..."
+    debug 'INFO' 'Raspberry pi filesystem autoresizing at boot'
+  fi
   $SLEEPING
 return 0
 }
@@ -2358,9 +2339,9 @@ function print_result() {
   echo -e "# ${IWhite}Estimated root usage: ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 27 - $(echo ${print_temp} | wc -m ) ))s" '#')"
 
   # New backup
-  if [ "$UPDATE" = false ]; then
+  if [ "$UPDATE" == false ]; then
     debug 'INFO' 'Img file created'
-    if [ "$AUTORESIZE_RUN" = true ]; then
+    if [ "$AUTORESIZE_RUN" == true ]; then
       print_temp="$(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))"
       echo -e "# ${IWhite}Image size: ${Green}${AFTER_SIZE}MiB ${IWhite}with a ${Green}root partition ${IWhite}of ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 45 - $(echo ${AFTER_SIZE} | wc -m ) - $(echo ${print_temp} | wc -m ) ))s" '#')"
       debug 'DEBUG' "$IMG_FILE is ${AFTER_SIZE}MiB with a root partition of $(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))MiB"
@@ -2383,8 +2364,12 @@ function print_result() {
     echo -e "# ${IWhite}Image size: ${Green}${AFTER_SIZE}MiB ${IWhite}with a ${Green}root partition ${IWhite}of ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 45 - $(echo ${AFTER_SIZE} | wc -m ) - $(echo ${print_temp} | wc -m ) ))s" '#')"
     debug 'INFO' "$IMG_FILE is ${AFTER_SIZE}MiB"
   fi
-  if [ "$AUTOEXPAND" = true ] && [ "$OS" != 'armbian' ] && [ "$OS" != 'kali' ] && [ "$OS" != 'ubuntu' ]; then
+
+  if [ "$AUTOEXPAND" == true ] && [ "$OS" != 'armbian' ] && [ "$OS" != 'kali' ] && [ "$OS" != 'ubuntu' ]; then
     echo -e "# ${Yellow}Please wait for the system to reboot after restoring an image with autoexpansion ${Purple}$(printf "%+$(( COLS - 83 ))s" '#')"
+  fi
+  if [ "$F2FS_CONVERSION" == true ]; then
+    echo -e "# ${Green}Filesystem converted to f2fs on img ${Purple}$(printf "%+$(( COLS - 38 ))s" '#')"
   fi
   echo -e "${Purple}${BREAK}"
   debug 'INFO' 'Backup done'
@@ -2395,11 +2380,12 @@ return 0
 
 
 # Check if debugging is requested
-if [ "$DEBUG" = true ]; then
+if [ "$DEBUG" == true ]; then
   echo -e "${White}## ${IWhite}Debugging requested, writing to log file: ${Green}$LOG_FILE"
   debug 'INFO' "Debugging requested, writing to log file $LOG_FILE"
 fi
 
+debug 'INFO' "Version=$VERSION"
 debug 'INFO' "Script started with: $STARTLINE"
 
 # Make sure absolute path is used on img file
@@ -2412,7 +2398,7 @@ elif [[ "$IMG_FILE" =~ ^[.] ]]; then
 fi
 
 # Set zoom type
-if [ "$ZOOM" = false ]; then
+if [ "$ZOOM" == false ]; then
   SLEEPING='sleep 1'
   echo -e "${White}## ${IWhite}Zoom speed NOT requested..."
   debug 'INFO' "Zoom speed NOT requested, setting SLEEPING=$SLEEPING | ZOOM=$ZOOM"
@@ -2424,14 +2410,14 @@ else
 fi
 
 # Check if the image file has the correct extension
-if [ "$LOOPRUN" = false ] && [[ "$IMG_FILE" != *.img ]]; then
+if [ "$LOOPRUN" == false ] && [[ "$IMG_FILE" != *.img ]]; then
   echo -e "${Red}!! ERROR! ${Yellow}File must have ${Green}.img ${Yellow}extension"
   debug 'ERROR' 'File must have .img extension, exit 1'
   exit 1
 fi
 
 # Setting ADDED_SPACE to 0 if AUTORESIZE_RUN option is enabled
-if [ "$AUTORESIZE_RUN" = true ] && [ "$LOOPRUN" = false ]; then
+if [ "$AUTORESIZE_RUN" == true ] && [ "$LOOPRUN" == false ]; then
   if [ -n "$ADDED_SPACE" ]; then
     echo -e "${Yellow}!! ${Green}-a ${Yellow}used in combination with ${Green}[extra space]"
     echo -e "${Yellow}!! ${Green}[extra space] (${ADDED_SPACE}MiB) ${Yellow}is ingored!"
@@ -2442,28 +2428,28 @@ if [ "$AUTORESIZE_RUN" = true ] && [ "$LOOPRUN" = false ]; then
 fi
 
 # Setting ADDED_SPACE to 0 if update is requested and variable ADDED_SPACE is a zero value
-if [ $UPDATE = true ] && [ -z "$ADDED_SPACE" ] && [ "$LOOPRUN" = false ]; then
+if [ $UPDATE == true ] && [ -z "$ADDED_SPACE" ] && [ "$LOOPRUN" == false ]; then
   ADDED_SPACE=0
   debug 'INFO' '-U selected, -a not selected or [extra space] not provided by user, setting ADDED_SPACE to 0 (non-zero value)'
 fi
 
 # Setting ADDED_SPACE to 0 if --loop is selected without providing [extra space]
-if [ "$LOOPRUN" = true ] && [ -z "$ADDED_SPACE" ]; then
+if [ "$LOOPRUN" == true ] && [ -z "$ADDED_SPACE" ]; then
   ADDED_SPACE=0
   debug 'INFO' '--loop selected and [extra space] not provided by user, setting ADDED_SPACE to 0 (non-zero value)'
 fi
 
 # Setting ADDED_SPACE to 0 if --chroot is selected
-if [ "$CHROOTRUN" = true ]; then
+if [ "$CHROOTRUN" == true ]; then
   ADDED_SPACE=0
   debug 'INFO' '--chroot selected, setting ADDED_SPACE to 0 (non-zero value)'
 fi
 
 # Requesting user to input [extra space] if not provided while making new image
-if [ "$UPDATE" = false ] && [ -z "$ADDED_SPACE" ]; then
+if [ "$UPDATE" == false ] && [ -z "$ADDED_SPACE" ]; then
   debug 'INFO' 'New image without -a option and no [extra space] defined by user, requesting user input'
   echo -e "${White}## ${IWhite}New image requested without ${Yellow}-a ${IWhite}option and no provided ${Yellow}[extra space]"
-  if [ "$COLORS" = true ]; then
+  if [ "$COLORS" == true ]; then
     read -r -p $'\e[0;37m## \e[0;97mPlease input requested \e[0;92m[extra space] in MiB \e[0;97m(0 is valid): ' ADDED_SPACE
   else
     read -r -p '## Please input requested [extra space] in MiB (0 is valid): ' ADDED_SPACE
@@ -2505,9 +2491,9 @@ if grep -q 'boot' /etc/fstab; then
     debug 'WARNING' 'Boot found in fstab but partition not mounted'
     $SLEEPING
     fstab=($(cat /etc/fstab | grep 'boot'))
-    if [ "$PROMPTS" = true ]; then
+    if [ "$PROMPTS" == true ]; then
       while true; do
-        if [ "$COLORS" = true ]; then
+        if [ "$COLORS" == true ]; then
           debug 'INFO' 'Do you want to mount boot partition?'
           read -r -p $'\e[0;37m## \e[0;97mDo you want to mount boot partition? \e[0;92m[y/n] \e[0m' input
         else
@@ -2534,13 +2520,13 @@ if grep -q 'boot' /etc/fstab; then
 fi
 
 # If --loop is requested, execute looprun function. Will exit script within the function
-if [ "$LOOPRUN" = true ]; then
+if [ "$LOOPRUN" == true ]; then
   debug 'INFO' 'Running function: looprun'
   looprun
 fi
 
 # If --chroot is requested, execute chrootrun function. Will exit script within the function
-if [ "$CHROOTRUN" = true ]; then
+if [ "$CHROOTRUN" == true ]; then
   debug 'INFO' 'Running function: chrootrun'
   chrootrun
 fi
@@ -2562,23 +2548,23 @@ debug 'DEBUG' "LOCAL_DEV_PTUUID=$LOCAL_DEV_PTUUID | LOCAL_DEV_PATH=$LOCAL_DEV_PA
 PARTITION_TABLE=$(parted "$LOCAL_DEV_PATH" print | grep -i 'Partition Table' | awk '{print $3}')
 #PARTITION_TABLE=$(blkid "$LOCAL_DEV_PATH" | sed -n 's|^.*PTTYPE="\(\S\+\)".*|\1|p')
 
-if [ "$FSTYPE" == 'f2fs' ] || [ "$F2FS_CONVERSION" = true ]; then
-  if [ "$FSTYPE" == 'f2fs' ] && [ "$F2FS_CONVERSION" = true ]; then
+if [ "$FSTYPE" == 'f2fs' ] || [ "$F2FS_CONVERSION" == true ]; then
+  if [ "$FSTYPE" == 'f2fs' ] && [ "$F2FS_CONVERSION" == true ]; then
     echo -e "${Red}!! ERROR! ${Green}--f2fs ${Yellow}selected with existing ${Green}f2fs filesystem${Yellow}, conversion not needed"
     echo -e "${Red}!! Run script without ${Green}--f2fs"
     debug 'ERROR' '--f2fs selected with existing f2fs filesystem, conversion not needed, exit 1'
     exit 1
-  elif [ "$F2FS_CONVERSION" = true ] && [ "$UPDATE" = true ]; then
+  elif [ "$F2FS_CONVERSION" == true ] && [ "$UPDATE" == true ]; then
     echo -e "${Red}!! ERROR! ${Green}--f2fs ${Yellow}selected in combination with ${Green}-U${Yellow}, conversion not possible"
     echo -e "${Red}!! ${Yellow}Create new img to enable ${Green}f2fs conversion"
     debug 'ERROR' '--f2fs selected in combination with -U, operation not supported, exit 1'
     exit 1
-  elif [ "$FSTYPE" == 'f2fs' ] && [ "$UPDATE" = true ] && [ "$AUTORESIZE_RUN" = true ]; then
+  elif [ "$FSTYPE" == 'f2fs' ] && [ "$UPDATE" == true ] && [ "$AUTORESIZE_RUN" == true ]; then
     echo -e "${Red}!! ERROR! ${Green}-U ${Yellow}selected in combination with ${Green}-a${Yellow}, operation not supported"
     echo -e "${Red}!! ${Yellow}Only creation of new img backups support ${Green}operations with -a when using f2fs on root"
     debug 'ERROR' '-U selected in combination with -a on f2fs filesystem, operation not supported, exit 1'
     exit 1
-  elif [ "$FSTYPE" == 'f2fs' ] && [ "$UPDATE" = true ] && [ "$ADDED_SPACE" -ne 0 ]; then
+  elif [ "$FSTYPE" == 'f2fs' ] && [ "$UPDATE" == true ] && [ "$ADDED_SPACE" -ne 0 ]; then
     echo -e "${Red}!! ERROR! ${Green}-U ${Yellow}selected in combination with ${Green}[extra space]${Yellow}, operation not supported"
     echo -e "${Red}!! ${Yellow}Only creation of new img backups support ${Green}operations with [extra space] when using f2fs on root"
     debug 'ERROR' '-U selected in combination with [extra space] on f2fs filesystem, operation not supported, exit 1'
@@ -2589,7 +2575,12 @@ if [ "$FSTYPE" == 'f2fs' ] || [ "$F2FS_CONVERSION" = true ]; then
 fi
 
 # Detect OS
-if [ -e /etc/apt/sources.list.d/raspi.list ]; then
+if [ -e /etc/apt/sources.list.d/dietpi.list ]; then
+  echo -e "${White}## ${Green}DietPi detected"
+  OS='dietpi'
+  debug 'INFO' 'DietPi detected'
+  $SLEEPING
+elif [ -e /etc/apt/sources.list.d/raspi.list ] || [ -e /etc/apt/sources.list.d/raspi.sources ]; then
   echo -e "${White}## ${Green}Raspberry pi detected"
   OS='rpi'
   debug 'INFO' 'Raspberry pi detected'
@@ -2627,7 +2618,7 @@ else
 fi
 
 # Enter variables into logfile
-if [ "$DEBUG" = true ]; then
+if [ "$DEBUG" == true ]; then
   debug 'BREAK'
   debug 'DEBUG' "INSTALL_METHOD=$INSTALL_METHOD"
   debug 'DEBUG' "OS=$OS"
@@ -2648,7 +2639,7 @@ if [ "$DEBUG" = true ]; then
 fi
 
 # Check if exclude.txt exists when usage is requested
-if [ "$EXCLUDE_FILE" = true ]; then
+if [ "$EXCLUDE_FILE" == true ]; then
   debug 'INFO' "-t selected by user, using $EXCLUDE_FILE_LOCATION"
   if ! [ -f "$EXCLUDE_FILE_LOCATION" ]; then
     echo -e "${Red}!! ERROR! ${Green}-t selected but ${Yellow}$EXCLUDE_FILE_LOCATION does not exist!"
@@ -2676,10 +2667,11 @@ else
 fi
 
 # Run autoexpansion
-if [ "$AUTOEXPAND" = true ]; then
+if [ "$AUTOEXPAND" == true ]; then
   debug 'INFO' 'Running autoexpand function'
   $SLEEPING
   case "$OS" in
+    dietpi) echo -e "${White}## ${IWhite}Enabling autoexpansion for ${Green}DietPi..."; debug 'INFO' 'Running function: autoexpansion_rpi'; autoexpansion_rpi;;
     rpi) echo -e "${White}## ${IWhite}Enabling autoexpansion for ${Green}Raspberry pi..."; debug 'INFO' 'Running function: autoexpansion_rpi'; autoexpansion_rpi;;
     armbian) echo -e "${White}## ${IWhite}Enabling autoexpansion for ${Green}Armbian..."; debug 'INFO' 'Running function: autoexpansion_armbian'; autoexpansion_armbian;;
     manjaro-arm) echo -e "${White}## ${IWhite}Enabling autoexpansion for ${Green}Manjaro-arm..."; debug 'INFO' 'Running function: autoexpansion_manjaro'; autoexpansion_manjaro;;
@@ -2690,7 +2682,7 @@ if [ "$AUTOEXPAND" = true ]; then
       sed -i 's/^[# ]*- resizefs/  - resizefs/' ${TMP_DIR}/etc/cloud/cloud.cfg;;
     unknown) echo -e "${Yellow}!! No autoexpand option available for this OS!"; debug 'WARNING' 'No autoexpand option available for this OS'; AUTOEXPAND='failed';;
   esac
-elif [ "$AUTOEXPAND" = false ] && [ "$OS" == 'ubuntu' ]; then
+elif [ "$AUTOEXPAND" == false ] && [ "$OS" == 'ubuntu' ]; then
   debug 'INFO' "Disable autoexpansion requested & Ubuntu detected, making sure autoexpansion is disabled in ${TMP_DIR}/etc/cloud/cloud.cfg"
   echo -e "${White}## ${Green}Making sure autoexpansion is disabled in /etc/cloud/cloud.cfg on img"
   $SLEEPING
