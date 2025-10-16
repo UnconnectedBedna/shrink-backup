@@ -26,7 +26,7 @@ Feel free to make a [feature request](https://github.com/UnconnectedBedna/shrink
 
 Full functionality for usage inside [webmin](https://webmin.com/) (including "custom command" button). Thank you to [iliajie](https://github.com/iliajie) for helping out. ❤️
 
-**Latest release:** [shrink-backup v1.4](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v1.3/shrink-backup.v1.4.tar.gz)  
+**Latest release:** [shrink-backup v1.4](https://github.com/UnconnectedBedna/shrink-backup/releases/download/v1.4/shrink-backup.v1.4.tar.gz)  
 [**Testing branch:**](https://github.com/UnconnectedBedna/shrink-backup/tree/testing) If you want to use the absolute latest version. There might be bugs.
 
 **Very fast restore thanks to minimal size of img file.**
