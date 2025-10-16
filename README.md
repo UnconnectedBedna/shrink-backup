@@ -11,7 +11,7 @@ For [`btrfs`](#btrfs), all existing top level 5 subvolumes in `/etc/fstab` will 
 Please read [Info](#info) section for more information.
 
 Autoexpansion tested & supported on following operating systems:
-- Raspberry Pi OS (bookworm and older)
+- Raspberry Pi OS (trixie and older)
 - Armbian
 - Manjaro-arm
 - DietPi
