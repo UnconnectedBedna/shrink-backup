@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # shrink-backup
-# Version 1.4
+# Version 1.5-beta
 # Backup tool for creating and updating .img files (with autoexpansion function) on various linux operating systems
 #
 #    Copyright (c) 2024-present, Marcus Johansson
@@ -185,7 +185,7 @@ function pause() {
 
 # Set default variables
 unset diff_small
-VERSION='1.4'
+VERSION='1.5-beta'
 INSTALL_METHOD='default'
 PROMPTS=true
 DEBUG=false
@@ -240,7 +240,7 @@ fi
 version() {
   echo -e "${Purple}#########################################################################
 #                                                                       #
-# ${Green}shrink-backup version $VERSION                                             ${Purple}#
+# ${Green}shrink-backup version $VERSION                                        ${Purple}#
 #                                                                       #
 # ${IWhite}Copyright (c) 2024-present, Marcus Johansson                          ${Purple}#
 # ${White}https://github.com/UnconnectedBedna/shrink-backup                     ${Purple}#
