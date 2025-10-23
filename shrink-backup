@@ -945,7 +945,7 @@ function print_confirmation() {
   fi
 
   # Check for running docker containers
-  if systemctl is-active -q docker.service && [ $(docker info | grep -i running | cut -d ' ' -f 4) -ne 0 ]; then
+  if systemctl is-active -q docker.service && [ $(docker info 2>/dev/null | grep -i running | cut -d ' ' -f 4) -ne 0 ]; then
     echo -e "# ${Yellow}Running docker containers detected, root size calculation may be inaccurate ${Purple}$(printf "%+$(( COLS - 78 ))s" '#')"
     echo -e "# ${Yellow}Manual intervetion with ${Green}[extra space] ${Yellow}might be required ${Purple}$(printf "%+$(( COLS - 58 ))s" '#')"
     debug 'WARNING' 'Running docker containers detected'
@@ -1004,51 +1004,61 @@ function print_confirmation() {
   if [ "$AUTORESIZE_RUN" == true ]; then
     print_temp="$(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))"
     echo -e "# ${IWhite}Auto calculated root size:      | ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 39 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+    # New img with autocalcuation
     if [ "$UPDATE" == false ]; then
       print_temp="$(( TRUNCATE_TOTAL / 1024 / 1024 ))"
-      echo -e "# ${IWhite}Total img size:                 | ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 40 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+      echo -e "# ${IWhite}Total img size:                 | ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 39 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+    # Update img with autocalcuation
     else
       print_temp="$(( IMG_SIZE / 1024 / 1024 ))"
       echo -e "# ${IWhite}Old img size:                   | ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 39 - $(echo ${print_temp} | wc -m ) ))s" '#')"
       print_temp="$(( TRUNCATE_TOTAL / 1024 / 1024 ))"
       echo -e "# ${IWhite}New img size:                   | ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 39 - $(echo ${print_temp} | wc -m ) ))s" '#')"
       if [ -z "$diff_small" ]; then
-        echo -e "# ${IWhite}Difference:                     | ${Green}$DIFFERENCE ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${DIFFERENCE} | wc -m ) ))s" '#')"
+        echo -e "# ${IWhite}Difference: ${Green}$DIFFERENCE ${Purple}$(printf "%+$(( COLS - 14 - $(echo ${DIFFERENCE} | wc -m ) ))s" '#')"
       else
-        echo -e "# ${IWhite}Difference:                     | ${Green}$DIFFERENCE ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${DIFFERENCE} | wc -m ) ))s" '#')"
+        echo -e "# ${IWhite}Difference: ${Green}$DIFFERENCE ${Purple}$(printf "%+$(( COLS - 14 - $(echo ${DIFFERENCE} | wc -m ) ))s" '#')"
       fi
     fi
 
+  # New img without autocalculation
   elif [ "$UPDATE" == false ] && [ "$AUTORESIZE_RUN" == false ]; then
     print_temp="$(( TRUNCATE_TOTAL / 1024 / 1024 ))"
     print_temp2="$(( ADDED_SPACE / 1024 / 1024 ))"
-    echo -e "# ${IWhite}Total img size:                 | ${Green}${print_temp}MiB ${IWhite}with ${Green}${print_temp2}MiB [extra space] ${IWhite}included ${Purple}$(printf "%+$(( COLS - 72 - $(echo ${print_temp} | wc -m ) - $(echo ${print_temp2} | wc -m ) ))s" '#')"
+    echo -e "# ${IWhite}Total img size:                 | ${Green}${print_temp}MiB ${IWhite}with ${Green}${print_temp2}MiB [extra space] ${IWhite}included ${Purple}$(printf "%+$(( COLS - 70 - $(echo ${print_temp} | wc -m ) - $(echo ${print_temp2} | wc -m ) ))s" '#')"
+    # [extra space] smaller than autocalculated size
     if [ "$AUTORESIZE_WARNING" == true ]; then
       echo -e "${Purple}# $(printf %$(( COLS - 4 ))s | tr ' ' '-') #"
       echo -e "# ${Yellow}!!WARNING!! Manually added space is smaller than calculated recommended minimum ${Purple}$(printf "%+$(( COLS - 82 ))s" '#')"
-      echo -e "# This does NOT mean the backup WILL fail, but CAN fail due to lack of space ${Purple}$(printf "%+$(( COLS - 77 ))s" '#')"
-      echo -e "# Consider using the -a option or manually adding more space ${Purple}$(printf "%+$(( COLS - 61 ))s" '#')"
+      echo -e "# ${IWhite}This does NOT mean the backup WILL fail, but CAN fail due to lack of space ${Purple}$(printf "%+$(( COLS - 77 ))s" '#')"
+      echo -e "# ${IWhite}Consider using the ${Green}-a option ${IWhite}or manually adding more ${Green}[extra space] ${Purple}$(printf "%+$(( COLS - 69 ))s" '#')"
       print_temp="$(( LOCAL_AUTORESIZE_MIN / 1024 / 1024 ))"
-      echo -e "# ${IWhite}Calculated recommended minimum: | ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 40 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+      echo -e "# ${IWhite}Calculated recommended minimum: | ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 39 - $(echo ${print_temp} | wc -m ) ))s" '#')"
       print_temp="$(( TOTAL / 1024 / 1024 ))"
-      echo -e "# ${IWhite}Requested root size:            | ${Yellow}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 40 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+      echo -e "# ${IWhite}Requested root size:            | ${Yellow}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 39 - $(echo ${print_temp} | wc -m ) ))s" '#')"
     fi
 
+  # Update img without autocalcuation, or user manually set [extra space] to 0
   elif [ "$UPDATE" == true ] && [ "$ADDED_SPACE" -eq 0 ]; then
     print_temp="$(( IMG_SIZE / 1024 / 1024 ))"
-    echo -e "# ${IWhite}Total img size:                 | ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 40 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+    echo -e "# ${IWhite}Total img size:                 | ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 39 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+
+  # Update img, user manually set [extra space] to >0
   elif [ "$UPDATE" == true ] && [ "$ADDED_SPACE" -ne 0 ]; then
     print_temp="$(( ADDED_SPACE / 1024 / 1024 ))"
-    echo -e "# ${IWhite}Added [extra space]:            | ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 40 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+    echo -e "# ${IWhite}Added [extra space]:            | ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 39 - $(echo ${print_temp} | wc -m ) ))s" '#')"
     print_temp="$(( IMG_SIZE / 1024 / 1024 ))"
-    echo -e "# ${IWhite}Old img size:                   | ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 40 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+    echo -e "# ${IWhite}Old img size:                   | ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 39 - $(echo ${print_temp} | wc -m ) ))s" '#')"
     print_temp="$(( TRUNCATE_TOTAL / 1024 / 1024 ))"
-    echo -e "# ${IWhite}New img size:                   | ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 40 - $(echo ${print_temp} | wc -m ) ))s" '#')"
+    echo -e "# ${IWhite}New img size:                   | ${Green}${print_temp}MiB ${Purple}$(printf "%+$(( COLS - 39 - $(echo ${print_temp} | wc -m ) ))s" '#')"
   fi
 
   # Disabled prompts
   if [ "$PROMPTS" == false ] && [ "$ZOOM" == false ]; then
-    echo -e "${Red}# !! PRESS CTRL+C WITHIN 5s TO CANCEL !! $(printf "%+$(( COLS - 41 ))s" '#')"
+    echo -e "${Red}${BREAK}"
+    echo -e "# $(printf "%+$(( COLS - 2 ))s" '#')"
+    echo -e "# !! PRESS CTRL+C WITHIN 5s TO CANCEL !! $(printf "%+$(( COLS - 41 ))s" '#')"
+    echo -e "# $(printf "%+$(( COLS - 2 ))s" '#')"
     echo -e "${BREAK}"
     i=5
     while [ "$i" -gt 0 ]; do
