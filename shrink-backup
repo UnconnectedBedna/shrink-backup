@@ -933,10 +933,22 @@ function print_confirmation() {
   echo -e "# ${Green}$IMG_FILE ${Purple}$(printf "%+$(( COLS - 2 - $(echo ${IMG_FILE} | wc -m ) ))s" '#')"
   echo -e "# ${Green}$FSTYPE ${IWhite}filesystem detected on root ${Purple}$(printf "%+$(( COLS - 30 - $(echo ${FSTYPE} | wc -m ) ))s" '#')"
 
-  if [ "$RSYNC_DELETE" != '--delete' ] && [ "$UPDATE" == false ]; then
+  if [ "$UPDATE" == false ] && [ "$RSYNC_DELETE" == '--delete-before' ]; then
     echo -e "# ${Green}--fix ${IWhite}option selected, ${Green}rsync using --fsync option${Purple}$(printf "%+$(( COLS - 51 ))s" '#')"
-  elif [ "$RSYNC_DELETE" != '--delete' ] && [ "$UPDATE" == true ]; then
+    debug 'DEBUG' '--fix selected by user, using rsync with --fsync option'
+  elif [ "$UPDATE" == true ] && [ "$RSYNC_DELETE" == '--delete-before' ]; then
     echo -e "# ${Green}--fix ${IWhite}option selected, ${Green}rsync using --delete-before & --fsync options${Purple}$(printf "%+$(( COLS - 70 ))s" '#')"
+    debug 'DEBUG' '--fix selected by user, rsync deleting files before copy & using --fsync option'
+  elif [ "$UPDATE" == true ] && [ "$RSYNC_DELETE" == '--delete-before' ]; then
+    echo -e "# ${Green}--fix ${IWhite}option selected, rsync will delete files on img before copy ${Purple}$(printf "%+$(( COLS - 68 ))s" '#')"
+    debug 'DEBUG' '--fix selected by user, rsync deleting files before copy & using --fsync option'
+  fi
+
+  # Check for running docker containers
+  if systemctl is-active -q docker.service && [ $(docker info | grep -i running | cut -d ' ' -f 4) -ne 0 ]; then
+    echo -e "# ${Yellow}Running docker containers detected, root size calculation may be inaccurate ${Purple}$(printf "%+$(( COLS - 78 ))s" '#')"
+    echo -e "# ${Yellow}Manual intervetion with ${Green}[extra space] ${Yellow}might be required ${Purple}$(printf "%+$(( COLS - 58 ))s" '#')"
+    debug 'WARNING' 'Running docker containers detected'
   fi
 
   if [ "$FSTYPE" == 'btrfs' ]; then
@@ -953,11 +965,6 @@ function print_confirmation() {
   elif [ "$F2FS_CONVERSION" == true ]; then
     echo -e "# ${Yellow}Converting filesystem into ${Green}f2fs ${Yellow}on img file ${Purple}$(printf "%+$(( COLS - 46 ))s" '#')"
     echo -e "# ${Yellow}Autoexpand filesystem at boot not available for ${Green}f2fs ${Purple}$(printf "%+$(( COLS - 55 ))s" '#')"
-  fi
-
-  if [ "$UPDATE" == true ] && [ "$RSYNC_DELETE" == '--delete-before' ]; then
-    echo -e "# ${Green}--fix ${IWhite}option selected, rsync will delete files on img before copy ${Purple}$(printf "%+$(( COLS - 68 ))s" '#')"
-    debug 'DEBUG' '--fix selected by user, rsync deleting files before copy'
   fi
 
   if [ "$RSYNC_CUSTOM" == true ]; then
