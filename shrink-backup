@@ -238,9 +238,9 @@ fi
 
 # Print version and exit
 version() {
-  echo -e "${Purple}#########################################################################
+echo -e "${Purple}#########################################################################
 #                                                                       #
-# ${Green}shrink-backup version $VERSION                                        ${Purple}#
+# ${Green}shrink-backup version $VERSION ${Purple}$(printf "%+$(( 49 - $(echo ${VERSION} | wc -m ) ))s" '#')
 #                                                                       #
 # ${IWhite}Copyright (c) 2024-present, Marcus Johansson                          ${Purple}#
 # ${White}https://github.com/UnconnectedBedna/shrink-backup                     ${Purple}#
@@ -358,12 +358,12 @@ while [ "$#" -gt 0 ]; do
   fi
 done
 
-# Set width
+# Set TUI width
 COLS=85
-if [ $(echo "$IMG_FILE" | wc -m) -gt $(( COLS - 19 )) ]; then
+if [ $(echo "$IMG_FILE" | wc -m) -ge $(( COLS - 20 )) ]; then
   COLS=$(( $(echo "$IMG_FILE" | wc -m) + 20 ))
 fi
-if [ -t 0 ] && [ $(tput cols) -lt "$COLS" ]; then # tput will fail in webmin
+if [ -t 0 ] && [ $(tput cols) -lt "$COLS" ]; then # tput will fail in webmin hence [ -t 0 ], $COLUMNS could also be used instead of tput
   COLS=$(tput cols)
 fi
 BREAK="$(printf %${COLS}s | tr ' ' '#')"
