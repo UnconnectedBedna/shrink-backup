@@ -182,7 +182,7 @@ To remove the loop: `sudo losetup -d /dev/loop0`, (use correct `loop` it got ass
 To remind yourself: `lsblk /dev/loop*` (if you forgot what `loop` it got assigned to)
 <br>
 <br>
-#### --chroot
+#### `--chroot`
 Use `systemd-nspawn` to chroot into an img created from the system you are currently running.  
 Works on all supported filesystems but you have to run the command on the system you created the img from, the script looks at the system you are running to create mountpoint(s) and chroot into.  
 A dependency check will be made and if you lack any of the packages needed the script will ask if you want to install them.  
