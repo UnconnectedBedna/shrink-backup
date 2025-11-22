@@ -58,8 +58,10 @@ function cleanup() {
       0) debug 'DEBUG' 'Cleanup function called with exit 0';;
       4) debug 'WARNING' 'Script aborted by user, cleanup exit 4';;
       5) debug 'ERROR' 'Script failed during rsync, cleanup exit 5';;
-      10) echo -e "\n${Yellow}!! Script aborted by user with ctrl+c..."; debug 'WARNING' 'Script stopped by user with ctrl+c, cleanup exit 10';;
-      *) echo -e "${Yellow}!! Cleanup function called with non-zero exit code, something went wrong!!!"; debug 'ERROR' "Cleanup function called with non zero exit code: exit $exit_code";;
+      10) echo -e "\n${Yellow}!! Script aborted by user with ctrl+c..."
+        debug 'WARNING' 'Script stopped by user with ctrl+c, cleanup exit 10';;
+      *) echo -e "${Yellow}!! Cleanup function called with non-zero exit code, something went wrong!!!"
+        debug 'ERROR' "Cleanup function called with non zero exit code: exit $exit_code";;
     esac
 
     echo -e "${White}## ${IWhite}Exiting and cleaning up..."
@@ -87,7 +89,8 @@ function cleanup() {
       # Non-root subvolumes
       for subvol in "${LOCAL_TOP_SUBVOLUMES[@]}"; do
         if grep -q "$subvol" /etc/fstab && [[ "$subvol" != '@' ]]; then
-          path=$(cat /etc/fstab | grep "$subvol" | awk '{print $2}')
+          #path=$(cat /etc/fstab | grep "$subvol" | awk '{print $2}')
+          path=$(grep "$subvol" /etc/fstab | awk '{print $2}')
           if [ -n "$TMP_DIR" ] && grep -qs "${TMP_DIR}${path} " /proc/mounts; then
             while true; do
               if ! umount "${TMP_DIR}${path}" && grep -qs "${TMP_DIR}${path} " /proc/mounts; then
@@ -213,7 +216,7 @@ F2FS_CONVERSION=false
 BTRFS_CONVERSION=false
 #STARTLINE="$0 $*" # will produce double // if script is in $PATH
 STARTLINE="$(dirname $0)/$(basename $0) $*" # will produce absolute path if script is in $PATH
-#STARTLINE="$(realpath $0) $*" # same as bove, but will ALWYAS produce absolute path
+#STARTLINE="$(realpath $0) $*" # same as bove, but will ALWAYS produce absolute path
 
 # If no TTY is available (for example running custom command in webmin)
 if [ -t 0 ]; then
@@ -394,7 +397,8 @@ function looprun() {
         case $input in
           [Yy]) break;;
           [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
-          *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"; debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
+          *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"
+            debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
         esac
       done
       debug 'INFO' 'Y or y pressed to confirm'
@@ -491,7 +495,8 @@ function chrootrun() {
     if grep -q 'boot' $TMP_DIR/etc/fstab; then
       (( count -- ))
       debug 'INFO' 'Boot partition found in fstab, mounting img boot partition'
-      fstab=($(cat "$TMP_DIR"/etc/fstab | grep 'boot'))
+      #fstab=($(cat "$TMP_DIR"/etc/fstab | grep 'boot'))
+      fstab=($(grep 'boot' "$TMP_DIR"/etc/fstab))
       echo -e "${White}## ${IWhite}Mounting img ${Green}${fstab[1]} ${IWhite}from fstab"
       $SLEEPING
       debug 'DEBUG' "Running: mount -o ${fstab[3]} ${LSBLK_PARTITIONS[$count]} ${TMP_DIR}${fstab[1]}"
@@ -518,7 +523,8 @@ function chrootrun() {
     fi
 
     # Remount with flags from fstab
-    fstab=($(cat "$TMP_DIR"/etc/fstab | grep ' / '))
+    #fstab=($(cat "$TMP_DIR"/etc/fstab | grep ' / '))
+    fstab=($(grep ' / ' "$TMP_DIR"/etc/fstab))
     echo -e "${White}## ${IWhite}Remounting img ${Green}@ ${IWhite}subvolume with flags from fstab"
     $SLEEPING
     debug 'INFO' 'Remounting img @ subvolume with flags from fstab'
@@ -531,7 +537,8 @@ function chrootrun() {
     fi
 
     # Assumes boot exists and is on first partition
-    fstab=($(cat "$TMP_DIR"/etc/fstab | grep 'boot'))
+    #fstab=($(cat "$TMP_DIR"/etc/fstab | grep 'boot'))
+    fstab=($(grep 'boot' "$TMP_DIR"/etc/fstab))
     debug 'INFO' 'Mounting img boot partition'
     echo -e "${White}## ${IWhite}Mounting img ${Green}${fstab[1]} ${IWhite}from fstab"
     $SLEEPING
@@ -561,7 +568,8 @@ function chrootrun() {
     # Mount remaining subvolumes
     debug 'INFO' 'Mounting remaining subvolumes'
     for subvol in ${IMG_SUBVOLUMES[@]}; do
-      fstab=($(cat "$TMP_DIR"/etc/fstab | grep "$subvol"))
+      #fstab=($(cat "$TMP_DIR"/etc/fstab | grep "$subvol"))
+      fstab=($(grep "$subvol" "$TMP_DIR"/etc/fstab))
       echo -e "${White}## ${IWhite}Mounting img ${Green}${fstab[1]} ${IWhite}from fstab"
       $SLEEPING
       debug 'DEBUG' "Running: mount -o ${fstab[3]} ${LSBLK_PARTITIONS[2]} ${TMP_DIR}${fstab[1]}"
@@ -720,7 +728,8 @@ function btrfs_variables() {
   debug 'INFO' 'Filtering out top level 5 subvolumes not existing in fstab'
   for i in ${!LOCAL_TOP_SUBVOLUMES[@]}; do
     subvol=${LOCAL_TOP_SUBVOLUMES[i]}
-    if $(echo $subvol | grep -q -v -f /etc/fstab); then
+    #if $(echo $subvol | grep -q -v -f /etc/fstab); then
+    if $(grep -qv "$subvol" /etc/fstab); then
       debug 'DEBUG' "Filtering out subvolume: $subvol"
       unset LOCAL_TOP_SUBVOLUMES[i]
     fi
@@ -732,9 +741,12 @@ function btrfs_variables() {
     debug 'INFO' 'Filtering out top level 5 subvolumes to exclude from exclude_btrfs.txt or shrink-backup_btrfs.conf'
     for i in ${!LOCAL_TOP_SUBVOLUMES[@]}; do
       subvol=${LOCAL_TOP_SUBVOLUMES[i]}
-      if $(echo $subvol | grep -q -f "$EXCLUDE_FILE_LOCATION_BTRFS"); then
-        SUBVOLUME_EXCLUDE_PATHS+=( $(cat /etc/fstab | grep $subvol | awk 'print $2') )
-        debug 'DEBUG' "Adding $(cat /etc/fstab | grep $subvol | awk 'print $2') to SUBVOLUME_EXCLUDE_PATHS"
+      #if $(echo $subvol | grep -q -f "$EXCLUDE_FILE_LOCATION_BTRFS"); then
+      if $(grep -q "$subvol" "$EXCLUDE_FILE_LOCATION_BTRFS"); then
+        #SUBVOLUME_EXCLUDE_PATHS+=( $(cat /etc/fstab | grep $subvol | awk 'print $2') )
+        SUBVOLUME_EXCLUDE_PATHS+=($(grep "$subvol" /etc/fstab | awk 'print $2'))
+        #debug 'DEBUG' "Adding $(cat /etc/fstab | grep $subvol | awk 'print $2') to SUBVOLUME_EXCLUDE_PATHS"
+        debug 'DEBUG' "Adding $(grep $subvol /etc/fstab | awk 'print $2') to SUBVOLUME_EXCLUDE_PATHS"
         debug 'DEBUG' "Filtering out subvolume: $subvol"
         unset LOCAL_TOP_SUBVOLUMES[i]
       fi
@@ -745,7 +757,8 @@ function btrfs_variables() {
     debug 'INFO' 'Filtering out nested subvolumes to exclude from exclude_btrfs.txt or shrink-backup_btrfs.conf'
     for i in ${!LOCAL_NESTED_SUBVOLUMES[@]}; do
       subvol=${LOCAL_NESTED_SUBVOLUMES[i]}
-      if $(echo $subvol | grep -qxE -f "$EXCLUDE_FILE_LOCATION_BTRFS"); then
+      #if $(echo $subvol | grep -qxE -f "$EXCLUDE_FILE_LOCATION_BTRFS"); then
+      if $(grep -qxE "$subvol" "$EXCLUDE_FILE_LOCATION_BTRFS"); then
         debug 'DEBUG' "Filtering out subvolume: $subvol"
 
         # Fix path if nested subvolume is in other location than root subvolume
@@ -757,7 +770,8 @@ function btrfs_variables() {
               break
             fi
           done
-          path="$(cat /etc/fstab | grep $top_subvol | awk '{print $2}')"
+          #path="$(cat /etc/fstab | grep $top_subvol | awk '{print $2}')"
+          path="$(grep "$top_subvol" /etc/fstab | awk '{print $2}')"
           subvol="$(echo $subvol | sed "s|$top_subvol|$path|g")"
         fi
         if [[ "$subvol" != /* ]]; then
@@ -1083,7 +1097,8 @@ function print_confirmation() {
       case $input in
         [Yy]) debug 'INFO' 'Y or y pressed to confirm'; debug 'BREAK'; break;;
         [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
-        *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"; debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
+        *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"
+          debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
       esac
     done
   else
@@ -1120,7 +1135,8 @@ function check_dependencies() {
             case $input in
               [Yy]) break;;
               [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
-              *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"; debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
+              *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"
+                debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
             esac
           done
           debug 'INFO' 'Y or y pressed to confirm'
@@ -1147,7 +1163,8 @@ function check_dependencies() {
             case $input in
               [Yy]) break;;
               [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
-              *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"; debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
+              *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"
+                debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
             esac
           done
           debug 'INFO' 'Y or y pressed to confirm'
@@ -1201,7 +1218,8 @@ function check_dependencies() {
             case $input in
               [Yy]) break;;
               [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
-              *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"; debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
+              *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"
+                debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
             esac
           done
           debug 'INFO' 'Y or y pressed to confirm'
@@ -1257,7 +1275,8 @@ function check_dependencies() {
             case $input in
               [Yy]) break;;
               [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
-              *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"; debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
+              *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"
+                debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
             esac
           done
           debug 'INFO' 'Y or y pressed to confirm'
@@ -1335,7 +1354,8 @@ function do_mount() {
 
   # btrfs
   elif [ "$FSTYPE" == 'btrfs' ]; then
-    declare -a fstab=( $(cat /etc/fstab | grep ' / ') )
+    #declare -a fstab=( $(cat /etc/fstab | grep ' / ') )
+    fstab=($(grep ' / ' /etc/fstab))
     echo -e "${White}## ${IWhite}Mounting root (${Green}@${IWhite}) subvolume..."
     $SLEEPING
     debug 'INFO' 'Mounting root (@) subvolume from loop'
@@ -1352,7 +1372,8 @@ function do_mount() {
     for subvol in "${LOCAL_TOP_SUBVOLUMES[@]}"; do
       # Excluding root (@) subvolume and mounting all else in fstab
       if grep -q "$subvol" /etc/fstab && [[ "$subvol" != '@' ]]; then
-        declare -a fstab=( $(cat /etc/fstab | grep "$subvol") )
+        #declare -a fstab=( $(cat /etc/fstab | grep "$subvol") )
+        fstab=($(grep "$subvol" /etc/fstab))
         echo -e "${White}## ${IWhite}Mounting subvolume: ${Green}$subvol"
         $SLEEPING
         if ! [ -d "${TMP_DIR}${fstab[1]}" ]; then
@@ -1391,7 +1412,8 @@ function do_mount() {
                 break
               fi
             done
-            path="$(cat /etc/fstab | grep $top_subvol | awk '{print $2}' | sed 's/^\///')" # remove first slash
+            #path="$(cat /etc/fstab | grep $top_subvol | awk '{print $2}' | sed 's/^\///')" # remove first slash
+            path="$(grep "$top_subvol" /etc/fstab | awk '{print $2}' | sed 's/^\///')" # remove first slash
             subvol="$(echo $subvol | sed "s|$top_subvol|$path|g")"
           fi
           # Remove directory if existing
@@ -1425,7 +1447,8 @@ function do_mount() {
                 break
               fi
             done
-            path="$(cat /etc/fstab | grep $top_subvol | awk '{print $2}' | sed 's/^\///')" # remove first slash
+            #path="$(cat /etc/fstab | grep $top_subvol | awk '{print $2}' | sed 's/^\///')" # remove first slash
+            path="$(grep "$top_subvol" /etc/fstab | awk '{print $2}' | sed 's/^\///')" # remove first slash
             subvol="$(echo $subvol | sed "s|$top_subvol|$path|g")"
           fi
           debug 'DEBUG' "Running: btrfs subvolume delete ${TMP_DIR}/$subvol"
@@ -1765,17 +1788,22 @@ function do_conversion() {
       cp ${TMP_DIR}${BOOT_PATH}/cmdline.txt ${TMP_DIR}${BOOT_PATH}/cmdline.txt.shrink-backup.bak
 
       # fstab
-      debug 'DEBUG' "Old root line in fstab=$(cat ${TMP_DIR}/etc/fstab | grep ' / ')"
-      fstab_options=$(cat ${TMP_DIR}/etc/fstab | grep ' / ' | awk '{print $4}')
+      #debug 'DEBUG' "Old root line in fstab=$(cat ${TMP_DIR}/etc/fstab | grep ' / ')"
+      debug 'DEBUG' "Old root line in fstab=$(grep ' / ' "${TMP_DIR}"/etc/fstab)"
+      #fstab_options=$(cat ${TMP_DIR}/etc/fstab | grep ' / ' | awk '{print $4}')
+      fstab_options=$(grep ' / ' "${TMP_DIR}"/etc/fstab | awk '{print $4}')
       debug 'DEBUG' "Running: sed -i -e \"/${LOCAL_ROOT_PARTUUID}/s/ext4/f2fs/\" -e \"/${LOCAL_ROOT_PARTUUID}/s/${fstab_options}/${fstab_options},discard/\" ${TMP_DIR}/etc/fstab"
       sed -i -e "/${LOCAL_ROOT_PARTUUID}/s/ext4/f2fs/" -e "/$LOCAL_ROOT_PARTUUID/s/${fstab_options}/${fstab_options},discard/" ${TMP_DIR}/etc/fstab
-      debug 'DEBUG' "New root line in fstab=$(cat ${TMP_DIR}/etc/fstab | grep ' / ')"
+      #debug 'DEBUG' "New root line in fstab=$(cat ${TMP_DIR}/etc/fstab | grep ' / ')"
+      debug 'DEBUG' "New root line in fstab=$(grep ' / ' "${TMP_DIR}"/etc/fstab)"
 
       # cmdline.txt
-      debug 'INFO' "Old line in cmdline.txt: $(cat ${TMP_DIR}${BOOT_PATH}/cmdline.txt | grep 'console')"
+      #debug 'INFO' "Old line in cmdline.txt: $(cat ${TMP_DIR}${BOOT_PATH}/cmdline.txt | grep 'console')"
+      debug 'INFO' "Old line in cmdline.txt: $(grep 'console' "${TMP_DIR}${BOOT_PATH}"/cmdline.txt)"
       debug 'DEBUG' "Running: sed -i 's/rootfstype=ext4/rootfstype=f2fs/' ${TMP_DIR}${BOOT_PATH}/cmdline.txt"
       sed -i 's/rootfstype=ext4/rootfstype=f2fs/' "${TMP_DIR}${BOOT_PATH}"/cmdline.txt
-      debug 'DEBUG' "New line in cmdline.txt: $(cat ${TMP_DIR}${BOOT_PATH}/cmdline.txt | grep 'console')"
+      #debug 'DEBUG' "New line in cmdline.txt: $(cat ${TMP_DIR}${BOOT_PATH}/cmdline.txt | grep 'console')"
+      debug 'DEBUG' "New line in cmdline.txt: $(grep 'console' "${TMP_DIR}${BOOT_PATH}"/cmdline.txt)"
     fi
   fi
 return 0
@@ -1808,7 +1836,8 @@ function make_img() {
       case $input in
         [Yy]) debug 'WARNING' 'Overwrite confirmed by user'; break;;
         [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
-        *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"; debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
+        *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"
+          debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
       esac
     done
   fi
@@ -2501,13 +2530,15 @@ fi
 # If boot exists in fstab, set BOOT_PATH and make sure boot is mounted
 if grep -q 'boot' /etc/fstab; then
   debug 'INFO' 'Separate boot partition detected'
-  BOOT_PATH=$(cat /etc/fstab | grep 'boot' | awk '{print $2}') # Used in cleanup function
+  #BOOT_PATH=$(cat /etc/fstab | grep 'boot' | awk '{print $2}') # Used in cleanup function
+  BOOT_PATH=$(grep 'boot' /etc/fstab | awk '{print $2}') # Used in cleanup function
   debug 'DEBUG' "BOOT_PATH=$BOOT_PATH"
   if ! mount --fake | grep -q 'boot'; then
     echo -e "${Red}!! Boot found in fstab but partition not mounted..."
     debug 'WARNING' 'Boot found in fstab but partition not mounted'
     $SLEEPING
-    fstab=($(cat /etc/fstab | grep 'boot'))
+    #fstab=($(cat /etc/fstab | grep 'boot'))
+    fstab=($(grep 'boot' /etc/fstab))
     if [ "$PROMPTS" == true ]; then
       while true; do
         if [ "$COLORS" == true ]; then
@@ -2517,9 +2548,15 @@ if grep -q 'boot' /etc/fstab; then
           read -r -p '## Do you want to mount boot partition? [y/n] ' input
         fi
         case $input in
-          [Yy]) debug 'DEBUG' "Y or y pressed to confirm, running: mount ${fstab[0]} ${fstab[1]}"; echo -e "${Yellow}!! Mounting boot partition to ${fstab[1]}..."; mount "${fstab[0]}" "${fstab[1]}"; break;;
-          [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
-          *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"; debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
+          [Yy])
+            debug 'DEBUG' "Y or y pressed to confirm, running: mount ${fstab[0]} ${fstab[1]}"
+            echo -e "${Yellow}!! Mounting boot partition to ${fstab[1]}..."
+            mount "${fstab[0]}" "${fstab[1]}"; break;;
+          [Nn])
+            echo -e "${Red}!! Aborting..."; exit 4;;
+          *)
+            echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"
+            debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
         esac
       done
     else
@@ -2688,16 +2725,38 @@ if [ "$AUTOEXPAND" == true ]; then
   debug 'INFO' 'Running autoexpand function'
   $SLEEPING
   case "$OS" in
-    dietpi) echo -e "${White}## ${IWhite}Enabling autoexpansion for ${Green}DietPi..."; debug 'INFO' 'Running function: autoexpansion_rpi'; autoexpansion_rpi;;
-    rpi) echo -e "${White}## ${IWhite}Enabling autoexpansion for ${Green}Raspberry pi..."; debug 'INFO' 'Running function: autoexpansion_rpi'; autoexpansion_rpi;;
-    armbian) echo -e "${White}## ${IWhite}Enabling autoexpansion for ${Green}Armbian..."; debug 'INFO' 'Running function: autoexpansion_armbian'; autoexpansion_armbian;;
-    manjaro-arm) echo -e "${White}## ${IWhite}Enabling autoexpansion for ${Green}Manjaro-arm..."; debug 'INFO' 'Running function: autoexpansion_manjaro'; autoexpansion_manjaro;;
-    archlinux-arm) echo -e "${White}## ${IWhite}Enabling autoexpansion for ${Green}ArchLinux-arm..."; debug 'INFO' 'Running function: autoexpansion_arch'; autoexpansion_arch;;
-    kali) echo -e "${White}## ${IWhite}Enabling autoexpansion for ${Green}Kali-ARM..."; debug 'INFO' 'Running function: autoexpansion_kali'; autoexpansion_kali;;
-    ubuntu) echo -e "${White}## ${Green}Making sure autoexpansion is enabled in /etc/cloud/cloud.cfg on img"; debug 'INFO' "Making sure autoexpansion is enabled in ${TMP_DIR}/etc/cloud/cloud.cfg"
+    dietpi)
+      echo -e "${White}## ${IWhite}Enabling autoexpansion for ${Green}DietPi..."
+      debug 'INFO' 'Running function: autoexpansion_rpi'
+      autoexpansion_rpi;;
+    rpi)
+      echo -e "${White}## ${IWhite}Enabling autoexpansion for ${Green}Raspberry pi..."
+      debug 'INFO' 'Running function: autoexpansion_rpi'
+      autoexpansion_rpi;;
+    armbian)
+      echo -e "${White}## ${IWhite}Enabling autoexpansion for ${Green}Armbian..."
+      debug 'INFO' 'Running function: autoexpansion_armbian'
+      autoexpansion_armbian;;
+    manjaro-arm)
+      echo -e "${White}## ${IWhite}Enabling autoexpansion for ${Green}Manjaro-arm..."
+      debug 'INFO' 'Running function: autoexpansion_manjaro'
+      autoexpansion_manjaro;;
+    archlinux-arm)
+      echo -e "${White}## ${IWhite}Enabling autoexpansion for ${Green}ArchLinux-arm..."
+      debug 'INFO' 'Running function: autoexpansion_arch'
+      autoexpansion_arch;;
+    kali)
+      echo -e "${White}## ${IWhite}Enabling autoexpansion for ${Green}Kali-ARM..."
+      debug 'INFO' 'Running function: autoexpansion_kali'
+      autoexpansion_kali;;
+    ubuntu)
+      echo -e "${White}## ${Green}Making sure autoexpansion is enabled in /etc/cloud/cloud.cfg on img"
+      debug 'INFO' "Making sure autoexpansion is enabled in ${TMP_DIR}/etc/cloud/cloud.cfg"
       sed -i 's/^[# ]*- growpart/  - growpart/' ${TMP_DIR}/etc/cloud/cloud.cfg
       sed -i 's/^[# ]*- resizefs/  - resizefs/' ${TMP_DIR}/etc/cloud/cloud.cfg;;
-    unknown) echo -e "${Yellow}!! No autoexpand option available for this OS!"; debug 'WARNING' 'No autoexpand option available for this OS'; AUTOEXPAND='failed';;
+    unknown)
+      echo -e "${Yellow}!! No autoexpand option available for this OS!"
+      debug 'WARNING' 'No autoexpand option available for this OS'; AUTOEXPAND='failed';;
   esac
 elif [ "$AUTOEXPAND" == false ] && [ "$OS" == 'ubuntu' ]; then
   debug 'INFO' "Disable autoexpansion requested & Ubuntu detected, making sure autoexpansion is disabled in ${TMP_DIR}/etc/cloud/cloud.cfg"
