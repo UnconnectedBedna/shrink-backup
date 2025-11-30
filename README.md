@@ -10,6 +10,8 @@ Supports backing up `root` & `boot` (if existing) partitions. Data from other pa
 For [`btrfs`](#btrfs), all existing top level 5 subvolumes in `/etc/fstab` will be created with new backups, nested subvolumes will be created and can also be removed/added in an [update](#image-update) of the backup img.  
 Please read [Info](#info) section for more information.
 
+Autoexpansion does not work on [`f2fs`](#f2fs) due to filesystem limitations.  
+Most linux based operating systems will most likely work, but autoexpansion might not.  
 Autoexpansion tested & supported on following operating systems:
 - Raspberry Pi OS (trixie and older)
 - Armbian
@@ -19,9 +21,7 @@ Autoexpansion tested & supported on following operating systems:
 - Kali-arm
 - Ubuntu-server-arm (Ubuntu autoexpands by default, but that can be disabled with `-e` option)
 
-Autoexpansion does not work on [`f2fs`](#f2fs) due to filesystem limitations.  
-Other operating systems will most likely work too, but autoexpansion will not.  
-The script will report the operating system as "unknown" but that does not mean the script will fail.  
+Operating systems not mentioned above will most likely still work but will be reported as "unknown". This does **not** mean the script will fail, only that you have to expand the `root` partition manually after a restore.  
 Feel free to make a [feature request](https://github.com/UnconnectedBedna/shrink-backup/issues/new/choose) if you use an operating system not on this list.
 
 Full functionality for usage inside [webmin](https://webmin.com/) (including "custom command" button). Thank you to [iliajie](https://github.com/iliajie) for helping out. ❤️
@@ -41,7 +41,7 @@ Backing up/restoring, to/from: usb-stick `/dev/sdX` with Raspberry pi os has bee
 
 See [wiki](https://github.com/UnconnectedBedna/shrink-backup/wiki) for information about [installation methods](https://github.com/UnconnectedBedna/shrink-backup/wiki/Installing), usage and examples.  
 [Ideas and feedback](https://github.com/UnconnectedBedna/shrink-backup/discussions) is always appreciated, whether it's positive or negative. Please just keep it civil. :)  
-If you find a bug or think something is missing in the script, please file a [bug report or Feature request](https://github.com/UnconnectedBedna/shrink-backup/issues/new/choose)
+If you find a bug or think something is missing in the script, please file a [bug report or feature request](https://github.com/UnconnectedBedna/shrink-backup/issues/new/choose)
 
 **To restore a backup, simply "burn" the img file to a device using your favorite method.**
 
