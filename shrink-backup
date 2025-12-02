@@ -379,8 +379,237 @@ fi
 
 
 
+# Check for updates
+function check_updates() {
+  wget --spider -q https://raw.githubusercontent.com/UnconnectedBedna/shrink-backup/refs/heads/main/shrink-backup
+  if [ "$?" -eq 0 ]; then
+    echo -e "${White}## ${IWhite}Running update check..."
+    stable_version=$(curl -s https://raw.githubusercontent.com/UnconnectedBedna/shrink-backup/refs/heads/main/shrink-backup | grep -e '^VERSION=' | tr -d 'VERSION=' | tr -d "'")
+    testing_version=$(curl -s https://raw.githubusercontent.com/UnconnectedBedna/shrink-backup/refs/heads/testing/shrink-backup | grep -e '^VERSION=' | tr -d 'VERSION=' | tr -d "'")
+    if [ "$VERSION" == "$stable_version" ]; then
+      echo -e "${White}## ${Green}shrink-backup up to date with main branch"
+      debug 'INFO' 'shrink-backup up to date with main branch'
+    elif [ "$VERSION" == "$testing_version" ]; then
+      echo -e "${White}## ${Yellow}shrink-backup is using testing branch, updates can exist"
+      debug 'WARNING' 'shrink-backup is using testing branch'
+    else
+      echo -e "${White}## ${Yellow}Local version of shrink-backup is not up to date, ${Green}update available on github"
+      debug 'WARNING' 'Local version of shrink-backup not up to date'
+    fi
+  else
+    echo -e "${White}## ${Yellow}Internet not available, skipping update check"
+    debug 'WARNING' 'Internet not available, skipping update check'
+  fi
+  $SLEEPING
+}
+
+
+
+# Check for required dependencies
+function check_dependencies() {
+
+  # GPT
+  if [ "$PARTITION_TABLE" == 'gpt' ]; then
+    echo -e "${White}## ${Green}GPT partition table detected, ${Yellow}sgdisk needed, ${IWhite}checking for application..."
+    $SLEEPING
+    if ! command -v sgdisk > /dev/null 2>&1; then
+      echo -e "${Yellow}!! sgdisk is NOT installed..."
+      debug 'INFO' 'sgdisk not available on system'
+
+      # Debian based
+      if command -v apt > /dev/null 2>&1; then
+        echo -e "${White}## ${Green}apt found, ${IWhite}trying to install gdisk..."
+        # Confirm with user input
+        if [ "$PROMPTS" == true ]; then
+          debug 'INFO' 'Do you want to use apt to install gdisk? (will upgrade system first) [y/n]'
+          while true; do
+            if [ "$COLORS" == true ]; then
+              read -r -p $'\e[0;37m## \e[0;93mDo you want to use apt to install gdisk? \e[0;97m(will upgrade system first) \e[0;92m[y/n] \e[0m' input
+            else
+              read -r -p '## Do you want to use apt to install gdisk? (will upgrade system first) [y/n] ' input
+            fi
+            case $input in
+              [Yy]) break;;
+              [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
+              *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"
+                debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
+            esac
+          done
+          debug 'INFO' 'Y or y pressed to confirm'
+          debug 'BREAK'
+          debug 'DEBUG' 'Running: apt update -y && apt upgrade -y && apt install gdisk -y'
+          apt update -y && apt upgrade -y && apt install gdisk -y
+        else
+          debug 'DEBUG' 'Running: apt update -y && apt upgrade -y && apt install gdisk -y'
+          apt update -y && apt upgrade -y && apt install gdisk -y
+        fi
+
+      # Arch based
+      elif command -v pacman > /dev/null 2>&1; then
+        echo -e "${White}## ${Green}pacman found, ${IWhite}trying to install gdisk..."
+        # Confirm with user input
+        if [ "$PROMPTS" == true ]; then
+          debug 'INFO' 'Do you want to use pacman to install gptfdisk? (will run pacman -Syu first) [y/n]'
+          while true; do
+            if [ "$COLORS" == true ]; then
+              read -r -p $'\e[0;37m## \e[0;93mDo you want to use pacman to install gptfdisk? \e[0;97m(will run pacman -Syu first) \e[0;92m[y/n] \e[0m' input
+            else
+              read -r -p '## Do you want to use pacman to install gptfdisk? (will run pacman -Syu first) [y/n] ' input
+            fi
+            case $input in
+              [Yy]) break;;
+              [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
+              *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"
+                debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
+            esac
+          done
+          debug 'INFO' 'Y or y pressed to confirm'
+          debug 'BREAK'
+          debug 'DEBUG' 'Running: pacman -Syu --nocofirm && pacman -S --noconfirm gptfdisk'
+          pacman -Syu --noconfirm && pacman -S --noconfirm gptfdisk
+        else
+          debug 'DEBUG' 'Running: pacman -Syu --nocofirm && pacman -S --noconfirm gptfdisk'
+          pacman -Syu --noconfirm && pacman -S --noconfirm gptfdisk
+        fi
+
+      # Installation failed or neither apt nor pacman is available
+      else
+        echo -e "${Red}!! Error! ${Yellow}Installing sgdisk failed! ${Green}Please install sgdisk manually and retry script..."
+        debug 'ERROR' 'Installing sgdisk failed, aborting exit 3'
+        echo -e "${Red}!! Aborting..."
+        exit 3
+      fi
+      echo -e "${White}## ${Green}sgdisk installed successfully, ${IWhite}resuming backup..."
+      debug 'INFO' 'gdisk installed successfully'
+      $SLEEPING
+
+    # sgdisk already installed
+    else
+      echo -e "${White}## ${Green}sgdisk is available, ${IWhite}resuming backup..."
+      debug 'INFO' 'sgdisk is available on system'
+      $SLEEPING
+    fi
+  fi
+
+  # f2fs conversion (only apt)
+  if [ "$F2FS_CONVERSION" == true ]; then
+    echo -e "${White}## ${Green}--f2fs option selected, mkfs.f2fs is needed, ${IWhite}checking for application..."
+    $SLEEPING
+    if ! command -v mkfs.f2fs > /dev/null 2>&1; then
+      echo -e "${Yellow}!! mkfs.f2fs is NOT installed..."
+      debug 'INFO' 'mkfs.f2fs (f2fs-tools) not available on system'
+
+      # Debian based
+      if command -v apt > /dev/null 2>&1; then
+        echo -e "${White}## ${Green}apt found, ${IWhite}trying to install f2fs-tools..."
+        # Confirm with user input
+        if [ "$PROMPTS" == true ]; then
+          debug 'INFO' 'Do you want to use apt to install f2fs-tools? (will upgrade system first) [y/n]'
+          while true; do
+            if [ "$COLORS" == true ]; then
+              read -r -p $'\e[0;37m## \e[0;93mDo you want to use apt to install f2fs-tools? \e[0;97m(will upgrade system first) \e[0;92m[y/n] \e[0m' input
+            else
+              read -r -p '## Do you want to use apt to install f2fs-tools? (will upgrade system first) [y/n] ' input
+            fi
+            case $input in
+              [Yy]) break;;
+              [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
+              *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"
+                debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
+            esac
+          done
+          debug 'INFO' 'Y or y pressed to confirm'
+          debug 'BREAK'
+          debug 'DEBUG' 'Running: apt update -y && apt upgrade -y && apt install f2fs-tools -y'
+          apt update -y && apt upgrade -y && apt install f2fs-tools -y
+        else
+          debug 'DEBUG' 'Running: apt update -y && apt upgrade -y && apt install f2fs-tools -y'
+          apt update -y && apt upgrade -y && apt install f2fs-tools -y
+        fi
+
+      # Installation failed
+      else
+        echo -e "${Red}!! Error! ${Yellow}Installing mkfs.f2fs (f2fs-tools) failed! ${Green}Please install f2fs-tools manually and retry script..."
+        debug 'ERROR' 'Installing f2fs-tools failed, aborting exit 3'
+        echo -e "${Red}!! Aborting..."
+        exit 3
+      fi
+
+    # mkfs.f2fs already installed
+    else
+      echo -e "${White}## ${Green}mkfs.f2fs is available, ${IWhite}resuming backup..."
+      debug 'INFO' 'mkfs.f2fs is available on system'
+      $SLEEPING
+    fi
+  fi
+
+  # btrfs conversion (work in progress)
+  if [ "$BTRFS_CONVERSION" == true ]; then
+    echo 'btrfs'
+  fi
+
+  # --chroot selected (only apt)
+  if [ "$CHROOTRUN" == true ]; then
+    echo -e "${White}## ${Green}--chrootrun ${IWhite}selected, ${Yellow}systemd-nspawn needed, ${IWhite}checking for application..."
+    $SLEEPING
+    if ! command -v systemd-nspawn > /dev/null 2>&1; then
+      echo -e "${Yellow}!! systemd-nspawn is NOT installed..."
+      debug 'INFO' 'systemd-nspawn not available on system'
+
+      # Only needed on debian based systems, on arch systemd-nspawn is in systemd package
+      if command -v apt > /dev/null 2>&1; then
+        echo -e "${White}## ${Green}apt found, ${IWhite}trying to install systemd-container..."
+        # Confirm with user input
+        if [ "$PROMPTS" == true ]; then
+          debug 'INFO' 'Do you want to use apt to install systemd-container? (will upgrade system first) [y/n]'
+          while true; do
+            if [ "$COLORS" == true ]; then
+              read -r -p $'\e[0;37m## \e[0;93mDo you want to use apt to install systemd-container? \e[0;97m(will upgrade system first) \e[0;92m[y/n] \e[0m' input
+            else
+              read -r -p '## Do you want to use apt to install systemd-container? (will upgrade system first) [y/n] ' input
+            fi
+            case $input in
+              [Yy]) break;;
+              [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
+              *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"
+                debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
+            esac
+          done
+          debug 'INFO' 'Y or y pressed to confirm'
+          debug 'BREAK'
+          debug 'DEBUG' 'Running: apt update -y && apt upgrade -y && apt install systemd-container -y'
+          apt update -y && apt upgrade -y && apt install systemd-container -y
+        else
+          debug 'DEBUG' 'Running: apt update -y && apt upgrade -y && apt install systemd-container -y'
+          apt update -y && apt upgrade -y && apt install systemd-container -y
+        fi
+        echo -e "${White}## ${Green}systemd-container installed successfully, ${IWhite}resuming..."
+        debug 'INFO' 'systemd-container installed successfully'
+        $SLEEPING
+
+      # Installation failed
+      else
+        echo -e "${Red}!! Error! ${Yellow}Installing systemd-nspawn (systemd-container) failed! ${Green}Please install systemd-container manually and retry script..."
+        debug 'ERROR' 'Installing systemd-container failed, aborting exit 3'
+        echo -e "${Red}!! Aborting..."
+        exit 3
+      fi
+
+    # systemd-nspawn already installed
+    else
+      echo -e "${White}## ${Green}systemd-nspawn is available, ${IWhite}resuming..."
+      debug 'INFO' 'systemd-nspawn is available on system'
+      $SLEEPING
+    fi
+  fi
+return 0
+}
+
+
+
 # loop img file and exit
 function looprun() {
+  check_updates
   debug 'DEBUG' "IMG_FILE=$IMG_FILE"
   debug 'DEBUG' "ADDED_SPACE=$ADDED_SPACE"
   if [ "$ADDED_SPACE" -ne 0 ]; then
@@ -441,6 +670,7 @@ exit 2
 
 function chrootrun() {
 
+  check_updates
   check_dependencies
   do_loop
 
@@ -931,6 +1161,7 @@ return 0
 function print_confirmation() {
 
   # Display information
+  check_updates
   #echo -e "# ${IWhite}A backup will be created at ${Green}$IMG_FILE $(while [ $x -lt $(( COLS - 31 - $(echo ${IMG_FILE} | wc -m ) )) ]; do echo -n ' '; let x=$x+1; done; echo)${Purple}#"
   echo -e "${Purple}$BREAK"
   if [ "$PROMPTS" == false ]; then
@@ -1103,208 +1334,6 @@ function print_confirmation() {
     done
   else
     echo -e "${Purple}${BREAK}${IWhite}"
-  fi
-return 0
-}
-
-
-
-# Check for required dependencies
-function check_dependencies() {
-
-  # GPT
-  if [ "$PARTITION_TABLE" == 'gpt' ]; then
-    echo -e "${White}## ${Green}GPT partition table detected, ${Yellow}sgdisk needed, ${IWhite}checking for application..."
-    $SLEEPING
-    if ! command -v sgdisk > /dev/null 2>&1; then
-      echo -e "${Yellow}!! sgdisk is NOT installed..."
-      debug 'INFO' 'sgdisk not available on system'
-
-      # Debian based
-      if command -v apt > /dev/null 2>&1; then
-        echo -e "${White}## ${Green}apt found, ${IWhite}trying to install gdisk..."
-        # Confirm with user input
-        if [ "$PROMPTS" == true ]; then
-          debug 'INFO' 'Do you want to use apt to install gdisk? (will upgrade system first) [y/n]'
-          while true; do
-            if [ "$COLORS" == true ]; then
-              read -r -p $'\e[0;37m## \e[0;93mDo you want to use apt to install gdisk? \e[0;97m(will upgrade system first) \e[0;92m[y/n] \e[0m' input
-            else
-              read -r -p '## Do you want to use apt to install gdisk? (will upgrade system first) [y/n] ' input
-            fi
-            case $input in
-              [Yy]) break;;
-              [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
-              *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"
-                debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
-            esac
-          done
-          debug 'INFO' 'Y or y pressed to confirm'
-          debug 'BREAK'
-          debug 'DEBUG' 'Running: apt update -y && apt upgrade -y && apt install gdisk -y'
-          apt update -y && apt upgrade -y && apt install gdisk -y
-        else
-          debug 'DEBUG' 'Running: apt update -y && apt upgrade -y && apt install gdisk -y'
-          apt update -y && apt upgrade -y && apt install gdisk -y
-        fi
-
-      # Arch based
-      elif command -v pacman > /dev/null 2>&1; then
-        echo -e "${White}## ${Green}pacman found, ${IWhite}trying to install gdisk..."
-        # Confirm with user input
-        if [ "$PROMPTS" == true ]; then
-          debug 'INFO' 'Do you want to use pacman to install gptfdisk? (will run pacman -Syu first) [y/n]'
-          while true; do
-            if [ "$COLORS" == true ]; then
-              read -r -p $'\e[0;37m## \e[0;93mDo you want to use pacman to install gptfdisk? \e[0;97m(will run pacman -Syu first) \e[0;92m[y/n] \e[0m' input
-            else
-              read -r -p '## Do you want to use pacman to install gptfdisk? (will run pacman -Syu first) [y/n] ' input
-            fi
-            case $input in
-              [Yy]) break;;
-              [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
-              *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"
-                debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
-            esac
-          done
-          debug 'INFO' 'Y or y pressed to confirm'
-          debug 'BREAK'
-          debug 'DEBUG' 'Running: pacman -Syu --nocofirm && pacman -S --noconfirm gptfdisk'
-          pacman -Syu --noconfirm && pacman -S --noconfirm gptfdisk
-        else
-          debug 'DEBUG' 'Running: pacman -Syu --nocofirm && pacman -S --noconfirm gptfdisk'
-          pacman -Syu --noconfirm && pacman -S --noconfirm gptfdisk
-        fi
-
-      # Installation failed or neither apt nor pacman is available
-      else
-        echo -e "${Red}!! Error! ${Yellow}Installing sgdisk failed! ${Green}Please install sgdisk manually and retry script..."
-        debug 'ERROR' 'Installing sgdisk failed, aborting exit 3'
-        echo -e "${Red}!! Aborting..."
-        exit 3
-      fi
-      echo -e "${White}## ${Green}sgdisk installed successfully, ${IWhite}resuming backup..."
-      debug 'INFO' 'gdisk installed successfully'
-      $SLEEPING
-
-    # sgdisk already installed
-    else
-      echo -e "${White}## ${Green}sgdisk is available, ${IWhite}resuming backup..."
-      debug 'INFO' 'sgdisk is available on system'
-      $SLEEPING
-    fi
-  fi
-
-  # f2fs conversion (only apt)
-  if [ "$F2FS_CONVERSION" == true ]; then
-    echo -e "${White}## ${Green}--f2fs option selected, mkfs.f2fs is needed, ${IWhite}checking for application..."
-    $SLEEPING
-    if ! command -v mkfs.f2fs > /dev/null 2>&1; then
-      echo -e "${Yellow}!! mkfs.f2fs is NOT installed..."
-      debug 'INFO' 'mkfs.f2fs (f2fs-tools) not available on system'
-
-      # Debian based
-      if command -v apt > /dev/null 2>&1; then
-        echo -e "${White}## ${Green}apt found, ${IWhite}trying to install f2fs-tools..."
-        # Confirm with user input
-        if [ "$PROMPTS" == true ]; then
-          debug 'INFO' 'Do you want to use apt to install f2fs-tools? (will upgrade system first) [y/n]'
-          while true; do
-            if [ "$COLORS" == true ]; then
-              read -r -p $'\e[0;37m## \e[0;93mDo you want to use apt to install f2fs-tools? \e[0;97m(will upgrade system first) \e[0;92m[y/n] \e[0m' input
-            else
-              read -r -p '## Do you want to use apt to install f2fs-tools? (will upgrade system first) [y/n] ' input
-            fi
-            case $input in
-              [Yy]) break;;
-              [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
-              *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"
-                debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
-            esac
-          done
-          debug 'INFO' 'Y or y pressed to confirm'
-          debug 'BREAK'
-          debug 'DEBUG' 'Running: apt update -y && apt upgrade -y && apt install f2fs-tools -y'
-          apt update -y && apt upgrade -y && apt install f2fs-tools -y
-        else
-          debug 'DEBUG' 'Running: apt update -y && apt upgrade -y && apt install f2fs-tools -y'
-          apt update -y && apt upgrade -y && apt install f2fs-tools -y
-        fi
-
-      # Installation failed
-      else
-        echo -e "${Red}!! Error! ${Yellow}Installing mkfs.f2fs (f2fs-tools) failed! ${Green}Please install f2fs-tools manually and retry script..."
-        debug 'ERROR' 'Installing f2fs-tools failed, aborting exit 3'
-        echo -e "${Red}!! Aborting..."
-        exit 3
-      fi
-
-    # mkfs.f2fs already installed
-    else
-      echo -e "${White}## ${Green}mkfs.f2fs is available, ${IWhite}resuming backup..."
-      debug 'INFO' 'mkfs.f2fs is available on system'
-      $SLEEPING
-    fi
-  fi
-
-  # btrfs conversion (work in progress)
-  if [ "$BTRFS_CONVERSION" == true ]; then
-    echo 'btrfs'
-  fi
-
-  # --chroot selected (only apt)
-  if [ "$CHROOTRUN" == true ]; then
-    echo -e "${White}## ${Green}--chrootrun ${IWhite}selected, ${Yellow}systemd-nspawn needed, ${IWhite}checking for application..."
-    $SLEEPING
-    if ! command -v systemd-nspawn > /dev/null 2>&1; then
-      echo -e "${Yellow}!! systemd-nspawn is NOT installed..."
-      debug 'INFO' 'systemd-nspawn not available on system'
-
-      # Only needed on debian based systems, on arch systemd-nspawn is in systemd package
-      if command -v apt > /dev/null 2>&1; then
-        echo -e "${White}## ${Green}apt found, ${IWhite}trying to install systemd-container..."
-        # Confirm with user input
-        if [ "$PROMPTS" == true ]; then
-          debug 'INFO' 'Do you want to use apt to install systemd-container? (will upgrade system first) [y/n]'
-          while true; do
-            if [ "$COLORS" == true ]; then
-              read -r -p $'\e[0;37m## \e[0;93mDo you want to use apt to install systemd-container? \e[0;97m(will upgrade system first) \e[0;92m[y/n] \e[0m' input
-            else
-              read -r -p '## Do you want to use apt to install systemd-container? (will upgrade system first) [y/n] ' input
-            fi
-            case $input in
-              [Yy]) break;;
-              [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
-              *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"
-                debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
-            esac
-          done
-          debug 'INFO' 'Y or y pressed to confirm'
-          debug 'BREAK'
-          debug 'DEBUG' 'Running: apt update -y && apt upgrade -y && apt install systemd-container -y'
-          apt update -y && apt upgrade -y && apt install systemd-container -y
-        else
-          debug 'DEBUG' 'Running: apt update -y && apt upgrade -y && apt install systemd-container -y'
-          apt update -y && apt upgrade -y && apt install systemd-container -y
-        fi
-        echo -e "${White}## ${Green}systemd-container installed successfully, ${IWhite}resuming..."
-        debug 'INFO' 'systemd-container installed successfully'
-        $SLEEPING
-
-      # Installation failed
-      else
-        echo -e "${Red}!! Error! ${Yellow}Installing systemd-nspawn (systemd-container) failed! ${Green}Please install systemd-container manually and retry script..."
-        debug 'ERROR' 'Installing systemd-container failed, aborting exit 3'
-        echo -e "${Red}!! Aborting..."
-        exit 3
-      fi
-
-    # systemd-nspawn already installed
-    else
-      echo -e "${White}## ${Green}systemd-nspawn is available, ${IWhite}resuming..."
-      debug 'INFO' 'systemd-nspawn is available on system'
-      $SLEEPING
-    fi
   fi
 return 0
 }
