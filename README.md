@@ -6,7 +6,7 @@ shrink-backup is a very fast utility for backing up your SBC:s into minimal boot
 
 Can backup any device with or without a `boot` partition as long as the filesystem is `ext4`, [`f2fs`](#f2fs) or [`btrfs`](#btrfs) (with subvolumes).
 
-Supports backing up `root` & `boot` (if existing) partitions. Data from other partitions will be written to `root` if not [excluded](#-t-excludetxt).  
+Supports backing up `root` & `boot` (if existing) partitions. Data from other mounted partitions will be written to `root` partition of the img file if not [excluded](#-t-excludetxt).  
 For [`btrfs`](#btrfs), all existing top level 5 subvolumes in `/etc/fstab` will be created with new backups, nested subvolumes will be created and can also be removed/added in an [update](#image-update) of the backup img.  
 Please read [Info](#info) section for more information.
 
