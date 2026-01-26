@@ -164,8 +164,9 @@ function cleanup() {
     fi
 
     echo -e "${White}## ${Green}Done."
-    echo -e "${White}## ${IWhite}Elapsed time: ${Green}$(date -d@$SECONDS -u +%M.%S)${NC}"
-    debug 'INFO' "Elapsed time: $(date -d@$SECONDS -u +%M.%S)"
+    elapsed_time="$SECONDS"
+    echo -e "${White}## ${IWhite}Elapsed time: ${Green}$(date -d@$elapsed_time -u +%M.%S)${NC}"
+    debug 'INFO' "Elapsed time: $(date -d@$elapsed_time -u +%M.%S)"
     debug 'DEBUG' 'Exiting script'
   fi
   if [ "$DEBUG" == true ]; then
@@ -209,7 +210,7 @@ AUTORESIZE_WARNING=false
 ZOOM=false
 LOOPRUN=false
 CHROOTRUN=false
-RSYNC_DELETE='--delete' # gets set to --delete-before if --fix is selected
+RSYNC_DELETE='--delete' # gets set to '--delete-before --fsync' if --fix is selected
 RSYNC_TTY=true # gets set to false if -q|--quiet is selected
 RSYNC_CUSTOM=false
 F2FS_CONVERSION=false
@@ -390,7 +391,7 @@ function check_updates() {
       echo -e "${White}## ${Green}shrink-backup up to date with main branch"
       debug 'INFO' 'shrink-backup up to date with main branch'
     elif [ "$VERSION" == "$testing_version" ]; then
-      echo -e "${White}## ${Yellow}shrink-backup is using testing branch, updates can exist"
+      echo -e "${White}## ${Yellow}shrink-backup is using testing branch, updates might exist"
       debug 'WARNING' 'shrink-backup is using testing branch'
     else
       echo -e "${White}## ${Yellow}Local version of shrink-backup is not up to date, ${Green}update available on github"
@@ -1039,7 +1040,7 @@ function img_variables() {
     if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
       # I have no idea why, but if I do not put this sleep here, IMG_DEV_ROOT_PATH does not get set
       sleep 2
-      #pause 'Press [Enter] key to continue...'
+      #pause 'Press [any] key to continue...'
       IMG_DEV_BOOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_BOOT_UUID" | awk '{print $1}')
       IMG_DEV_ROOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
       debug 'DEBUG' "IMG_DEV_BOOT_PATH=$IMG_DEV_BOOT_PATH | IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
@@ -1078,7 +1079,7 @@ function img_variables() {
   else
     # I have no idea why, but if I do not put this sleep here, IMG_DEV_ROOT_PATH does not get set
     sleep 2
-    #pause 'Press [Enter] key to continue...'
+    #pause 'Press [any] key to continue...'
     IMG_DEV_ROOT_PATH=$(lsblk -no path,uuid "$LOOP" | grep "$LOCAL_ROOT_UUID" | awk '{print $1}')
     debug 'DEBUG' "IMG_DEV_ROOT_PATH=$IMG_DEV_ROOT_PATH"
     # 2s sleep is sometimes not enough, might have to do with slow network if img file is on a network share
@@ -1178,14 +1179,12 @@ function print_confirmation() {
   echo -e "# ${Green}$IMG_FILE ${Purple}$(printf "%+$(( COLS - 2 - $(echo ${IMG_FILE} | wc -m ) ))s" '#')"
   echo -e "# ${Green}$FSTYPE ${IWhite}filesystem detected on root ${Purple}$(printf "%+$(( COLS - 30 - $(echo ${FSTYPE} | wc -m ) ))s" '#')"
 
-  if [ "$UPDATE" == false ] && [ "$RSYNC_DELETE" == '--delete-before' ]; then
+  if [ "$UPDATE" == false ] && [ "$RSYNC_DELETE" != '--delete' ]; then
     echo -e "# ${Green}--fix ${IWhite}option selected, ${Green}rsync using --fsync option${Purple}$(printf "%+$(( COLS - 51 ))s" '#')"
     debug 'DEBUG' '--fix selected by user, using rsync with --fsync option'
-  elif [ "$UPDATE" == true ] && [ "$RSYNC_DELETE" == '--delete-before' ]; then
+  elif [ "$UPDATE" == true ] && [ "$RSYNC_DELETE" != '--delete' ]; then
     echo -e "# ${Green}--fix ${IWhite}option selected, ${Green}rsync using --delete-before & --fsync options${Purple}$(printf "%+$(( COLS - 70 ))s" '#')"
-    debug 'DEBUG' '--fix selected by user, rsync deleting files before copy & using --fsync option'
-  elif [ "$UPDATE" == true ] && [ "$RSYNC_DELETE" == '--delete-before' ]; then
-    echo -e "# ${Green}--fix ${IWhite}option selected, rsync will delete files on img before copy ${Purple}$(printf "%+$(( COLS - 68 ))s" '#')"
+    echo -e "# ${IWhite}rsync will delete files no longer existing from img before copying new data${Purple}$(printf "%+$(( COLS - 77 ))s" '#')"
     debug 'DEBUG' '--fix selected by user, rsync deleting files before copy & using --fsync option'
   fi
 
@@ -1734,16 +1733,20 @@ function do_rsync() {
   debug 'DEBUG' "Backing up to ${IMG_PATH}${IMG_FILE}"
 
   # Run rsync
+  set -o pipefail
   eval "$RSYNC_LINE"
+  rsync_status="${PIPESTATUS[0]}"
+  debug 'DEBUG' "rsync_status=$rsync_status"
+  set +o pipefail
 
   # Get the exit status of rsync from PIPESTATUS
-  if [ "${PIPESTATUS[0]}" -ne 0 ] && [ "${PIPESTATUS[0]}" -ne 23 ]; then # code 23 = rsync warning: some files vanished before they could be transferred (code 24) at main.c
+  if [ "$rsync_status" -ne 0 ] && [ "$rsync_status" -ne 23 ]; then # code 23 = rsync warning: some files vanished before they could be transferred (code 24) at main.c
     output=$(tail -16 "$tmp_file")
     echo -e "${Yellow}$output\n${Red}!! RSYNC FAILED!!!"
     debug 'BREAK'
-    debug 'ERROR' "RSYNC FAILED:\nPIPESTATUS=${PIPESTATUS[0]}\n$output\n-------------------------------------------------------------------------------------"
+    debug 'ERROR' "RSYNC FAILED:\nPIPESTATUS=${rsync_status}\n$output\n-------------------------------------------------------------------------------------"
     exit 5
-  elif [ "${PIPESTATUS[0]}" -eq 23 ]; then
+  elif [ "$rsync_status" -eq 23 ]; then
     echo -e "${White}## ${Yellow}Warning, rsync code 23, some files vanished before they could be transferred (code 24) at main.c"
     echo -e "${White}## ${Yellow}This does NOT mean the backup failed"
     $SLEEPING
@@ -2560,7 +2563,7 @@ fi
 if grep -q 'boot' /etc/fstab; then
   debug 'INFO' 'Separate boot partition detected'
   #BOOT_PATH=$(cat /etc/fstab | grep 'boot' | awk '{print $2}') # Used in cleanup function
-  BOOT_PATH=$(grep 'boot' /etc/fstab | awk '{print $2}') # Used in cleanup function
+  BOOT_PATH=$(grep 'boot' /etc/fstab | awk '{print $2}') # Also used in cleanup function
   debug 'DEBUG' "BOOT_PATH=$BOOT_PATH"
   if ! mount --fake | grep -q 'boot'; then
     echo -e "${Red}!! Boot found in fstab but partition not mounted..."
