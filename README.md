@@ -105,7 +105,7 @@ The folder where the img file is created will **ALWAYS be excluded in the backup
 If `-t` option is selected, `exclude.txt` **MUST exist** (but can be empty) within the **directory where the script is located** or the script will exit with an error.
 
 > [!NOTE]
-> If installed using `curl`, location and name of file is different. See [install with curl](https://github.com/UnconnectedBedna/shrink-backup/wiki/Installing#curl---shrink-backup-install-script) for information.
+> If installed using `curl` to install, location and name of file is different. See [install with curl](https://github.com/UnconnectedBedna/shrink-backup/wiki/Installing#curl---shrink-backup-install-script) for information.
 
 Use one directory per line in `exclude.txt`.  
 `/directory/*` = create directory but exclude content.  
@@ -247,6 +247,8 @@ See [--loop](#--loop-loop-img-file) for how to manually include more partitions 
 - mkfs.ext4/f2fs/btrfs (depends on fileystem used)
 - rsync
 - gdisk (sgdisk is only required if the partition table is GPT, the script will inform you)
+- wget (update check)
+- curl (update check)
 
 <hr>
 
@@ -339,7 +341,7 @@ Only expansion is possible with this method.
 If `[extra space]` is used in combination with `-U`, the `root` partition of the img file will be expanded by that amount.  
 `[extra space]` is in **MiB**, so if you want to add **1G**, add **1024**.
 
-**Example:** `sudo shrink-backup /path/to/backup.img 1024`
+**Example:** `sudo shrink-backup -U /path/to/backup.img 1024`
 
 **No checks are being performed to make sure the data you want to back up will actually fit.**  
 
