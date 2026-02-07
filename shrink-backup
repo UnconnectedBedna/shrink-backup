@@ -1528,7 +1528,6 @@ function do_e2fsck() {
     debug 'DEBUG' "Running: umount ${TMP_DIR}${BOOT_PATH}"
     umount "${TMP_DIR}${BOOT_PATH}"
   fi
-
   if [ -n "$TMP_DIR" ] && grep -qs "$TMP_DIR " /proc/mounts; then
     debug 'INFO' 'Unmounting root partition'
     debug 'DEBUG' "Running: umount $TMP_DIR"
@@ -1539,7 +1538,6 @@ function do_e2fsck() {
   if [ "$*" == 'final' ]; then
     echo -e "${White}## ${IWhite}Finalizing filesystem..."
     $SLEEPING
-
     output=$(e2fsck -p -f -v "$IMG_DEV_ROOT_PATH" 2>&1)
     echo "$output"
     debug 'BREAK'
@@ -1559,7 +1557,6 @@ function do_e2fsck() {
   else
     echo -e "${White}## ${IWhite}Checking img filesystem..."
     $SLEEPING
-
     output=$(e2fsck -p -f "$IMG_DEV_ROOT_PATH" 2>&1)
     echo "$output"
     debug 'DEBUG' "Running: e2fsck -p -f $IMG_DEV_ROOT_PATH\n$output\n-------------------------------------------------------------------------------------"
@@ -2804,16 +2801,26 @@ fi
 
 # Shrink filesystem, partition and img due to explicitly instructed with -s option
 if [ "$SHRINK" == true ]; then
-  # Redo calculations after copy process is done
   debug 'INFO' '-s option selected, forcing re-shrinking of img file'
-  LOCAL_AUTORESIZE_MIN=$(resize2fs -P "$LOCAL_DEV_ROOT_PATH" 2>/dev/null | awk '{print $7}') # blocks
+  # Redo calculations after copy process is done  
+  LOCAL_AUTORESIZE_MIN=$(resize2fs -P "$IMG_DEV_ROOT_PATH" 2>/dev/null | awk '{print $7}') # blocks
   TOTAL=$(( LOCAL_AUTORESIZE_MIN * BLOCKSIZE )) # bytes
   TRUNCATE_TOTAL=$(( LOCAL_BOOTSECTOR + TOTAL )) # bytes
   debug 'DEBUG' "LOCAL_AUTORESIZE_MIN=$LOCAL_AUTORESIZE_MIN blocks | TOTAL=$TOTAL | TRUNCATE_TOTAL=$TRUNCATE_TOTAL | IMG_SIZE=$IMG_SIZE"
   if [ "$TRUNCATE_TOTAL" -lt "$IMG_SIZE" ]; then
     echo -e "${White}## ${IWhite} Forcing re-shrinking of img file..."
-    debug 'INFO' "Running function: do_resize 'shrink'"
     "$SLEEPING"
+    if [ -n "$BOOT_PATH" ] && [ -n "$TMP_DIR" ] && grep -qs "${TMP_DIR}${BOOT_PATH} " /proc/mounts; then
+      debug 'INFO' 'Unmounting boot partition'
+      debug 'DEBUG' "Running: umount ${TMP_DIR}${BOOT_PATH}"
+      umount "${TMP_DIR}${BOOT_PATH}"
+    fi
+    if [ -n "$TMP_DIR" ] && grep -qs "$TMP_DIR " /proc/mounts; then
+      debug 'INFO' 'Unmounting root partition'
+      debug 'DEBUG' "Running: umount $TMP_DIR"
+      umount "$TMP_DIR"
+    fi
+    debug 'INFO' "Running function: do_resize 'shrink'"
     do_resize 'shrink'
   else
     echo -e "${Yellow}!! img already minimum size, shrinking skipped"
