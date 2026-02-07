@@ -197,6 +197,7 @@ EXCLUDE_FILE=false
 AUTOEXPAND=true
 AUTORESIZE_RUN=false
 UPDATE=false
+SHRINK=false
 if [ "$INSTALL_METHOD" == 'curl' ]; then
   LOG_FILE='/var/log/shrink-backup.log'
   EXCLUDE_FILE_LOCATION='/usr/local/etc/shrink-backup.conf'
@@ -281,6 +282,8 @@ Usage: ${Green}sudo $(basename "$0") [options] imagefile.img [extra space (MiB)]
   ${Green}-l             ${IWhite}Write debug messages to logfile shrink-backup.log located in same directory as script
   ${Green}-z             ${IWhite}Make script zoom at light-speed, only question prompts might slow it down
                    Can be combined with -y for UNSAFE ultra-mega-superduper-speed
+  ${Green}-s             ${IWhite}Force shrink operation after backup process is done
+                   Can be useful if size calculations on new images initially are too big due to excluded data
   ${Green}-q --quiet     ${IWhite}Do not print rsync copy process
   ${Green}--no-color     ${IWhite}Run script without color formatted text
   ${Green}--fix          ${IWhite}Try to fix the img file if -a fails with a "broken pipe" error
@@ -318,7 +321,7 @@ EOM
 
 
 # Parse command-line options
-options=$(getopt -o Uatyelzhq --long help,version,quiet,fix,f2fs,no-color,rsync,loop,chroot: -- "$@")
+options=$(getopt -o Uatyelzsqh --long help,version,quiet,fix,f2fs,no-color,rsync,loop,chroot: -- "$@")
 [ $? -eq 0 ] || {
     echo -e "${Red}Invalid options provided"
     help
@@ -335,6 +338,7 @@ while true; do
     -e) AUTOEXPAND=false; shift;;
     -l) DEBUG=true; shift;;
     -z) ZOOM=true; shift;;
+    -s) SHRINK=true; shift;;
     -q|--quiet) RSYNC_TTY=false; shift;;
     --fix) RSYNC_DELETE='--delete-before --fsync'; shift;;
     --f2fs) F2FS_CONVERSION=true; shift;;
@@ -2798,6 +2802,27 @@ elif [ "$AUTOEXPAND" == false ] && [ "$OS" == 'ubuntu' ]; then
   sed -i 's/^[ ]*- resizefs/# - resizefs/' ${TMP_DIR}/etc/cloud/cloud.cfg
 fi
 
+# Shrink filesystem, partition and img due to explicitly instructed with -s option
+if [ "$SHRINK" == true ]; then
+  # Redo calculations after copy process is done
+  debug 'INFO' '-s option selected, forcing re-shrinking of img file'
+  LOCAL_AUTORESIZE_MIN=$(resize2fs -P "$LOCAL_DEV_ROOT_PATH" 2>/dev/null | awk '{print $7}') # blocks
+  TOTAL=$(( LOCAL_AUTORESIZE_MIN * BLOCKSIZE )) # bytes
+  TRUNCATE_TOTAL=$(( LOCAL_BOOTSECTOR + TOTAL )) # bytes
+  debug 'DEBUG' "LOCAL_AUTORESIZE_MIN=$LOCAL_AUTORESIZE_MIN blocks | TOTAL=$TOTAL | TRUNCATE_TOTAL=$TRUNCATE_TOTAL | IMG_SIZE=$IMG_SIZE"
+  if [ "$TRUNCATE_TOTAL" -lt "$IMG_SIZE" ]; then
+    echo -e "${White}## ${IWhite} Forcing re-shrinking of img file..."
+    debug 'INFO' "Running function: do_resize 'shrink'"
+    "$SLEEPING"
+    do_resize 'shrink'
+  else
+    echo -e "${Yellow}!! img already minimum size, shrinking skipped"
+    debug 'WARNING' 'img alredy minum size, shrinking skipped'
+    "$SLEEPING"
+  fi
+fi
+
+debug 'INFO' 'Running function: print_result'
 print_result
 
 exit 0
