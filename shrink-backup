@@ -2806,6 +2806,10 @@ if [ "$SHRINK" == true ]; then
   LOCAL_AUTORESIZE_MIN=$(resize2fs -P "$IMG_DEV_ROOT_PATH" 2>/dev/null | awk '{print $7}') # blocks
   TOTAL=$(( LOCAL_AUTORESIZE_MIN * BLOCKSIZE )) # bytes
   TRUNCATE_TOTAL=$(( LOCAL_BOOTSECTOR + TOTAL )) # bytes
+  if [ -z "$IMG_SIZE" ]; then
+    debug 'DEBUG' "Running: stat -c %s $IMG_FILE"
+    IMG_SIZE=$(stat -c %s "$IMG_FILE")
+  fi
   debug 'DEBUG' "LOCAL_AUTORESIZE_MIN=$LOCAL_AUTORESIZE_MIN blocks | TOTAL=$TOTAL | TRUNCATE_TOTAL=$TRUNCATE_TOTAL | IMG_SIZE=$IMG_SIZE"
   if [ "$TRUNCATE_TOTAL" -lt "$IMG_SIZE" ]; then
     echo -e "${White}## ${IWhite} Forcing re-shrinking of img file..."
