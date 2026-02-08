@@ -2802,9 +2802,10 @@ fi
 # Shrink filesystem, partition and img due to explicitly instructed with -s option
 if [ "$SHRINK" == true ]; then
   debug 'INFO' '-s option selected, forcing re-shrinking of img file'
-  # Redo calculations after copy process is done  
+  # Redo calculations after copy process is done
   LOCAL_AUTORESIZE_MIN=$(resize2fs -P "$IMG_DEV_ROOT_PATH" 2>/dev/null | awk '{print $7}') # blocks
-  TOTAL=$(( LOCAL_AUTORESIZE_MIN * BLOCKSIZE )) # bytes
+  LOCAL_AUTORESIZE_MIN=$(( LOCAL_AUTORESIZE_MIN * BLOCKSIZE )) # bytes
+  TOTAL=$LOCAL_AUTORESIZE_MIN # bytes
   TRUNCATE_TOTAL=$(( LOCAL_BOOTSECTOR + TOTAL )) # bytes
   if [ -z "$IMG_SIZE" ]; then
     debug 'DEBUG' "Running: stat -c %s $IMG_FILE"
