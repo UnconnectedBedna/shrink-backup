@@ -837,29 +837,6 @@ function dev_variables() {
 
   ADDED_SPACE=$(( ADDED_SPACE * 1024 * 1024 )) # bytes, ADDED_SPACE=0 if AUTORESIZE_RUN=true
 
-  # Check if separate boot and root partition exists and set variables accordingly
-  if grep -q 'boot' /etc/fstab; then
-    BOOT_PARTITION=true
-    LOCAL_DEV_BOOT_PATH=$(mount --fake | grep 'boot' | awk '{print $1}')
-    LOCAL_DEV_ROOT_PATH=$(mount --fake | grep ' / ' | awk '{print $1}')
-    debug 'DEBUG' "BOOT_PARTITION=$BOOT_PARTITION | LOCAL_DEV_BOOT_PATH=$LOCAL_DEV_BOOT_PATH | LOCAL_DEV_ROOT_PATH=$LOCAL_DEV_ROOT_PATH"
-    LOCAL_BOOT_UUID=$(lsblk -no uuid "$LOCAL_DEV_BOOT_PATH")
-    LOCAL_ROOT_UUID=$(lsblk -no uuid "$LOCAL_DEV_ROOT_PATH")
-    LOCAL_ROOT_PARTUUID=$(lsblk -no partuuid "$LOCAL_DEV_ROOT_PATH")
-    debug 'DEBUG' "LOCAL_BOOT_UUID=$LOCAL_BOOT_UUID | LOCAL_ROOT_UUID=$LOCAL_ROOT_UUID | LOCAL_ROOT_PARTUUID=$LOCAL_ROOT_PARTUUID"
-  else
-    debug 'INFO' 'No boot partition detected'
-    BOOT_PARTITION=false
-    LOCAL_DEV_ROOT_PATH=$(mount --fake | grep ' / ' | awk '{print $1}')
-    debug 'DEBUG' "BOOT_PARTITION=$BOOT_PARTITION | LOCAL_DEV_ROOT_PATH=$LOCAL_DEV_ROOT_PATH"
-    LOCAL_ROOT_UUID=$(lsblk -no uuid "$LOCAL_DEV_ROOT_PATH")
-    LOCAL_ROOT_PARTUUID=$(lsblk -no partuuid "$LOCAL_DEV_ROOT_PATH")
-    debug 'DEBUG' "LOCAL_ROOT_UUID=$LOCAL_ROOT_UUID | LOCAL_ROOT_PARTUUID=$LOCAL_ROOT_PARTUUID"
-  fi
-  LOCAL_ROOT_PARTN=$(blkid -s PART_ENTRY_NUMBER -o value -p "$LOCAL_DEV_ROOT_PATH")
-  #LOCAL_ROOT_PARTN=$(parted -sm "$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
-  debug 'DEBUG' "LOCAL_ROOT_PARTN=$LOCAL_ROOT_PARTN"
-
   # Collect information about partition sizes
   debug 'INFO' 'Calculating size for dd to cover bootsector and adding 5MiB (5242880 bytes) to overlap into root (only used in img creation)'
   #LOCAL_BOOTSECTOR=$(lsblk --bytes -no size "$LOCAL_DEV_BOOT_PATH") # bytes, can not be used, will be 0 if no boot partition exists
@@ -2620,18 +2597,43 @@ fi
 
 echo -e "${White}## ${IWhite}Scanning filesystem and calculating..."
 
+# Check if separate boot partition exists and set variables accordingly
+if grep -q 'boot' /etc/fstab; then
+  BOOT_PARTITION=true
+  LOCAL_DEV_BOOT_PATH=$(mount --fake | grep 'boot' | awk '{print $1}')
+  LOCAL_DEV_ROOT_PATH=$(mount --fake | grep ' / ' | awk '{print $1}')
+  debug 'DEBUG' "BOOT_PARTITION=$BOOT_PARTITION | LOCAL_DEV_BOOT_PATH=$LOCAL_DEV_BOOT_PATH | LOCAL_DEV_ROOT_PATH=$LOCAL_DEV_ROOT_PATH"
+  LOCAL_BOOT_UUID=$(lsblk -no uuid "$LOCAL_DEV_BOOT_PATH")
+  LOCAL_ROOT_UUID=$(lsblk -no uuid "$LOCAL_DEV_ROOT_PATH")
+  LOCAL_ROOT_PARTUUID=$(lsblk -no partuuid "$LOCAL_DEV_ROOT_PATH")
+  debug 'DEBUG' "LOCAL_BOOT_UUID=$LOCAL_BOOT_UUID | LOCAL_ROOT_UUID=$LOCAL_ROOT_UUID | LOCAL_ROOT_PARTUUID=$LOCAL_ROOT_PARTUUID"
+else
+  debug 'INFO' 'No boot partition detected'
+  BOOT_PARTITION=false
+  LOCAL_DEV_ROOT_PATH=$(mount --fake | grep ' / ' | awk '{print $1}')
+  debug 'DEBUG' "BOOT_PARTITION=$BOOT_PARTITION | LOCAL_DEV_ROOT_PATH=$LOCAL_DEV_ROOT_PATH"
+  LOCAL_ROOT_UUID=$(lsblk -no uuid "$LOCAL_DEV_ROOT_PATH")
+  LOCAL_ROOT_PARTUUID=$(lsblk -no partuuid "$LOCAL_DEV_ROOT_PATH")
+  debug 'DEBUG' "LOCAL_ROOT_UUID=$LOCAL_ROOT_UUID | LOCAL_ROOT_PARTUUID=$LOCAL_ROOT_PARTUUID"
+fi
+LOCAL_ROOT_PARTN=$(blkid -s PART_ENTRY_NUMBER -o value -p "$LOCAL_DEV_ROOT_PATH")
+#LOCAL_ROOT_PARTN=$(parted -sm "$LOCAL_DEV_PATH" print | tail -1 | cut -d : -f 1)
+debug 'DEBUG' "LOCAL_ROOT_PARTN=$LOCAL_ROOT_PARTN"
+
 # Check what filesystem root is using and set LOCAL_DEV_PATH & PARTITION_TABLE
 FSTYPE="$(mount --fake | grep ' / ' | awk '{print $5}')"
 debug 'INFO' "$FSTYPE root filesystem detected"
-debug 'DEBUG' "FSTYPE=$FSTYPE"
-if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
-  LOCAL_DEV_PTUUID=$(lsblk -no mountpoint,ptuuid | grep '/ ' | awk '{print $2}')
-elif [ "$FSTYPE" == 'btrfs' ]; then
-  #LOCAL_DEV_PTUUID=$(lsblk -no fsroots,ptuuid | grep '/ ' | awk '{print $2}')
-  LOCAL_DEV_PTUUID=$(lsblk -no path,ptuuid $(mount --fake | grep ' / ' | awk '{print $1}') | awk '{print $2}')
-fi
-LOCAL_DEV_PATH=$(lsblk -no ptuuid,type,path | grep "$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print $3}' | head -1)
-debug 'DEBUG' "LOCAL_DEV_PTUUID=$LOCAL_DEV_PTUUID | LOCAL_DEV_PATH=$LOCAL_DEV_PATH"
+# debug 'DEBUG' "FSTYPE=$FSTYPE"
+# if [ "$FSTYPE" == 'ext4' ] || [ "$FSTYPE" == 'f2fs' ]; then
+#   LOCAL_DEV_PTUUID=$(lsblk -no mountpoint,ptuuid | grep '/ ' | awk '{print $2}')
+# elif [ "$FSTYPE" == 'btrfs' ]; then
+#   #LOCAL_DEV_PTUUID=$(lsblk -no fsroots,ptuuid | grep '/ ' | awk '{print $2}')
+#   LOCAL_DEV_PTUUID=$(lsblk -no path,ptuuid $(mount --fake | grep ' / ' | awk '{print $1}') | awk '{print $2}')
+# fi
+# LOCAL_DEV_PATH=$(lsblk -no ptuuid,type,path | grep "$LOCAL_DEV_PTUUID" | grep 'disk' | awk '{print $3}' | head -1)
+LOCAL_DEV_PATH="/dev/$(lsblk -no pkname $LOCAL_DEV_ROOT_PATH)"
+# debug 'DEBUG' "LOCAL_DEV_PTUUID=$LOCAL_DEV_PTUUID | LOCAL_DEV_PATH=$LOCAL_DEV_PATH"
+debug 'DEBUG' "FSTYPE=$FSTYPE | LOCAL_DEV_PATH=$LOCAL_DEV_PATH"
 PARTITION_TABLE=$(parted "$LOCAL_DEV_PATH" print | grep -i 'Partition Table' | awk '{print $3}')
 #PARTITION_TABLE=$(blkid "$LOCAL_DEV_PATH" | sed -n 's|^.*PTTYPE="\(\S\+\)".*|\1|p')
 
