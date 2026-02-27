@@ -1213,6 +1213,11 @@ function print_confirmation() {
     echo -e "# ${Yellow}Only tested on Raspberry pi OS. ${Purple}$(printf "%+$(( COLS - 34 ))s" '#')"
   fi
 
+  if [ "$PARTITION_TABLE" == 'gpt' ]; then
+    echo -e "# ${Red}!!WARNING!! You are using gpt partition tbale, this is NOT SUPPORTED with shrink-backup!! ${Purple}$(printf "%+$(( COLS - 92 ))s" '#')"
+    echo -e "# ${Red} It may or may not work, use at own risk!! ${Purple}$(printf "%+$(( COLS - 45 ))s" '#')"
+  fi
+
   echo -e "${Purple}# $(printf %$(( COLS - 4 ))s | tr ' ' '-') #"
   echo -e "# ${Green}Device info: ${Purple}$(printf "%+$(( COLS - 15 ))s" '#')"
   echo -e "# ${IWhite}Boot partition:                 | ${Green}$BOOT_PARTITION ${Purple}$(printf "%+$(( COLS - 36 - $(echo ${BOOT_PARTITION} | wc -m ) ))s" '#')"
@@ -1314,6 +1319,25 @@ function print_confirmation() {
     done
   else
     echo -e "${Purple}${BREAK}${IWhite}"
+  fi
+
+  # gpt warning
+  if [ "$PARTITION_TABLE" == 'gpt' ]; then
+    echo -e "${Red}!! System is using unsupported gpt partition table, continue at own risk!"
+    debug 'WARNING' 'System using unsupported gpt partition table. Are you sure you want to continue? [y/n]'
+    while true; do
+      if [ "$COLORS" == true ]; then
+        read -r -p $'\e[0;91m## Are you sure you want to continue? \e[0;92m[y/n] \e[0m' input
+      else
+        read -r -p '## Are you sure you want to continue? [y/n] ' input
+      fi
+      case $input in
+        [Yy]) debug 'INFO' 'Y or y pressed to confirm'; debug 'BREAK'; break;;
+        [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
+        *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${Yellow}"
+          debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
+      esac
+    done
   fi
 return 0
 }
@@ -2426,6 +2450,10 @@ function print_result() {
   fi
   if [ "$F2FS_CONVERSION" == true ]; then
     echo -e "# ${Green}Filesystem converted to f2fs on img ${Purple}$(printf "%+$(( COLS - 38 ))s" '#')"
+  fi
+  if [ "$PARTITION_TABLE" == 'gpt' ]; then
+    echo -e "# ${Red}System using gpt partition table! ${Purple}$(printf "%+$(( COLS - 36 ))s" '#')"
+    echo -e "# ${Red}Rely on this backup at your own risk! ${Purple}$(printf "%+$(( COLS - 40 ))s" '#')"
   fi
   echo -e "${Purple}${BREAK}"
   debug 'INFO' 'Backup done'
