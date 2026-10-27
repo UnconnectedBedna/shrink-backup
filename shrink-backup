@@ -245,7 +245,7 @@ fi
 version() {
 echo -e "${Purple}#########################################################################
 #                                                                       #
-# ${Green}shrink-backup version $VERSION ${Purple}$(printf "%+$(( 49 - $(echo ${VERSION} | wc -m ) ))s" '#')
+# ${Green}shrink-backup version $VERSION ${Purple}$(printf "%$(( 49 - $(echo ${VERSION} | wc -m ) ))s" '#')
 #                                                                       #
 # ${IWhite}Copyright (c) 2024-present, Marcus Johansson                          ${Purple}#
 # ${White}https://github.com/UnconnectedBedna/shrink-backup                     ${Purple}#
@@ -254,7 +254,7 @@ echo -e "${Purple}##############################################################
 # ${White}This source code is licensed under the BSD-style license found in the ${Purple}#
 # ${White}LICENSE file in the root directory of this source tree.               ${Purple}#
 #                                                                       #
-#########################################################################"
+#########################################################################${NC}"
 exit 2
 }
 
@@ -306,12 +306,12 @@ Usage: ${Green}sudo $(basename "$0") [options] imagefile.img [extra space (MiB)]
   ${Green}-h --help      ${IWhite}Show this help snippet
 ######################################################################################################################
 Examples:
-${Green}sudo $(basename "$0") -a /path/to/backup.img ${White}(create img, automatically set size)
-${Green}sudo $(basename "$0") -e -y /path/to/backup.img 1024 ${White}(create img, ignore prompts, do NOT autoexpand, add 1024MiB extra space)
-${Green}sudo $(basename "$0") -Utl /path/to/backup.img ${White}(update img backup, use exclude.txt and write log to shrink-backup.log)
-${Green}sudo $(basename "$0") -U /path/to/backup.img 1024 ${White}(update img backup, expand img size/root partition with 1024MiB)
-${Green}sudo $(basename "$0") -Ua /path/to/backup.img ${White}(update img backup, automatically resizes img file if needed)
-${Green}sudo $(basename "$0") -Ua --fix /path/to/backup.img 1024 ${White}(update img backup, automatically resizes img file if needed, fix img free space)
+${Green}sudo $(basename "$0") -a /path/to/backup.img ${White}(create new img, automatically calculate and set size)
+${Green}sudo $(basename "$0") -e -y /path/to/backup.img 1024 ${White}(create new img, ignore prompts, do NOT autoexpand img after restore, add 1024MiB extra space)
+${Green}sudo $(basename "$0") -Utl /path/to/backup.img ${White}(update img backup, use exclude.txt, write log to shrink-backup.log)
+${Green}sudo $(basename "$0") -Ua /path/to/backup.img ${White}(update img backup, automatically resize img root partition if needed)
+${Green}sudo $(basename "$0") -U /path/to/backup.img 1024 ${White}(update img backup, expand img root partition with 1024MiB)
+${Green}sudo $(basename "$0") -Ua --fix /path/to/backup.img ${White}(update img backup, automatically resize img root partition if needed, delete removed files on img before copy)
 ${Green}sudo $(basename "$0") -l --loop /path/to/backup.img 1024 ${White}(write to log file, expand IMG FILE (not partition) by 1024MiB, loop then exit script)
 EOM
   echo -e "$help"
@@ -323,8 +323,8 @@ EOM
 # Parse command-line options
 options=$(getopt -o Uatyelzsqh --long help,version,quiet,fix,f2fs,no-color,rsync,loop,chroot: -- "$@")
 [ $? -eq 0 ] || {
-    echo -e "${Red}Invalid options provided"
-    help
+  echo -e "${Red}Invalid option(s) provided"
+  help
 }
 eval set -- "$options"
 while true; do
@@ -387,7 +387,7 @@ fi
 # Check for updates
 function check_updates() {
 
-  if command -v wget > /dev/null 2>&1 && [ "$?" -eq 0 ] && wget --spider -q https://raw.githubusercontent.com/UnconnectedBedna/shrink-backup/refs/heads/main/shrink-backup; then
+  if command -v wget > /dev/null && [ "$?" -eq 0 ] && wget --spider -q https://raw.githubusercontent.com/UnconnectedBedna/shrink-backup/refs/heads/main/shrink-backup; then
     echo -e "${White}## ${IWhite}Running update check..."
     #stable_version=$(curl -s https://raw.githubusercontent.com/UnconnectedBedna/shrink-backup/refs/heads/main/shrink-backup | grep -e '^VERSION=' | tr -d 'VERSION=' | tr -d "'")
     stable_version=$(curl -s https://raw.githubusercontent.com/UnconnectedBedna/shrink-backup/refs/heads/main/shrink-backup | grep -oP "^VERSION='\K.+(?=')")
@@ -478,421 +478,264 @@ return 0
 # Check for required dependencies
 function check_dependencies() {
 
+  debug 'BREAK'
   echo -e "${White}## ${IWhite}Checking dependencies..."
-
-  # GPT (gdisk)
-  if [ "$PARTITION_TABLE" = 'gpt' ]; then
-    echo -e "${White}## ${Green}GPT partition table detected, ${Yellow}sgdisk needed, ${IWhite}checking for application..."
-    $SLEEPING
-    if ! command -v sgdisk > /dev/null 2>&1; then
-      echo -e "${Yellow}!! sgdisk not available on system..."
-      debug 'INFO' 'sgdisk not available on system'
-
-      # Debian based
-      if command -v apt > /dev/null 2>&1; then
-        echo -e "${White}## ${Green}apt found, ${IWhite}trying to install gdisk..."
-        # Confirm with user input
-        if [ "$PROMPTS" = true ]; then
-          debug 'INFO' 'Do you want to use apt to install gdisk? [y/n]'
-          while true; do
-            if [ "$COLORS" = true ]; then
-              read -r -p $'\e[0;37m## \e[0;93mDo you want to use apt to install gdisk? \e[0;92m[y/n] \e[0m' input
-            else
-              read -r -p '## Do you want to use apt to install gdisk? [y/n] ' input
-            fi
-            case $input in
-              [Yy]) break;;
-              [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
-              *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${NC}"
-                debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
-            esac
-          done
-          debug 'INFO' 'Y or y pressed to confirm'
-          debug 'BREAK'
-          debug 'DEBUG' 'Running: apt update && apt install gdisk -y'
-          apt update && apt install gdisk -y
-        else
-          debug 'DEBUG' 'Running: apt update && apt install gdisk -y'
-          apt update && apt install gdisk -y
-        fi
-
-      # Arch based
-      elif command -v pacman > /dev/null 2>&1; then
-        echo -e "${White}## ${Green}pacman found, ${IWhite}trying to install gdisk..."
-        # Confirm with user input
-        if [ "$PROMPTS" = true ]; then
-          debug 'INFO' 'Do you want to use pacman to install gptfdisk? (will run pacman -Syu first) [y/n]'
-          while true; do
-            if [ "$COLORS" = true ]; then
-              read -r -p $'\e[0;37m## \e[0;93mDo you want to use pacman to install gptfdisk? \e[0;97m(will run pacman -Syu first) \e[0;92m[y/n] \e[0m' input
-            else
-              read -r -p '## Do you want to use pacman to install gptfdisk? (will run pacman -Syu first) [y/n] ' input
-            fi
-            case $input in
-              [Yy]) break;;
-              [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
-              *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${NC}"
-                debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
-            esac
-          done
-          debug 'INFO' 'Y or y pressed to confirm'
-          debug 'BREAK'
-          debug 'DEBUG' 'Running: pacman -Syu --nocofirm && pacman -S --noconfirm gptfdisk'
-          pacman -Syu --noconfirm && pacman -S --noconfirm gptfdisk
-        else
-          debug 'DEBUG' 'Running: pacman -Syu --nocofirm && pacman -S --noconfirm gptfdisk'
-          pacman -Syu --noconfirm && pacman -S --noconfirm gptfdisk
-        fi
-
-      # dnf based
-      elif command -v dnf > /dev/null 2>&1; then
-        echo -e "${White}## ${Green}dnf found, ${IWhite}trying to install gdisk..."
-        # Add EPEL repo to get access to gdisk on AlmaLinux10
-        if [ "$OS" = 'almalinux10' ]; then
-          echo -e "${White}## ${Yellow}AlmaLinux10 detected on system, upstream RHEL removed gdisk but is available in EPEL repository"
-          echo -e "${White}## ${Yellow}gdisk is required for shrink-backup to work with gpt partition table"
-          # Confirm with user input
-          if [ "$PROMPTS" = true ]; then
-            debug 'INFO' 'Do you want to add EPEL repository to get access to gdisk? [y/n]'
-            while true; do
-              if [ "$COLORS" = true ]; then
-                read -r -p $'\e[0;37m## \e[0;93mDo you want to add EPEL repository to get access to gdisk? \e[0;92m[y/n] \e[0m' input
-              else
-                read -r -p '## Do you want to add EPEL repository to get access to gdisk? [y/n] ' input
-              fi
-              case $input in
-                [Yy]) break;;
-                [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
-                *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${NC}"
-                  debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
-              esac
-            done
-            debug 'INFO' 'Y or y pressed to confirm'
-            debug 'BREAK'
-            debug 'DEBUG' 'Running: dnf install epel-release -y'
-            dnf install epel-release -y
-          else
-            debug 'DEBUG' 'Running: dnf install epel-release -y'
-            dnf install epel-release -y
-          fi
-
-          # Success or no?
-          if [[ "$?" -eq 0 ]]; then
-            echo -e "${White}## ${Green}EPEL repository installed and added successfully, ${IWhite}resuming..."
-            debug 'DEBUG' 'EPEL repository installed and added successfully'
-            $SLEEPING
-          else
-            echo -e "${Red}!! Adding EPEL repository failed, something went wrong!"
-            debug 'DEBUG' 'Adding EPEL repository failed, something went wrong, exit 3'
-            echo '!! Aborting...'
-            exit 3
-          fi
-        fi
-
-        # Confirm with user input
-        if [ "$PROMPTS" = true ]; then
-          debug 'INFO' 'Do you want to use dnf to install gdisk? [y/n]'
-          while true; do
-            if [ "$COLORS" = true ]; then
-              read -r -p $'\e[0;37m## \e[0;93mDo you want to use dnf to install gdisk? \e[0;92m[y/n] \e[0m' input
-            else
-              read -r -p '## Do you want to use dnf to install gdisk? [y/n] ' input
-            fi
-            case $input in
-              [Yy]) break;;
-              [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
-              *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${NC}"
-                debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
-            esac
-          done
-          debug 'INFO' 'Y or y pressed to confirm'
-          debug 'BREAK'
-          debug 'DEBUG' 'Running: dnf install gdisk.aarch64 -y'
-          dnf install gdisk.aarch64 -y
-        else
-          debug 'DEBUG' 'Running: dnf install gdisk.aarch64 -y'
-          dnf install gdisk.aarch64 -y
-        fi
-      fi
-
-      # Success or no?
-      if [[ "$?" -eq 0 ]]; then
-        echo -e "${White}## ${Green}gdisk installed successfully, ${IWhite}resuming backup..."
-        debug 'DEBUG' 'gdisk installed successfully'
-        $SLEEPING
-      else
-        echo -e "${Red}!! Installation of gdisk failed, something went wrong!"
-        debug 'DEBUG' 'Installation of gdisk failed, something went wrong, exit 3'
-        echo '!! Aborting...'
-        exit 3
-      fi
-
-    # sgdisk already installed
-    else
-      echo -e "${White}## ${Green}sgdisk is available on system, ${IWhite}resuming backup..."
-      debug 'INFO' 'sgdisk is available on system'
-      $SLEEPING
-    fi
-  fi
-
-
-  # rsync
-  if ! command -v rsync > /dev/null 2>&1; then
-    echo -e "${Yellow}!! rsync not available on system..."
-    debug 'INFO' 'rsync not available on system'
-
-    # Arch based
-    if command -v pacman > /dev/null 2>&1; then
-      echo -e "${White}## ${Green}pacman found, ${IWhite}trying to install rsync..."
-      # Confirm with user input
-      if [ "$PROMPTS" = true ]; then
-        debug 'INFO' 'Do you want to use pacman to install rsync? (will run pacman -Syu first) [y/n]'
-        while true; do
-          if [ "$COLORS" = true ]; then
-            read -r -p $'\e[0;37m## \e[0;93mDo you want to use pacman to install rsync? \e[0;97m(will run pacman -Syu first) \e[0;92m[y/n] \e[0m' input
-          else
-            read -r -p '## Do you want to use pacman to install rsync? (will run pacman -Syu first) [y/n] ' input
-          fi
-          case $input in
-            [Yy]) break;;
-            [Nn]) echo -e "${Red}!! Aborting..."${Yellow}; return;;
-            *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${NC}"
-              debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
-          esac
-        done
-        debug 'INFO' 'Y or y pressed to confirm'
-        debug 'BREAK'
-        debug 'DEBUG' 'Running: pacman -Syu --nocofirm && pacman -S --noconfirm rsync'
-        pacman -Syu --nocofirm && pacman -S --noconfirm rsync
-      else
-        debug 'DEBUG' 'Running: pacman -Syu --nocofirm && pacman -S --noconfirm rsync'
-        pacman -Syu --nocofirm && pacman -S --noconfirm rsync
-      fi
-    fi
-
-    # dnf based
-    if command -v dnf > /dev/null 2>&1; then
-      echo -e "${White}## ${Green}dnf found, ${IWhite}trying to install rsync..."
-      # Confirm with user input
-      if [ "$PROMPTS" = true ]; then
-        debug 'INFO' 'Do you want to use dnf to install rsync? [y/n]'
-        while true; do
-          if [ "$COLORS" = true ]; then
-            read -r -p $'\e[0;37m## \e[0;93mDo you want to use dnf to install rsync? \e[0;92m[y/n] \e[0m' input
-          else
-            read -r -p '## Do you want to use dnf to install rsync? [y/n] ' input
-          fi
-          case $input in
-            [Yy]) break;;
-            [Nn]) echo -e "${Red}!! Aborting..."${Yellow}; return;;
-            *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${NC}"
-              debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
-          esac
-        done
-        debug 'INFO' 'Y or y pressed to confirm'
-        debug 'BREAK'
-        debug 'DEBUG' 'Running: dnf install rsync.aarch64'
-        dnf install rsync.aarch64 -y
-      else
-        debug 'DEBUG' 'Running: dnf install rsync.aarch64'
-        dnf install rsync.aarch64 -y
-      fi
-    fi
-
-    # Success or no?
-    if [[ "$?" -eq 0 ]]; then
-      echo -e "${White}## ${Green}rsync installed successfully, ${IWhite}resuming backup..."
-      debug 'DEBUG' 'rsync installed successfully'
-      $SLEEPING
-    else
-      echo -e "${Red}!! Installation of rsync failed, something went wrong!"
-      debug 'DEBUG' 'Installation of rsync failed, something went wrong, exit 3'
-      echo '!! Aborting...'
-      exit 3
-    fi
-
-  # rsync already installed
-  else
-    echo -e "${White}## ${Green}rsync is available on system, ${IWhite}resuming backup..."
-    debug 'INFO' 'rsync is available on system'
-    $SLEEPING
-  fi
-
-
-  # f2fs conversion (only apt)
-  if [ "$F2FS_CONVERSION" = true ]; then
-    echo -e "${White}## ${Green}--f2fs option selected, mkfs.f2fs is needed, ${IWhite}checking for application..."
-    $SLEEPING
-    if ! command -v mkfs.f2fs > /dev/null 2>&1; then
-      echo -e "${Yellow}!! mkfs.f2fs (f2fs-tools) not available on system..."
-      debug 'INFO' 'mkfs.f2fs (f2fs-tools) not available on system'
-
-      # Debian based
-      if command -v apt > /dev/null 2>&1; then
-        echo -e "${White}## ${Green}apt found, ${IWhite}trying to install f2fs-tools..."
-        # Confirm with user input
-        if [ "$PROMPTS" = true ]; then
-          debug 'INFO' 'Do you want to use apt to install f2fs-tools? [y/n]'
-          while true; do
-            if [ "$COLORS" = true ]; then
-              read -r -p $'\e[0;37m## \e[0;93mDo you want to use apt to install f2fs-tools? \e[0;92m[y/n] \e[0m' input
-            else
-              read -r -p '## Do you want to use apt to install f2fs-tools? [y/n] ' input
-            fi
-            case $input in
-              [Yy]) break;;
-              [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
-              *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${NC}"
-                debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
-            esac
-          done
-          debug 'INFO' 'Y or y pressed to confirm'
-          debug 'BREAK'
-          debug 'DEBUG' 'Running: apt update && apt install f2fs-tools -y'
-          apt update && apt install f2fs-tools -y
-        else
-          debug 'DEBUG' 'Running: apt update && apt install f2fs-tools -y'
-          apt update && apt install f2fs-tools -y
-        fi
-      fi
-
-      # Success or no?
-      if [[ "$?" -eq 0 ]]; then
-        echo -e "${White}## ${Green}f2fs-tools installed successfully, ${IWhite}resuming backup..."
-        debug 'DEBUG' 'f2fs-tools installed successfully'
-        $SLEEPING
-      else
-        echo -e "${Red}!! Installation of f2fs-tools failed, something went wrong!"
-        debug 'DEBUG' 'Installation of f2fs-tools failed, something went wrong, exit 3'
-        echo '!! Aborting...'
-        exit 3
-      fi
-
-    # mkfs.f2fs already installed
-    else
-      echo -e "${White}## ${Green}mkfs.f2fs is available on system, ${IWhite}resuming backup..."
-      debug 'INFO' 'mkfs.f2fs is available on system'
-      $SLEEPING
-    fi
-  fi
-
-
-  # btrfs conversion (work in progress)
-  if [ "$BTRFS_CONVERSION" = true ]; then
-    echo 'btrfs'
-  fi
-
 
   # --chroot selected (only apt)
   if [ "$CHROOTRUN" = true ]; then
     echo -e "${White}## ${Green}--chrootrun ${IWhite}selected, ${Yellow}systemd-nspawn needed, ${IWhite}checking for application..."
     $SLEEPING
-    if ! command -v systemd-nspawn > /dev/null 2>&1; then
+    if ! command -v systemd-nspawn > /dev/null; then
       echo -e "${Yellow}!! systemd-nspawn (systemd-container) not available on system..."
       debug 'INFO' 'systemd-nspawn (systemd-container) not available on system'
-
-      # Only needed on debian based systems, on arch systemd-nspawn is in systemd package
-      if command -v apt > /dev/null 2>&1; then
-        echo -e "${White}## ${Green}apt found, ${IWhite}trying to install systemd-container..."
-        # Confirm with user input
-        if [ "$PROMPTS" = true ]; then
-          debug 'INFO' 'Do you want to use apt to install systemd-container? [y/n]'
-          while true; do
-            if [ "$COLORS" = true ]; then
-              read -r -p $'\e[0;37m## \e[0;93mDo you want to use apt to install systemd-container? \e[0;92m[y/n] \e[0m' input
-            else
-              read -r -p '## Do you want to use apt to install systemd-container? [y/n] ' input
-            fi
-            case $input in
-              [Yy]) break;;
-              [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
-              *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${NC}"
-                debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
-            esac
-          done
-          debug 'INFO' 'Y or y pressed to confirm'
-          debug 'BREAK'
-          debug 'DEBUG' 'Running: apt update && apt install systemd-container -y'
-          apt update apt install systemd-container -y
-        else
-          debug 'DEBUG' 'Running: apt update && apt install systemd-container -y'
-          apt update && apt install systemd-container -y
-        fi
-      fi
-
-    # Success or no?
-    if [[ "$?" -eq 0 ]]; then
-      echo -e "${White}## ${Green}systemd-container installed successfully, ${IWhite}resuming backup..."
-      debug 'DEBUG' 'systemd-container installed successfully'
       $SLEEPING
-    else
-      echo -e "${Red}!! Installation of systemd-container failed, something went wrong!"
-      debug 'DEBUG' 'Installation of systemd-container failed, something went wrong, exit 3'
-      echo '!! Aborting...'
-      exit 3
-    fi
-
-    # systemd-nspawn already installed
+      install_dependencies 'systemd-nspawn'
     else
       echo -e "${White}## ${Green}systemd-nspawn is available on system, ${IWhite}resuming..."
       debug 'INFO' 'systemd-nspawn is available on system'
       $SLEEPING
     fi
+    # exit function, no more applications needed for --chroot
+    return 0
   fi
 
+  apps=(gdisk rsync f2fs-tools wget)
+  debug 'DEBUG' "apps=($(echo ${apps[@]}))"
 
-  # wget (optional)
-  if ! command -v wget > /dev/null 2>&1; then
-    echo -e "${Yellow}!! wget not available on system. Needed for update check but not necessary for script operations..."
-    debug 'INFO' 'wget not available on system'
+  if [ "$PARTITION_TABLE" != 'gpt' ]; then
+    apps=(${apps[@]#gdisk})
+    debug 'DEBUG' "gdisk not required, removing from array apps=($(echo ${apps[@]}))"
+  fi
+  if [ "$F2FS_CONVERSION" = false ]; then
+    apps=(${apps[@]#f2fs-tools})
+    debug 'DEBUG' "f2fs-tools not required, removing from array apps=($(echo ${apps[@]}))"
+  fi
 
-    # dnf based
-    if command -v dnf > /dev/null 2>&1; then
-      echo -e "${White}## ${Green}dnf found, ${IWhite}trying to install wget..."
-      # Confirm with user input
-      if [ "$PROMPTS" = true ]; then
-        debug 'INFO' 'Do you want to use dnf to install wget? [y/n]'
-        while true; do
-          if [ "$COLORS" = true ]; then
-            read -r -p $'\e[0;37m## \e[0;93mDo you want to use dnf to install wget? \e[0;92m[y/n] \e[0m' input
-          else
-            read -r -p '## Do you want to use dnf to install wget? [y/n] ' input
-          fi
-          case $input in
-            [Yy]) break;;
-            [Nn]) echo -e "${Yellow}!! Aborting..."; return;;
-            *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${NC}"
-              debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
-          esac
-        done
-        debug 'INFO' 'Y or y pressed to confirm'
-        debug 'BREAK'
-        debug 'DEBUG' 'Running: dnf install wget.aarch64'
-        dnf install wget.aarch64 -y
-      else
-        debug 'DEBUG' 'Running: dnf install wget.aarch64'
-        dnf install wget.aarch64 -y
-      fi
-    fi
+  for app in "${apps[@]}"; do
 
-    # Success or no?
-    if [[ "$?" -eq 0 ]]; then
-      echo -e "${White}## ${Green}wget installed successfully, ${IWhite}resuming backup..."
-      debug 'DEBUG' 'wget installed successfully'
+    # Applications needed are actually sgdisk & mkfs.f2fs
+    case "$app" in
+      gdisk) app='sgdisk';;
+      f2fs-tools) app='mkfs.f2fs';;
+      *) ;;
+    esac
+
+    if ! command -v "$app" > /dev/null; then
+
+      # Change names back to gdisk & f2fs-tools if not installed so correct name gets added to $install_app
+      case "$app" in
+        sgdisk) app='gdisk';;
+        mkfs.f2fs) app='f2fs-tools';;
+        *) ;;
+      esac
+
+      echo -e "${Yellow}!! $app not available on system..."
+      debug 'INFO' "$app not available on system"
+      install_app+=("$app")
+      debug 'DEBUG' "Adding $app to install_app=($(echo ${install_app[@]}))"
       $SLEEPING
     else
-      echo -e "${Red}!! Installation of wget failed, something went wrong!"
-      debug 'DEBUG' 'Installation of wget failed, something went wrong, exit 3'
-      echo '!! Aborting...'
+      echo -e "${White}## ${Green}${app} is available on system"
+      debug 'INFO' "$app is available on system"
+      $SLEEPING
+    fi
+  done
+
+  if [[ -z "${install_app[@]}" ]]; then
+    echo -e "${White}## ${Green}All required applications available, resuming..."
+    debug 'INFO' 'All required applications available'
+    debug 'BREAK'
+    # exit function if no applications needs to be installed
+    return 0
+  fi
+
+  for pkg_mgr in apt pacman dnf; do
+    if command -v "$pkg_mgr" > /dev/null; then
+      install_dependencies "$pkg_mgr"
+    fi
+  done
+  debug 'BREAK'
+return 0
+}
+
+
+
+install_dependencies() {
+
+  # Success or no?
+  install_success() {
+    if [ "$2" -eq 0 ]; then
+      echo -e "${White}## ${Green}$1 installed successfully, ${IWhite}resuming backup..."
+      debug 'DEBUG' "$1 installed successfully"
+      $SLEEPING
+    else
+      echo -e "${Red}!! Installation of $1 failed, something went wrong!"
+      debug 'DEBUG' "Installation of $1 failed, something went wrong, exit 3"
+      echo -e "${Red}!! Aborting..."
       exit 3
     fi
+  return 0
+  }
 
-  # wget already installed
-  else
-    echo -e "${White}## ${Green}wget is available on system, ${IWhite}resuming backup..."
-    debug 'INFO' 'wget is available on system'
-    $SLEEPING
+  # --chroot selected (only apt)
+  if [ "$1" = 'systemd-nspawn' ]; then
+    # Only needed on debian based systems, on arch systemd-nspawn is in systemd package
+    # Not tested on dnf based systems
+    # Confirm with user input
+    if [ "$PROMPTS" = true ]; then
+      debug 'INFO' 'Do you want to use apt to install systemd-container? [y/n]'
+      while true; do
+        if [ "$COLORS" = true ]; then
+          read -r -p $'\e[0;37m## \e[0;93mDo you want to use apt to install systemd-container? \e[0;92m[y/n] \e[0m' input
+        else
+          read -r -p '## Do you want to use apt to install systemd-container? [y/n] ' input
+        fi
+        case $input in
+          [Yy]) break;;
+          [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
+          *) echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${NC}"
+            debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
+        esac
+      done
+      debug 'INFO' 'Y or y pressed to confirm'
+      debug 'BREAK'
+      debug 'DEBUG' 'Running: apt update && apt install systemd-container -y'
+      apt update && apt install systemd-container -y
+    # User started shrink-backup with -y option
+    else
+      debug 'DEBUG' 'Running: apt update && apt install systemd-container -y'
+      apt update && apt install systemd-container -y
+    fi
+    install_success 'systemd-container' "$?"
+    # exit function, no more applications needed for --chroot
+    return 0
   fi
+
+  # Change to correct package depending on package manager
+  case "$1" in
+    apt) ;; # nothing needed, names are correct
+    pacman) install_app=(${install_app[@]/gdisk/gptfdisk});;
+    dnf)
+      install_app=(${install_app[@]/gdisk/gdisk.aarch64})
+      install_app=(${install_app[@]/rsync/rsync.aarch64})
+      install_app=(${install_app[@]/wget/wget.aarch64})
+    ;;
+  esac
+
+  for app in "${install_app[@]}"; do
+    # Confirm with user input
+    if [ "$PROMPTS" = true ]; then
+      debug 'INFO' "Do you want to use $1 to install $app? [y/n]"
+      while true; do
+        if [ "$app" = 'wget' ]; then
+          echo -e "${White}## ${Yellow}wget is not required for backup functionality, only used for shrink-backup update check and can be left uninstalled"
+          echo -e "${White}## ${Yellow}(but you will get this question every time running shrink-backup unless -y option is used, please use -y with care)"
+        fi
+        if [ "$COLORS" = true ]; then
+          read -r -p $'\e[0;37m## \e[0;93mDo you want to use '"$1"$' to install '"${app}"$'? \e[0;92m[y/n] \e[0m' input
+        else
+          read -r -p "## Do you want to use $1 to install ${app}? [y/n] " input
+        fi
+        case "$input" in
+          [Yy])
+            debug 'INFO' 'Y or y pressed to confirm'
+            debug 'INFO' "Using $1 to install $app"
+
+            case "$1" in
+              apt)
+                debug 'DEBUG' "Running: apt update && apt install $app -y"
+                apt update && apt install "$app" -y
+                exit_code="$?"
+                break
+              ;;
+              pacman)
+                debug 'DEBUG' "pacman -Syu --noconfirm && pacman -S --noconfirm $app"
+                pacman -Syu --noconfirm && pacman -S --noconfirm "$app"
+                exit_code="$?"
+                break
+              ;;
+              dnf)
+                if [ "$app" = 'gdisk.aarch64' ] && [ "$OS" = 'almalinux10' ] && ! rpm -q --quiet epel-release; then
+                  echo -e "${White}## ${Yellow}AlmaLinux10 detected on system, upstream RHEL removed gdisk but is available in EPEL repository"
+                  echo -e "${White}## ${Yellow}gdisk is required for shrink-backup to work with gpt partition table"
+                  # Confirm with user input
+                  debug 'INFO' 'Do you want to add EPEL repository to get access to gdisk? [y/n]'
+                  while true; do
+                    if [ "$COLORS" = true ]; then
+                      read -r -p $'\e[0;37m## \e[0;93mDo you want to add EPEL repository to get access to gdisk? \e[0;92m[y/n] \e[0m' input
+                    else
+                      read -r -p '## Do you want to add EPEL repository to get access to gdisk? [y/n] ' input
+                    fi
+                    case $input in
+                      [Yy]) break;;
+                      [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
+                      *)
+                        echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${NC}"
+                        debug 'WARNING' "ERROR, please enter 'y' or 'n'"
+                      ;;
+                    esac
+                  done
+                  debug 'INFO' 'Y or y pressed to confirm'
+                  debug 'DEBUG' 'Running: dnf install epel-release -y'
+                  dnf install epel-release -y
+                  install_success 'epel-release' "$?"
+                fi
+                debug 'DEBUG' "Running: dnf install $app -y"
+                dnf install "$app" -y
+                exit_code="$?"
+                break
+              ;;
+            esac
+          ;;
+
+          [Nn])
+            if [ "$app" = 'wget' ]; then
+              echo -e "${Yellow}!! Skipping wget..."
+              debug 'INFO' 'User skipped installing wget'
+              $SLEEPING
+              break
+            else
+              echo -e "${Red}!! Aborting..."
+              exit 4
+            fi
+          ;;
+          *)
+            echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${NC}"
+            debug 'WARNING' "ERROR, please enter 'y' or 'n'"
+          ;;
+        esac
+      done
+
+    # User started shrink-backup with -y option
+    else
+      case "$1" in
+        apt)
+          debug 'DEBUG' "Running: apt update && apt install $app -y"
+          apt update && apt install "$app" -y
+          exit_code="$?"
+          break
+        ;;
+        pacman)
+          debug 'DEBUG' "pacman -Syu --noconfirm && pacman -S --noconfirm $app"
+          pacman -Syu --noconfirm && pacman -S --noconfirm "$app"
+          exit_code="$?"
+          break
+        ;;
+        dnf)
+          if [ "$app" = 'gdisk.aarch64' ] && [ "$OS" = 'almalinux10' ] && ! rpm -q --quiet epel-release; then
+            debug 'DEBUG' 'Running: dnf install epel-release -y'
+            dnf install epel-release -y
+            install_success 'epel-release' "$?"
+          fi
+          debug 'DEBUG' "Running: dnf install $app -y"
+          dnf install "$app" -y
+          exit_code="$?"
+          break
+        ;;
+      esac
+    fi
+    install_success "$app" "$exit_code"
+  done
 return 0
 }
 
@@ -900,6 +743,7 @@ return 0
 
 # loop img file and exit
 function looprun() {
+
   check_updates
   debug 'DEBUG' "IMG_FILE=$IMG_FILE"
   debug 'DEBUG' "ADDED_SPACE=$ADDED_SPACE"
@@ -944,7 +788,7 @@ function looprun() {
   echo -e "${Purple}$BREAK"
   readarray -t looprun_output < <(lsblk $LOOP)
   for i in "${looprun_output[@]}"; do
-    #echo -e "${Purple}# ${Green}${i} ${Purple}$(printf "%+$(( COLS - 3 - $(echo ${i} | wc -m ) ))s" '#')"
+    #echo -e "${Purple}# ${Green}${i} ${Purple}$(printf "%$(( COLS - 3 - $(echo ${i} | wc -m ) ))s" '#')"
     echo -e "${Purple}# ${Green}${i}"
   done
   echo -e "${Purple}$BREAK"
@@ -972,7 +816,7 @@ function chrootrun() {
   debug 'DEBUG' "FSTYPE=$FSTYPE"
   # First index (LSBLK_PARTITIONS[0]) will be the loop itself
   LSBLK_PARTITIONS=($(lsblk -no path $LOOP))
-  debug 'DEBUG' "LSBLK_PARTITIONS=$(echo ${LSBLK_PARTITIONS[@]})"
+  debug 'DEBUG' "LSBLK_PARTITIONS=($(echo ${LSBLK_PARTITIONS[@]}))"
 
   # Check for temp directory and create if needed
   if ! [ -d "$TMP_DIR" ]; then
@@ -1225,7 +1069,7 @@ function btrfs_variables() {
   if [ "$AUTORESIZE_RUN" = true ]; then
     debug 'INFO' 'Adding 512MiB to LOCAL_USED_SPACE as recommended minimum size'
     LOCAL_AUTORESIZE_MIN=$(( LOCAL_USED_SPACE + 536870912 ))
-    debug 'DEBUG' "LOCAL_AUTORESIZE_MIN=${LOCAL_AUTORESIZE_MIN}B"
+    debug 'DEBUG' "LOCAL_AUTORESIZE_MIN=${LOCAL_AUTORESIZE_MIN} bytes"
   fi
 
   # Get subvolumes
@@ -1298,7 +1142,7 @@ function btrfs_variables() {
       SUBVOLUME_EXCLUDE_PATHS="$(echo ${SUBVOLUME_EXCLUDE_PATHS[@]} | sed 's/ /,/g')"
       debug 'DEBUG' "SUBVOLUME_EXCLUDE_PATHS=$SUBVOLUME_EXCLUDE_PATHS)"
     fi
-    debug 'DEBUG' "After filtering: LOCAL_NESTED_SUBVOLUMES=$(echo ${LOCAL_NESTED_SUBVOLUMES[@]})"
+    debug 'DEBUG' "After filtering: LOCAL_NESTED_SUBVOLUMES=($(echo ${LOCAL_NESTED_SUBVOLUMES[@]}))"
   fi
 return 0
 }
@@ -1422,7 +1266,7 @@ function rsync_line() {
     echo -e "${Yellow}## Custom rsync line option selected"
     echo -e "${White}## ${IWhite}Default rsync line: ${Green}${RSYNC_LINE}"
     echo -e "${White}## ${IWhite}Edit line to use in script ${Yellow}(press ctrl+c to abort)${NC}"
-    printf %${COLUMNS}s | tr ' ' '#'
+    printf "%${COLUMNS}s" | tr ' ' '#'
 
     read -e -i "$RSYNC_LINE" input
     RSYNC_CUSTOM_LINE="$input"
@@ -1627,7 +1471,7 @@ function print_confirmation() {
       esac
     done
   else
-    echo -e "${Purple}${BREAK}${IWhite}"
+    echo -e "${Purple}${BREAK}${NC}"
   fi
 return 0
 }
@@ -1719,7 +1563,7 @@ function do_mount() {
       $SLEEPING
       debug 'INFO' 'Managing nested subvolumes'
       IMG_NESTED_SUBVOLUMES=( $(btrfs subvolume list "$TMP_DIR" --sort=path | grep -v ' 5 ' | awk '{print $9}') )
-      debug 'DEBUG' "IMG_NESTED_SUBVOLUMES=$(echo ${IMG_NESTED_SUBVOLUMES[@]})"
+      debug 'DEBUG' "IMG_NESTED_SUBVOLUMES=($(echo ${IMG_NESTED_SUBVOLUMES[@]}))"
 
       # Create new nested subvolume(s) if needed
       for subvol in ${LOCAL_NESTED_SUBVOLUMES[@]}; do
@@ -1784,7 +1628,7 @@ function do_mount() {
         fi
       done
       IMG_NESTED_SUBVOLUMES=( $(btrfs subvolume list "$TMP_DIR" --sort=path | grep -v ' 5 ' | awk '{print $9}') )
-      debug 'DEBUG' "IMG_NESTED_SUBVOLUMES=$(echo ${IMG_NESTED_SUBVOLUMES[@]})"
+      debug 'DEBUG' "IMG_NESTED_SUBVOLUMES=($(echo ${IMG_NESTED_SUBVOLUMES[@]}))"
     fi
   fi
 
@@ -1888,7 +1732,7 @@ function do_resize() {
 
 
   # Expanding
-  if [ "$*" = 'expand' ]; then
+  if [ "$1" = 'expand' ]; then
 
     echo -e "${White}## ${Green}Expanding image..."
     $SLEEPING
@@ -1912,8 +1756,6 @@ function do_resize() {
     fi
 
     # Loop img file
-    echo -e "${White}## ${IWhite}Looping img file..."
-    $SLEEPING
     debug 'INFO' 'Re-looping img file to fetch new img size'
     debug 'INFO' 'Running function: do_loop'
     do_loop
@@ -1953,7 +1795,7 @@ function do_resize() {
 
 
   # Shrinking
-  elif [ "$*" = 'shrink' ]; then
+  elif [ "$1" = 'shrink' ]; then
 
     # Keep for memory
     # https://superuser.com/questions/1373289/how-do-i-shrink-the-partition-of-an-img-file-made-from-dd
@@ -2024,13 +1866,11 @@ function do_resize() {
       debug 'INFO' 'Adding 34 512B blocks (17408 bytes) for parition table to fit'
       debug 'DEBUG' "Running: truncate --size=+17408 $IMG_FILE"
       truncate --size=+17408 "$IMG_FILE"
-      debug 'DEBUG' "Running: printf '' | gdisk $IMG_FILE"
+      debug 'DEBUG' "Running: printf 'w\ny\n' | gdisk $IMG_FILE"
       printf 'w\ny\n' | gdisk $IMG_FILE
     fi
 
     # Loop img file
-    echo -e "${White}## ${IWhite}Looping img file..."
-    $SLEEPING
     debug 'INFO' 'Re-looping img file to fetch new img size'
     debug 'INFO' 'Running function: do_loop'
     do_loop
@@ -2477,10 +2317,10 @@ function update_img() {
     debug 'DEBUG' "IMG_ROOT_SIZE=${IMG_ROOT_SIZE}B | LOCAL_AUTORESIZE_MIN=${LOCAL_AUTORESIZE_MIN}B | diff=${diff}MiB"
 
     if [ "$IMG_ROOT_SIZE" -lt "$LOCAL_AUTORESIZE_MIN" ] && (( LOCAL_AUTORESIZE_MIN - IMG_ROOT_SIZE >= 268435456 )); then # 256MiB in bytes
-      DIFFERENCE="${diff}MiB, Expanding img filesystem"
+      DIFFERENCE="${diff}MiB, expanding img filesystem"
       RESIZE_FUNCTION='expand'
     elif [ "$IMG_ROOT_SIZE" -gt "$LOCAL_AUTORESIZE_MIN" ] && (( IMG_ROOT_SIZE - LOCAL_AUTORESIZE_MIN >= 536870912 )); then # 512MiB in bytes
-      DIFFERENCE="${diff}MiB, Shrinking img filesystem"
+      DIFFERENCE="${diff}MiB, shrinking img filesystem"
       RESIZE_FUNCTION='shrink'
     else
       if [[ "$diff" != '-'* ]]; then
