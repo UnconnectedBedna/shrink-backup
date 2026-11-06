@@ -784,12 +784,17 @@ function looprun() {
   debug 'INFO' 'Running function: do_loop'
   do_loop
 
+  # One line to do it all, see https://bbs.archlinux.org/viewtopic.php?pid=2313646#p2313646
+  #lsblk "$LOOP" | awk '{L[NR]=$0; if(length($0)>w)w=length($0)} END{b="";for(i=0;i<w+4;i++)b=b"#";print b;for(i=1;i<=NR;i++)printf "# %-*.*s #\n",w,w,L[i];print b}'
+  mapfile lsblk_output < <(lsblk $LOOP)
+  COLS=$(($(echo "${lsblk_output[@]}" | wc -L) + 4))
+  lsblk_output=("${lsblk_output[@]%$'\n'}")
+  BREAK="$(printf "%${COLS}s" | tr ' ' '#')"
+
   echo -e "${White}## ${Green}$IMG_FILE ${IWhite}is looped to ${Green}$LOOP"
   echo -e "${Purple}$BREAK"
-  readarray -t looprun_output < <(lsblk $LOOP)
-  for i in "${looprun_output[@]}"; do
-    #echo -e "${Purple}# ${Green}${i} ${Purple}$(printf "%$(( COLS - 3 - $(echo ${i} | wc -m ) ))s" '#')"
-    echo -e "${Purple}# ${Green}${i}"
+  for line in "${lsblk_output[@]}"; do
+    printf "# %b%*s %b\n" "${Green}$line" "$((COLS - ${#line} - 4))" '' "${Purple}#"
   done
   echo -e "${Purple}$BREAK"
   echo -e "${White}## ${Green}Done."
