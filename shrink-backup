@@ -50,7 +50,8 @@ function cleanup() {
 
   # Kill tail operation hindering unmounting of boot partition & delete lock file
   debug 'DEBUG' "Killing tail operation and removing ${BOOT_PATH}/shrink-backup.lock"
-  pkill tail
+  kill -9 "$TAIL_PID"
+  sleep 0.5
   rm "$BOOT_PATH"/shrink-backup.lock 2>/dev/null
 
   if [ "$exit_code" -ne 1 ] && [ "$exit_code" -ne 2 ]; then
@@ -2791,9 +2792,11 @@ if grep -q 'boot' /etc/fstab; then
   fi
 
   # Create a lock file on boot partition and tail it to hinder unmount operations
+  debug 'DEBUG' " Creating ${BOOT_PATH}/shrink-backup.lock & running: tail -f ${BOOT_PATH}/shrink-backup.lock > /dev/null &"
   touch "$BOOT_PATH"/shrink-backup.lock
   tail -f "$BOOT_PATH"/shrink-backup.lock > /dev/null &
-  debug 'DEBUG' "${BOOT_PATH}/shrink-backup.lock created, running: tail -f ${BOOT_PATH}/shrink-backup.lock > /dev/null &"
+  TAIL_PID="$!"
+  debug 'DEBUG' "TAIL_PID=$TAIL_PID"
 fi
 
 # If --loop is requested, execute looprun function. Will exit script within the function
