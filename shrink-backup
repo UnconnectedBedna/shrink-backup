@@ -49,10 +49,12 @@ function cleanup() {
   local exit_code="$?"
 
   # Kill tail operation hindering unmounting of boot partition & delete lock file
-  debug 'DEBUG' "Killing tail operation and removing ${BOOT_PATH}/shrink-backup.lock"
-  kill -9 "$TAIL_PID"
-  wait -f "$TAIL_PID" 2>/dev/null
-  rm "$BOOT_PATH"/shrink-backup.lock 2>/dev/null
+  if [ -n "$TAIL_PID" ]; then
+    debug 'DEBUG' "Killing tail operation and removing ${BOOT_PATH}/shrink-backup.lock"
+    kill -9 "$TAIL_PID"
+    wait -f "$TAIL_PID" 2>/dev/null
+    rm "$BOOT_PATH"/shrink-backup.lock 2>/dev/null
+  fi
 
   if [ "$exit_code" -ne 1 ] && [ "$exit_code" -ne 2 ]; then
     case $exit_code in
@@ -289,6 +291,8 @@ Usage: ${Green}sudo $(basename "$0") [options] imagefile.img [extra space (MiB)]
   ${Green}--no-color     ${IWhite}Run script without color formatted text
   ${Green}--fix          ${IWhite}Try to fix the img file if -a fails with a "broken pipe" error
                    Will activate rsync options --delete-before & --fsync
+                   Meaning old files no longer on system will be deleted from the img before copying new/changed files
+                   Can be used with a new backup to utilize --fsync option with rsync
   ${Green}--rsync        ${IWhite}Define custom rsync line manually. Will print rsync line for user to edit
   ${Green}--loop [img]   ${IWhite}Loop img file and exit, works in combination with -l & -z
                    If optional [extra space] is defined, the img file will be extended with the amount before looping
@@ -598,6 +602,7 @@ install_dependencies() {
       debug 'BREAK'
       debug 'DEBUG' 'Running: apt update && apt install systemd-container -y'
       apt update && apt install systemd-container -y
+
     # User started shrink-backup with -y option
     else
       debug 'DEBUG' 'Running: apt update && apt install systemd-container -y'
@@ -615,8 +620,7 @@ install_dependencies() {
     dnf)
       install_app=(${install_app[@]/gdisk/gdisk.aarch64})
       install_app=(${install_app[@]/rsync/rsync.aarch64})
-      install_app=(${install_app[@]/wget/wget.aarch64})
-    ;;
+      install_app=(${install_app[@]/wget/wget.aarch64});;
   esac
 
   for app in "${install_app[@]}"; do
@@ -636,26 +640,24 @@ install_dependencies() {
         case "$input" in
           [Yy])
             debug 'INFO' 'Y or y pressed to confirm'
-            debug 'INFO' "Using $1 to install $app"
-
+            debug 'DEBUG' "Using $1 to install $app"
+            # Install with package manager
             case "$1" in
               apt)
                 debug 'DEBUG' "Running: apt update && apt install $app -y"
                 apt update && apt install "$app" -y
                 exit_code="$?"
-                break
-              ;;
+                break;;
               pacman)
                 debug 'DEBUG' "pacman -Syu --noconfirm && pacman -S --noconfirm $app"
                 pacman -Syu --noconfirm && pacman -S --noconfirm "$app"
                 exit_code="$?"
-                break
-              ;;
+                break;;
               dnf)
                 if [ "$app" = 'gdisk.aarch64' ] && [ "$OS" = 'almalinux10' ] && ! rpm -q --quiet epel-release; then
                   echo -e "${White}## ${Yellow}AlmaLinux10 detected on system, upstream RHEL removed gdisk but is available in EPEL repository"
                   echo -e "${White}## ${Yellow}gdisk is required for shrink-backup to work with gpt partition table"
-                  # Confirm with user input
+                  # Confirm with user input for adding EPEL on almalinux10
                   debug 'INFO' 'Do you want to add EPEL repository to get access to gdisk? [y/n]'
                   while true; do
                     if [ "$COLORS" = true ]; then
@@ -668,8 +670,7 @@ install_dependencies() {
                       [Nn]) echo -e "${Red}!! Aborting..."; exit 4;;
                       *)
                         echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${NC}"
-                        debug 'WARNING' "ERROR, please enter 'y' or 'n'"
-                      ;;
+                        debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
                     esac
                   done
                   debug 'INFO' 'Y or y pressed to confirm'
@@ -680,13 +681,11 @@ install_dependencies() {
                 debug 'DEBUG' "Running: dnf install $app -y"
                 dnf install "$app" -y
                 exit_code="$?"
-                break
-              ;;
+                break;;
             esac
-          ;;
-
+            ;;
           [Nn])
-            if [ "$app" = 'wget' ]; then
+            if [ "$app" = 'wget' ]; then # wget is optional, just break if user declines
               echo -e "${Yellow}!! Skipping wget..."
               debug 'INFO' 'User skipped installing wget'
               $SLEEPING
@@ -695,11 +694,10 @@ install_dependencies() {
               echo -e "${Red}!! Aborting..."
               exit 4
             fi
-          ;;
+            ;;
           *)
             echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${NC}"
-            debug 'WARNING' "ERROR, please enter 'y' or 'n'"
-          ;;
+            debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
         esac
       done
 
@@ -710,14 +708,12 @@ install_dependencies() {
           debug 'DEBUG' "Running: apt update && apt install $app -y"
           apt update && apt install "$app" -y
           exit_code="$?"
-          break
-        ;;
+          break;;
         pacman)
           debug 'DEBUG' "pacman -Syu --noconfirm && pacman -S --noconfirm $app"
           pacman -Syu --noconfirm && pacman -S --noconfirm "$app"
           exit_code="$?"
-          break
-        ;;
+          break;;
         dnf)
           if [ "$app" = 'gdisk.aarch64' ] && [ "$OS" = 'almalinux10' ] && ! rpm -q --quiet epel-release; then
             debug 'DEBUG' 'Running: dnf install epel-release -y'
@@ -727,8 +723,7 @@ install_dependencies() {
           debug 'DEBUG' "Running: dnf install $app -y"
           dnf install "$app" -y
           exit_code="$?"
-          break
-        ;;
+          break;;
       esac
     fi
     install_success "$app" "$exit_code"
@@ -846,7 +841,7 @@ function chrootrun() {
     fi
 
     # Remount with flags from fstab
-    fstab=($(cat "$TMP_DIR"/etc/fstab | grep ' / '))
+    fstab=($(grep ' / ' "$TMP_DIR"/etc/fstab))
     echo -e "${White}## ${IWhite}Remounting img ${Green}root (/) ${IWhite}partition with flags from fstab"
     $SLEEPING
     debug 'INFO' 'Remounting img root partition with flags from fstab'
@@ -862,7 +857,6 @@ function chrootrun() {
     if grep -q 'boot' $TMP_DIR/etc/fstab; then
       (( count -- ))
       debug 'INFO' 'Boot partition found in fstab, mounting img boot partition'
-      #fstab=($(cat "$TMP_DIR"/etc/fstab | grep 'boot'))
       fstab=($(grep 'boot' "$TMP_DIR"/etc/fstab))
       echo -e "${White}## ${IWhite}Mounting img ${Green}${fstab[1]} ${IWhite}from fstab"
       $SLEEPING
@@ -890,7 +884,6 @@ function chrootrun() {
     fi
 
     # Remount with flags from fstab
-    #fstab=($(cat "$TMP_DIR"/etc/fstab | grep ' / '))
     fstab=($(grep ' / ' "$TMP_DIR"/etc/fstab))
     echo -e "${White}## ${IWhite}Remounting img ${Green}@ ${IWhite}subvolume with flags from fstab"
     $SLEEPING
@@ -904,7 +897,6 @@ function chrootrun() {
     fi
 
     # Assumes boot exists and is on first partition
-    #fstab=($(cat "$TMP_DIR"/etc/fstab | grep 'boot'))
     fstab=($(grep 'boot' "$TMP_DIR"/etc/fstab))
     debug 'INFO' 'Mounting img boot partition'
     echo -e "${White}## ${IWhite}Mounting img ${Green}${fstab[1]} ${IWhite}from fstab"
@@ -935,7 +927,6 @@ function chrootrun() {
     # Mount remaining subvolumes
     debug 'INFO' 'Mounting remaining subvolumes'
     for subvol in ${IMG_SUBVOLUMES[@]}; do
-      #fstab=($(cat "$TMP_DIR"/etc/fstab | grep "$subvol"))
       fstab=($(grep "$subvol" "$TMP_DIR"/etc/fstab))
       echo -e "${White}## ${IWhite}Mounting img ${Green}${fstab[1]} ${IWhite}from fstab"
       $SLEEPING
@@ -1161,7 +1152,7 @@ function img_variables() {
   fi
 
   # Boot partition exists
-  if grep -q 'boot' /etc/fstab; then
+  if [ "$BOOT_PARTITION" = true ]; then
 
     # ext4 & f2fs
     if [ "$FSTYPE" = 'ext4' ] || [ "$FSTYPE" = 'f2fs' ]; then
@@ -1542,7 +1533,6 @@ function do_mount() {
 
   # btrfs
   elif [ "$FSTYPE" = 'btrfs' ]; then
-    #declare -a fstab=( $(cat /etc/fstab | grep ' / ') )
     fstab=($(grep ' / ' /etc/fstab))
     echo -e "${White}## ${IWhite}Mounting root (${Green}@${IWhite}) subvolume..."
     $SLEEPING
@@ -1560,7 +1550,6 @@ function do_mount() {
     for subvol in "${LOCAL_TOP_SUBVOLUMES[@]}"; do
       # Excluding root (@) subvolume and mounting all else in fstab
       if grep -q "$subvol" /etc/fstab && [[ "$subvol" != '@' ]]; then
-        #declare -a fstab=( $(cat /etc/fstab | grep "$subvol") )
         fstab=($(grep "$subvol" /etc/fstab))
         echo -e "${White}## ${IWhite}Mounting subvolume: ${Green}$subvol"
         $SLEEPING
@@ -1600,7 +1589,6 @@ function do_mount() {
                 break
               fi
             done
-            #path="$(cat /etc/fstab | grep $top_subvol | awk '{print $2}' | sed 's/^\///')" # remove first slash
             path="$(grep "$top_subvol" /etc/fstab | awk '{print $2}' | sed 's/^\///')" # remove first slash
             subvol="$(echo $subvol | sed "s|$top_subvol|$path|g")"
           fi
@@ -1635,7 +1623,6 @@ function do_mount() {
                 break
               fi
             done
-            #path="$(cat /etc/fstab | grep $top_subvol | awk '{print $2}' | sed 's/^\///')" # remove first slash
             path="$(grep "$top_subvol" /etc/fstab | awk '{print $2}' | sed 's/^\///')" # remove first slash
             subvol="$(echo $subvol | sed "s|$top_subvol|$path|g")"
           fi
@@ -1703,8 +1690,7 @@ function do_e2fsck() {
     # Remounting if autoexpansion is requested
     if [[ ( "$AUTOEXPAND" == true ) || ( "$AUTOEXPAND" == false && "$OS" =~ (ubuntu|almalinux) ) ]]; then
       echo -e "${White}## ${IWhite}Remounting for autoexpansion..."
-      debug 'INFO' 'Remounting for autoexpansion function'
-      debug 'INFO' 'Running function: do_mount'
+      debug 'INFO' 'Remounting for autoexpansion function, running function: do_mount'
       $SLEEPING
       do_mount
     fi
@@ -2008,21 +1994,16 @@ function do_conversion() {
       cp ${TMP_DIR}${BOOT_PATH}/cmdline.txt ${TMP_DIR}${BOOT_PATH}/cmdline.txt.shrink-backup.bak
 
       # fstab
-      #debug 'DEBUG' "Old root line in fstab=$(cat ${TMP_DIR}/etc/fstab | grep ' / ')"
       debug 'DEBUG' "Old root line in fstab=$(grep ' / ' "${TMP_DIR}"/etc/fstab)"
-      #fstab_options=$(cat ${TMP_DIR}/etc/fstab | grep ' / ' | awk '{print $4}')
       fstab_options=$(grep ' / ' "${TMP_DIR}"/etc/fstab | awk '{print $4}')
       debug 'DEBUG' "Running: sed -i -e \"/${LOCAL_ROOT_PARTUUID}/s/ext4/f2fs/\" -e \"/${LOCAL_ROOT_PARTUUID}/s/${fstab_options}/${fstab_options},discard/\" ${TMP_DIR}/etc/fstab"
       sed -i -e "/${LOCAL_ROOT_PARTUUID}/s/ext4/f2fs/" -e "/$LOCAL_ROOT_PARTUUID/s/${fstab_options}/${fstab_options},discard/" ${TMP_DIR}/etc/fstab
-      #debug 'DEBUG' "New root line in fstab=$(cat ${TMP_DIR}/etc/fstab | grep ' / ')"
       debug 'DEBUG' "New root line in fstab=$(grep ' / ' "${TMP_DIR}"/etc/fstab)"
 
       # cmdline.txt
-      #debug 'INFO' "Old line in cmdline.txt: $(cat ${TMP_DIR}${BOOT_PATH}/cmdline.txt | grep 'console')"
       debug 'INFO' "Old line in cmdline.txt: $(grep 'console' "${TMP_DIR}${BOOT_PATH}"/cmdline.txt)"
       debug 'DEBUG' "Running: sed -i 's/rootfstype=ext4/rootfstype=f2fs/' ${TMP_DIR}${BOOT_PATH}/cmdline.txt"
       sed -i 's/rootfstype=ext4/rootfstype=f2fs/' "${TMP_DIR}${BOOT_PATH}"/cmdline.txt
-      #debug 'DEBUG' "New line in cmdline.txt: $(cat ${TMP_DIR}${BOOT_PATH}/cmdline.txt | grep 'console')"
       debug 'DEBUG' "New line in cmdline.txt: $(grep 'console' "${TMP_DIR}${BOOT_PATH}"/cmdline.txt)"
     fi
   fi
@@ -2672,8 +2653,8 @@ return 0
 
 # Check if debugging is requested
 if [ "$DEBUG" = true ]; then
-  echo -e "${White}## ${IWhite}Debugging requested, writing to log file: ${Green}$LOG_FILE"
   debug 'INFO' "Debugging requested, writing to log file $LOG_FILE"
+  echo -e "${White}## ${IWhite}Debugging requested, writing to log file: ${Green}$LOG_FILE"
 fi
 
 debug 'INFO' "Version=$VERSION"
@@ -2681,59 +2662,59 @@ debug 'INFO' "Script started with: $STARTLINE"
 
 # Make sure absolute path is used on img file, the only way this can happen is if the img file is in pwd or relative path to img file is used when starting the script
 if ! [[ "$IMG_FILE" =~ ^[/|.] ]]; then
-  debug 'INFO' 'Absolute path not provided for img file, adding pwd to variable'
+  debug 'INFO' 'Absolute path not provided for img file, adding pwd to $IMG_FILE'
   IMG_FILE="$(pwd)/$IMG_FILE"
 elif [[ "$IMG_FILE" =~ ^[.] ]]; then
-  debug 'INFO' 'Path to img file starting with ".", removing dot adding pwd to variable'
+  debug 'INFO' 'Path to img file starting with ".", removing dot & adding pwd to $IMG_FILE'
   IMG_FILE="$(pwd)${IMG_FILE:1}"
 fi
 
 # Set zoom type
 if [ "$ZOOM" = false ]; then
+  debug 'INFO' 'Zoom speed NOT requested, setting SLEEPING=sleep 1'
   SLEEPING='sleep 1'
   echo -e "${White}## ${IWhite}Zoom speed NOT requested..."
-  debug 'INFO' "Zoom speed NOT requested, setting SLEEPING=$SLEEPING | ZOOM=$ZOOM"
   $SLEEPING
 else
+  debug 'INFO' 'Zoom speed requested, setting SLEEPING to empty variable'
   SLEEPING=''
   echo -e "${White}## ${IWhite}Zoom speed requested..."
-  debug 'INFO' "Zoom speed requested, setting SLEEPING to empty variable | ZOOM=$ZOOM"
 fi
 
 # Check if the image file has the correct extension
 if [ "$LOOPRUN" = false ] && [[ "$IMG_FILE" != *.img ]]; then
-  echo -e "${Red}!! ERROR! ${Yellow}File must have ${Green}.img ${Yellow}extension"
   debug 'ERROR' 'File must have .img extension, exit 1'
+  echo -e "${Red}!! ERROR! ${Yellow}File must have ${Green}.img ${Yellow}extension"
   exit 1
 fi
 
 # Setting ADDED_SPACE to 0 if AUTORESIZE_RUN option is enabled
 if [ "$AUTORESIZE_RUN" = true ] && [ "$LOOPRUN" = false ]; then
+  debug 'INFO' '-a selected by user, setting ADDED_SPACE to 0 (non-zero value)'
   if [ -n "$ADDED_SPACE" ]; then
     echo -e "${Yellow}!! ${Green}-a ${Yellow}used in combination with ${Green}[extra space]"
     echo -e "${Yellow}!! ${Green}[extra space] (${ADDED_SPACE}MiB) ${Yellow}is ingored!"
     $SLEEPING
   fi
   ADDED_SPACE=0
-  debug 'INFO' '-a selected by user, setting ADDED_SPACE to 0 (non-zero value)'
 fi
 
 # Setting ADDED_SPACE to 0 if update is requested and variable ADDED_SPACE is a zero value
 if [ $UPDATE = true ] && [ -z "$ADDED_SPACE" ] && [ "$LOOPRUN" = false ]; then
-  ADDED_SPACE=0
   debug 'INFO' '-U selected, -a not selected or [extra space] not provided by user, setting ADDED_SPACE to 0 (non-zero value)'
+  ADDED_SPACE=0
 fi
 
 # Setting ADDED_SPACE to 0 if --loop is selected without providing [extra space]
 if [ "$LOOPRUN" = true ] && [ -z "$ADDED_SPACE" ]; then
-  ADDED_SPACE=0
   debug 'INFO' '--loop selected and [extra space] not provided by user, setting ADDED_SPACE to 0 (non-zero value)'
+  ADDED_SPACE=0
 fi
 
 # Setting ADDED_SPACE to 0 if --chroot is selected
 if [ "$CHROOTRUN" = true ]; then
-  ADDED_SPACE=0
   debug 'INFO' '--chroot selected, setting ADDED_SPACE to 0 (non-zero value)'
+  ADDED_SPACE=0
 fi
 
 # Requesting user to input [extra space] if not provided while making new image
@@ -2741,48 +2722,58 @@ if [ "$UPDATE" = false ] && [ -z "$ADDED_SPACE" ]; then
   debug 'INFO' 'New image without -a option and no [extra space] defined by user, requesting user input'
   echo -e "${White}## ${IWhite}New image requested without ${Yellow}-a ${IWhite}option and no provided ${Yellow}[extra space]"
   if [ "$COLORS" = true ]; then
-    read -r -p $'\e[0;37m## \e[0;97mPlease input requested \e[0;92m[extra space] in MiB \e[0;97m(0 is valid): ' ADDED_SPACE
+    read -r -p $'\e[0;37m## \e[0;97mPlease input requested \e[0;92m[extra space] in MiB \e[0;97m(0 is valid) or \e[0;92ma \e[0;97mto enable automatic calcualtion: \e[0m' ADDED_SPACE
   else
-    read -r -p '## Please input requested [extra space] in MiB (0 is valid): ' ADDED_SPACE
+    read -r -p '## Please input requested [extra space] in MiB (0 is valid) or "a" to enable automatic calculation: ' ADDED_SPACE
   fi
-  debug 'DEBUG' "User requested ${ADDED_SPACE}MiB as ADDED_SPACE"
+  debug 'DEBUG' "User input:${ADDED_SPACE} as ADDED_SPACE"
 fi
 
-# Regular expression for whole numbers
-RE='^[0-9]+$'
+# Regular expression for whole numbers or "a" for automatic calculation
+RE='^[0-9aA]+$'
 
-# Validate the added space argument as a whole number
+# Validate the added space argument as a whole number or a
 if ! [[ "$ADDED_SPACE" =~ $RE ]]; then
-  debug 'WARNING' 'User defined ADDED_SPACE is not a regualar expression (whole number)'
+  debug 'WARNING' 'User defined ADDED_SPACE is not a whole number or a'
   debug 'DEBUG' "ADDED_SPACE=$ADDED_SPACE"
   COUNTER=0
   while ! [[ "$ADDED_SPACE" =~ $RE ]]
   do
     if [ "$COUNTER" -gt 0 ]; then
+      debug 'WARNING' 'ERROR, user input ADDED_SPACE not a whole number or a'
       echo -e "${Yellow}!! ${Red}ERROR!"
-      debug 'WARNING' 'ERROR, user input ADDED_SPACE not regular expression'
     fi
-    echo -e "${Yellow}!! [extra space] space must be a whole number"
-    echo -e "${Yellow}## How much space in MiB should be added to the image? (0 is valid)"
-    read ADDED_SPACE
+    echo -e "${Yellow}!! [extra space] space must be ${Green}a whole number ${Yellow}or ${Green}a ${Yellow}to enable automatic calculation"
+    if [ "$COLORS" = true ]; then
+      read -r -p $'\e[0;37m## \e[0;97mPlease input requested \e[0;92m[extra space] in MiB \e[0;97m(0 is valid) or \e[0;92ma \e[0;97mto enable automatic calcualtion: \e[0m' ADDED_SPACE
+    else
+      read -r -p '## Please input requested [extra space] in MiB (0 is valid) or "a" to enable automatic calculation: ' ADDED_SPACE
+    fi
     (( COUNTER++ ))
-    #(( COUNTER += 1 ))
-    debug 'DEBUG' "User requested ${ADDED_SPACE}MiB as ADDED_SPACE"
+    debug 'DEBUG' "User input:${ADDED_SPACE} as ADDED_SPACE"
   done
-  typeset -i ADDED_SPACE
 fi
+
+# Enable AUTORESIZE_RUN if ADDED_SPACE is "a" and set ADDED_SPACE to 0
+if [[ "$ADDED_SPACE" =~ [aA] ]]; then
+  debug 'INFO' 'User input "a" as ADDED_SPACE, setting AUTORESIZE_RUN to true and ADDED_SPACE to 0 (non-zero value)'
+  AUTORESIZE_RUN=true
+  ADDED_SPACE=0
+fi
+
+# Set ADDED_SPACE to integer
+typeset -i ADDED_SPACE
 
 # If boot exists in fstab, set BOOT_PATH and make sure boot is mounted
 if grep -q 'boot' /etc/fstab; then
   debug 'INFO' 'Separate boot partition detected'
-  #BOOT_PATH=$(cat /etc/fstab | grep 'boot' | awk '{print $2}') # Used in cleanup function
-  BOOT_PATH=$(grep 'boot' /etc/fstab | awk '{print $2}') # Also used in cleanup function
+  BOOT_PARTITION=true
+  BOOT_PATH=$(grep 'boot' /etc/fstab | awk '{print $2}') # Also used in cleanup function and for lockfile
   debug 'DEBUG' "BOOT_PATH=$BOOT_PATH"
-  if ! mount --fake | grep -q 'boot'; then
-    echo -e "${Red}!! Boot found in fstab but partition not mounted..."
+  if ! mount --fake | grep -q "$BOOT_PATH"; then
     debug 'WARNING' 'Boot found in fstab but partition not mounted'
+    echo -e "${Red}!! Boot found in fstab but partition not mounted..."
     $SLEEPING
-    #fstab=($(cat /etc/fstab | grep 'boot'))
     fstab=($(grep 'boot' /etc/fstab))
     if [ "$PROMPTS" = true ]; then
       while true; do
@@ -2805,8 +2796,8 @@ if grep -q 'boot' /etc/fstab; then
         esac
       done
     else
-      echo -e "${Yellow}!! Mounting boot partition to ${fstab[1]}..."
       debug 'DEBUG' "Running: mount ${fstab[0]} ${fstab[1]}"
+      echo -e "${Yellow}!! Mounting boot partition ${fstab[0]} to ${fstab[1]}..."
       mount "${fstab[0]}" "${fstab[1]}"
     fi
   sleep 1
@@ -2835,8 +2826,7 @@ fi
 echo -e "${White}## ${IWhite}Scanning filesystem and calculating..."
 
 # Check if separate boot partition exists and set variables accordingly
-if grep -q 'boot' /etc/fstab; then
-  BOOT_PARTITION=true
+if [ "$BOOT_PARTITION" = true ]; then
   LOCAL_DEV_BOOT_PATH=$(mount --fake | grep 'boot' | awk '{print $1}')
   LOCAL_DEV_ROOT_PATH=$(mount --fake | grep ' / ' | awk '{print $1}')
   debug 'DEBUG' "BOOT_PARTITION=$BOOT_PARTITION | LOCAL_DEV_BOOT_PATH=$LOCAL_DEV_BOOT_PATH | LOCAL_DEV_ROOT_PATH=$LOCAL_DEV_ROOT_PATH"
@@ -2900,6 +2890,7 @@ if [ "$DEBUG" = true ]; then
   debug 'DEBUG' "UPDATE=$UPDATE"
   debug 'DEBUG' "AUTORESIZE_RUN=$AUTORESIZE_RUN"
   debug 'DEBUG' "PROMPTS=$PROMPTS"
+  debug 'DEBUG' "ZOOM=$ZOOM"
   debug 'DEBUG' "RSYNC_TTY=$RSYNC_TTY"
   debug 'DEBUG' "EXCLUDE_FILE=$EXCLUDE_FILE"
   debug 'DEBUG' "AUTOEXPAND=$AUTOEXPAND"
@@ -2969,7 +2960,7 @@ if [ "$AUTOEXPAND" = true ]; then
       debug 'INFO' 'Running function: autoexpansion_kali'
       autoexpansion_kali;;
     ubuntu|almalinux|almalinux10)
-      echo -e "${White}## ${Green}OS using cloud-inti detected, ${Yellow}making sure autoexpansion is not disabled in ${Green}/etc/cloud/cloud.cfg..."
+      echo -e "${White}## ${Green}OS using cloud-init detected, ${Yellow}making sure autoexpansion is not disabled in ${Green}/etc/cloud/cloud.cfg..."
       echo -e "${White}## ${Yellow}...and removing file ${Green}/etc/growroot-disabled ${Yellow}(if existing) on img"
       debug 'INFO' "Making sure autoexpansion is enabled in ${TMP_DIR}/etc/cloud/cloud.cfg and removing file ${TMP_DIR}/etc/growroot-disabled if it exists"
       sed -i 's/^#.*- growpart/  - growpart/' ${TMP_DIR}/etc/cloud/cloud.cfg
