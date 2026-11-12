@@ -388,25 +388,29 @@ fi
 # Check for updates
 function check_updates() {
 
-  if command -v wget > /dev/null && [ "$?" -eq 0 ] && wget --spider -q https://raw.githubusercontent.com/UnconnectedBedna/shrink-backup/refs/heads/main/shrink-backup; then
+  if ping -w1 -c1 9.9.9.9 > /dev/null; then # quad9 DNS
     echo -e "${White}## ${IWhite}Running update check..."
     #stable_version=$(curl -s https://raw.githubusercontent.com/UnconnectedBedna/shrink-backup/refs/heads/main/shrink-backup | grep -e '^VERSION=' | tr -d 'VERSION=' | tr -d "'")
     stable_version=$(curl -s https://raw.githubusercontent.com/UnconnectedBedna/shrink-backup/refs/heads/main/shrink-backup | grep -oP "^VERSION='\K.+(?=')")
     #testing_version=$(curl -s https://raw.githubusercontent.com/UnconnectedBedna/shrink-backup/refs/heads/testing/shrink-backup | grep -e '^VERSION=' | tr -d 'VERSION=' | tr -d "'")
     testing_version=$(curl -s https://raw.githubusercontent.com/UnconnectedBedna/shrink-backup/refs/heads/testing/shrink-backup | grep -oP "^VERSION='\K.+(?=')")
     if [ "$VERSION" = "$stable_version" ]; then
-      echo -e "${White}## ${Green}shrink-backup up to date with main branch"
+      echo -e "${White}## ${Green}shrink-backup is up to date with main branch on github"
       debug 'INFO' 'shrink-backup up to date with main branch'
     elif [ "$VERSION" = "$testing_version" ]; then
-      echo -e "${White}## ${Yellow}shrink-backup is using testing branch, updates might exist"
+      echo -e "${White}## ${Yellow}shrink-backup is using testing branch, updates might exist on github"
       debug 'WARNING' 'shrink-backup is using testing branch'
     else
-      echo -e "${White}## ${Yellow}Local version of shrink-backup is not up to date, ${Green}update available on github"
+      echo -e "${White}## ${Yellow}Local version of shrink-backup is not up to date"
+      echo -e "${White}## ${IWhite}Local version:  ${Green}v$VERSION"
+      echo -e "${White}## ${IWhite}Stable version: ${Green}v$stable_version"
+      echo -e "${White}## ${IWhite}Beta version:   ${Green}v$testing_version"
+      echo -e "${White}## ${IWhite}update available on github: ${Green}https://github.com/UnconnectedBedna/shrink-backup"
       debug 'WARNING' 'Local version of shrink-backup not up to date'
     fi
   else
-    echo -e "${White}## ${Yellow}Internet or wget not available on system, skipping update check"
-    debug 'WARNING' 'Internet or wget not available on system, skipping update check'
+    echo -e "${White}## ${Yellow}Internet not available on system, skipping update check"
+    debug 'WARNING' 'Internet not available on system, skipping update check'
   fi
   $SLEEPING
 return 0
@@ -500,7 +504,7 @@ function check_dependencies() {
     return 0
   fi
 
-  apps=(gdisk rsync f2fs-tools wget)
+  apps=(gdisk rsync f2fs-tools)
   debug 'DEBUG' "apps=($(echo ${apps[@]}))"
 
   if [ "$PARTITION_TABLE" != 'gpt' ]; then
@@ -620,7 +624,6 @@ install_dependencies() {
     dnf)
       install_app=(${install_app[@]/gdisk/gdisk.aarch64})
       install_app=(${install_app[@]/rsync/rsync.aarch64})
-      install_app=(${install_app[@]/wget/wget.aarch64});;
   esac
 
   for app in "${install_app[@]}"; do
@@ -628,10 +631,6 @@ install_dependencies() {
     if [ "$PROMPTS" = true ]; then
       debug 'INFO' "Do you want to use $1 to install $app? [y/n]"
       while true; do
-        if [ "$app" = 'wget' ]; then
-          echo -e "${White}## ${Yellow}wget is not required for backup functionality, only used for shrink-backup update check and can be left uninstalled"
-          echo -e "${White}## ${Yellow}(but you will get this question every time running shrink-backup unless -y option is used, please use -y with care)"
-        fi
         if [ "$COLORS" = true ]; then
           read -r -p $'\e[0;37m## \e[0;93mDo you want to use '"$1"$' to install '"${app}"$'? \e[0;92m[y/n] \e[0m' input
         else
@@ -685,16 +684,8 @@ install_dependencies() {
             esac
             ;;
           [Nn])
-            if [ "$app" = 'wget' ]; then # wget is optional, just break if user declines
-              echo -e "${Yellow}!! Skipping wget..."
-              debug 'INFO' 'User skipped installing wget'
-              $SLEEPING
-              break
-            else
-              echo -e "${Red}!! Aborting..."
-              exit 4
-            fi
-            ;;
+            echo -e "${Red}!! Aborting..."
+            exit 4;;
           *)
             echo -e "${Yellow}!! ${Red}ERROR! ${Yellow}Please enter ${Green}'y' ${Yellow}or ${Green}'n'${NC}"
             debug 'WARNING' "ERROR, please enter 'y' or 'n'";;
